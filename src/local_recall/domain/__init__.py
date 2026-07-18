@@ -1,0 +1,103 @@
+"""Immutable domain types for Local Recall security boundaries."""
+
+from .capture import (
+    ApprovedCaptureRequest,
+    CaptureAuthorization,
+    CaptureDecision,
+    CaptureDecisionKind,
+    CaptureIntent,
+    CapturePolicyInput,
+    MetadataRequest,
+)
+from .crypto import (
+    EncryptedRecordEnvelope,
+    KeyHandle,
+    KeyPurpose,
+    KeyRequest,
+    StoredRecordRef,
+)
+from .frames import OCRBlock, OCRResult, PixelFormat, RawFrame, RedactedFrame, RedactedRecord
+from .lifecycle import (
+    CaptureGeneration,
+    CaptureState,
+    CaptureStateSnapshot,
+    CaptureStateTransition,
+    TransitionReason,
+)
+from .messages import EventEnvelope, MessageEnvelope, MessageHeader
+from .metadata import ContextField, ContextMetadata, MetadataProvenance, SourceConfidence
+from .privacy import PrivacyClass, ProviderLocation
+from .providers import (
+    EmbeddingRequest,
+    EmbeddingResponse,
+    GenerationRequest,
+    GenerationResponse,
+    ModelCapability,
+    ProviderCapabilities,
+    RoutingDecision,
+    RoutingRequest,
+)
+from .redaction import (
+    PixelRegion,
+    RedactionAction,
+    RedactionFinding,
+    RedactionKind,
+    RedactionReason,
+    RedactionTarget,
+    TextSpan,
+)
+from .retrieval import Citation, CitedAnswer, RetrievalHit, RetrievalResult
+
+__all__ = [
+    "ApprovedCaptureRequest",
+    "CaptureAuthorization",
+    "CaptureDecision",
+    "CaptureDecisionKind",
+    "CaptureGeneration",
+    "CaptureIntent",
+    "CapturePolicyInput",
+    "CaptureState",
+    "CaptureStateSnapshot",
+    "CaptureStateTransition",
+    "Citation",
+    "CitedAnswer",
+    "ContextField",
+    "ContextMetadata",
+    "EmbeddingRequest",
+    "EmbeddingResponse",
+    "EncryptedRecordEnvelope",
+    "EventEnvelope",
+    "GenerationRequest",
+    "GenerationResponse",
+    "KeyHandle",
+    "KeyPurpose",
+    "KeyRequest",
+    "MessageEnvelope",
+    "MessageHeader",
+    "MetadataProvenance",
+    "MetadataRequest",
+    "ModelCapability",
+    "OCRBlock",
+    "OCRResult",
+    "PixelFormat",
+    "PixelRegion",
+    "PrivacyClass",
+    "ProviderCapabilities",
+    "ProviderLocation",
+    "RawFrame",
+    "RedactedFrame",
+    "RedactedRecord",
+    "RedactionAction",
+    "RedactionFinding",
+    "RedactionKind",
+    "RedactionReason",
+    "RedactionTarget",
+    "RetrievalHit",
+    "RetrievalResult",
+    "RoutingDecision",
+    "RoutingRequest",
+    "SourceConfidence",
+    "StoredRecordRef",
+    "TextSpan",
+    "TransitionReason",
+]
