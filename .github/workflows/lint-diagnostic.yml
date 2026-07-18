@@ -1,6 +1,7 @@
 name: Issue 11 lint diagnostic
 
 on:
+  pull_request:
   push:
     branches:
       - agent/issue-11-storage-catalog
