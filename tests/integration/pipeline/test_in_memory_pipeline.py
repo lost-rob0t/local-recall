@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+
 from local_recall.domain.lifecycle import TransitionReason
 from local_recall.pipeline import BoundedCapturePipeline, SubmissionStatus
 from tests.unit.pipeline.support import (
