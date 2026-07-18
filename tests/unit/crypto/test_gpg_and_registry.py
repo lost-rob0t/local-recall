@@ -28,7 +28,7 @@ from local_recall.ports.keys import (
 
 
 class FakeGPGRunner:
-    def run(
+    async def run(
         self,
         arguments: tuple[str, ...],
         input_data: bytes,
@@ -78,7 +78,9 @@ def test_gpg_wrap_and_unwrap_requires_health_checked_recipient() -> None:
     health = asyncio.run(provider.health(request))
     key = asyncio.run(provider.active_key(request))
     material = SecretKeyMaterial.from_bytes(bytes(range(32)))
-    wrapped = asyncio.run(provider.wrap_data_key(KeyWrapRequest(key, material, b"associated-data")))
+    wrapped = asyncio.run(
+        provider.wrap_data_key(KeyWrapRequest(key, material, b"associated-data"))
+    )
     unwrapped = asyncio.run(
         provider.unwrap_data_key(KeyUnwrapRequest(key, wrapped, b"associated-data"))
     )
