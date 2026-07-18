@@ -7,8 +7,11 @@ annotated-types==0.7.0
 bandit==1.9.4
 certifi==2026.6.17
     # via requests
-cffi==2.1.0 ; implementation_name == 'pypy'
-    # via pyzmq
+cffi==2.0.0
+    # via
+    #   cryptography
+    #   pynacl
+    #   pyzmq
 cfgv==3.5.0
     # via pre-commit
 charset-normalizer==3.4.9
@@ -18,6 +21,8 @@ colorama==0.4.6 ; sys_platform == 'win32'
     #   bandit
     #   pytest
     #   typer
+cryptography==46.0.4
+    # via secretstorage
 detect-secrets==1.5.0
 distlib==0.4.3
     # via virtualenv
@@ -32,10 +37,26 @@ idna==3.18
     # via requests
 iniconfig==2.3.0
     # via pytest
+jaraco-classes==3.4.0
+    # via keyring
+jaraco-context==6.1.2
+    # via keyring
+jaraco-functools==4.6.0
+    # via keyring
+jeepney==0.9.0 ; sys_platform == 'linux'
+    # via
+    #   keyring
+    #   secretstorage
+keyring==25.7.0
+    # via local-recall
 markdown-it-py==4.2.0
     # via rich
 mdurl==0.1.2
     # via markdown-it-py
+more-itertools==11.1.0
+    # via
+    #   jaraco-classes
+    #   jaraco-functools
 nodeenv==1.10.0
     # via
     #   pre-commit
@@ -49,7 +70,7 @@ platformdirs==4.10.0
 pluggy==1.6.0
     # via pytest
 pre-commit==4.6.0
-pycparser==3.0 ; implementation_name == 'pypy'
+pycparser==3.0
     # via cffi
 pydantic==2.13.4
     # via local-recall
@@ -61,12 +82,16 @@ pygments==2.20.0
     #   rich
 pykka==4.4.2
     # via local-recall
+pynacl==1.6.2
+    # via local-recall
 pyright==1.1.411
 pytest==8.4.2
     # via pytest-timeout
 pytest-timeout==2.4.0
 python-discovery==1.4.4
     # via virtualenv
+pywin32-ctypes==0.2.3 ; sys_platform == 'win32'
+    # via keyring
 pyyaml==6.0.3
     # via
     #   bandit
@@ -81,6 +106,8 @@ rich==15.0.0
     #   bandit
     #   typer
 ruff==0.15.22
+secretstorage==3.5.0 ; sys_platform == 'linux'
+    # via keyring
 shellcheck-py==0.11.0.1
 shellingham==1.5.4
     # via typer
