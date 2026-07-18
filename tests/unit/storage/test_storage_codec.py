@@ -8,7 +8,12 @@ import pytest
 
 from local_recall.domain.crypto import EncryptedRecordEnvelope, KeyHandle
 from local_recall.domain.lifecycle import CaptureGeneration
-from local_recall.storage import StorageFailure, StorageFailureCode, decode_envelope, encode_envelope
+from local_recall.storage import (
+    StorageFailure,
+    StorageFailureCode,
+    decode_envelope,
+    encode_envelope,
+)
 
 
 def envelope() -> EncryptedRecordEnvelope:
