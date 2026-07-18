@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -30,13 +31,14 @@ def envelope() -> EncryptedRecordEnvelope:
     )
 
 
-def storage(root: Path, fault: object = None) -> SQLiteEncryptedStorage:
-    callback = fault if callable(fault) else None
+def storage(
+    root: Path, fault: Callable[[str], None] | None = None
+) -> SQLiteEncryptedStorage:
     return SQLiteEncryptedStorage(
         root,
         quota_bytes=1_000_000,
         max_blob_bytes=100_000,
-        fault_injector=callback,
+        fault_injector=fault,
     )
 
 
