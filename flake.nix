@@ -17,7 +17,7 @@
               git
               libsodium
               pkg-config
-              python313
+              python314
               shellcheck
               uv
               zeromq
@@ -29,7 +29,7 @@
             };
 
             shellHook = ''
-              echo "Local Recall: run ./scripts/check"
+              echo "Local Recall: Python 3.14 target; run ./scripts/check"
             '';
           };
         });
