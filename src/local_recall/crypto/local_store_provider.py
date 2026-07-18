@@ -54,9 +54,13 @@ class LocalKeyStoreProvider:
     def health_check(self) -> KeyProviderHealth:
         passphrase = self._passphrase_source()
         if not passphrase:
-            return KeyProviderHealth(self.provider_id, KeyProviderState.LOCKED, "passphrase_missing")
+            return KeyProviderHealth(
+                self.provider_id, KeyProviderState.LOCKED, "passphrase_missing"
+            )
         if self._path.is_symlink():
-            return KeyProviderHealth(self.provider_id, KeyProviderState.INVALID, "key_store_symlink")
+            return KeyProviderHealth(
+                self.provider_id, KeyProviderState.INVALID, "key_store_symlink"
+            )
         if not self._path.exists():
             return KeyProviderHealth(self.provider_id, KeyProviderState.HEALTHY, "empty_store")
         try:
@@ -69,9 +73,13 @@ class LocalKeyStoreProvider:
                 )
                 wipe(material)
         except KeyProviderLocked:
-            return KeyProviderHealth(self.provider_id, KeyProviderState.LOCKED, "passphrase_invalid")
+            return KeyProviderHealth(
+                self.provider_id, KeyProviderState.LOCKED, "passphrase_invalid"
+            )
         except Exception:
-            return KeyProviderHealth(self.provider_id, KeyProviderState.INVALID, "key_store_invalid")
+            return KeyProviderHealth(
+                self.provider_id, KeyProviderState.INVALID, "key_store_invalid"
+            )
         return KeyProviderHealth(self.provider_id, KeyProviderState.HEALTHY, "healthy")
 
     def active_key(self, request: KeyRequest) -> KeyHandle:
