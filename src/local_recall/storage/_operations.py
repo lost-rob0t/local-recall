@@ -37,7 +37,6 @@ class StorageOperations:
             hashlib.sha256(blob).digest(),
             entry.blob_digest,
         ):
-            self.quarantine_entry(entry)
             raise StorageFailure(entry.record_id, StorageFailureCode.CORRUPT_RECORD)
         return blob
 
