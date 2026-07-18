@@ -7,8 +7,10 @@ annotated-types==0.7.0
 bandit==1.9.4
 certifi==2026.6.17
     # via requests
-cffi==2.1.0 ; implementation_name == 'pypy'
-    # via pyzmq
+cffi==2.1.0
+    # via
+    #   pynacl
+    #   pyzmq
 cfgv==3.5.0
     # via pre-commit
 charset-normalizer==3.4.9
@@ -49,7 +51,7 @@ platformdirs==4.10.0
 pluggy==1.6.0
     # via pytest
 pre-commit==4.6.0
-pycparser==3.0 ; implementation_name == 'pypy'
+pycparser==3.0
     # via cffi
 pydantic==2.13.4
     # via local-recall
@@ -60,6 +62,8 @@ pygments==2.20.0
     #   pytest
     #   rich
 pykka==4.4.2
+    # via local-recall
+pynacl==1.6.2
     # via local-recall
 pyright==1.1.411
 pytest==8.4.2

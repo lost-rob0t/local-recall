@@ -152,9 +152,12 @@ class SyntheticStorageBackend:
 def encrypted_envelope() -> EncryptedRecordEnvelope:
     return EncryptedRecordEnvelope(
         record_id=uuid4(),
+        generation=CaptureGeneration(1),
+        configuration_revision="config-v1",
         schema_version=1,
         algorithm="synthetic-aead",
         key=KeyHandle(key_id="key-1", provider_id="synthetic", version=1),
+        plaintext_frame_sizes=(8,),
         wrapped_data_key=b"wrapped",
         nonce=b"nonce",
         ciphertext=b"ciphertext",

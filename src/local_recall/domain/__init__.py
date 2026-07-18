@@ -14,6 +14,7 @@ from .crypto import (
     KeyHandle,
     KeyPurpose,
     KeyRequest,
+    SecretKeyMaterial,
     StoredRecordRef,
 )
 from .frames import OCRBlock, OCRResult, PixelFormat, RawFrame, RedactedFrame, RedactedRecord
@@ -98,6 +99,7 @@ __all__ = [
     "RetrievalResult",
     "RoutingDecision",
     "RoutingRequest",
+    "SecretKeyMaterial",
     "SourceConfidence",
     "StoredRecordRef",
     "TextSpan",

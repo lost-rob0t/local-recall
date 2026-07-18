@@ -9,6 +9,9 @@ def inspect_effective_configuration(configuration: LocalRecallConfig) -> dict[st
     result = configuration.model_dump(mode="json")
     key_reference = configuration.encryption.key_reference
     result["encryption"]["key_reference"] = _inspect_reference(key_reference)
+    result["encryption"]["gpg_recipient"] = (
+        "<configured>" if configuration.encryption.gpg_recipient is not None else None
+    )
 
     providers: list[dict[str, Any]] = []
     for provider in configuration.models.remote_providers:

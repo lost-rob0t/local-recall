@@ -106,11 +106,11 @@ embedding_provider = "ollama"
 remote_enabled = false
 
 [encryption]
-provider_id = "keyring"
-algorithm = "xchacha20-poly1305"
+provider_id = "os-keyring"
+algorithm = "xchacha20-poly1305-ietf"
 
 [encryption.key_reference]
-provider_id = "keyring"
+provider_id = "os-keyring"
 reference = "local-recall-record-key"
 
 [storage]
@@ -119,6 +119,22 @@ root_directory = "~/.local/share/local-recall"
 ```
 
 The `reference` fields identify entries managed by a key provider. They are not secret values. Effective-configuration inspection replaces reference names with `<configured>`.
+
+### Explicit GPG fallback
+
+GPG fallback is disabled by default and is never inferred from provider availability. To enable it, configure every fallback field explicitly:
+
+```toml
+[encryption]
+provider_id = "os-keyring"
+algorithm = "xchacha20-poly1305-ietf"
+fallback_provider_id = "gpg"
+gpg_recipient = "configured-recipient"
+gpg_executable = "gpg"
+gpg_timeout_seconds = 10.0
+```
+
+`fallback_provider_id = "gpg"` requires `gpg_recipient`. A recipient without an explicit GPG fallback is rejected, and the primary and fallback provider IDs must differ. The recipient is hidden from effective-configuration inspection. GPG has no environment-variable override because recipient selection is security-sensitive configuration.
 
 ## Capture pipeline bounds
 

@@ -6,8 +6,12 @@ from .encryption import DecryptionRequest, EncryptionProvider, EncryptionRequest
 from .keys import (
     KeyDestructionRequest,
     KeyDestructionResult,
+    KeyHealthReport,
+    KeyHealthStatus,
     KeyProvider,
     KeyRotationRequest,
+    KeyUnwrapRequest,
+    KeyWrapRequest,
 )
 from .metadata import MetadataSource
 from .ocr import OCRProvider, OCRRequest
@@ -30,8 +34,12 @@ __all__ = [
     "GenerationProvider",
     "KeyDestructionRequest",
     "KeyDestructionResult",
+    "KeyHealthReport",
+    "KeyHealthStatus",
     "KeyProvider",
     "KeyRotationRequest",
+    "KeyUnwrapRequest",
+    "KeyWrapRequest",
     "MetadataSource",
     "ModelRoutingPolicy",
     "OCRProvider",
