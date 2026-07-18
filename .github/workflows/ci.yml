@@ -43,7 +43,29 @@ jobs:
       - name: Run contract tests
         run: ./scripts/run-pytest tests/contract
       - name: Run integration tests
-        run: ./scripts/run-pytest tests/integration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          completed = subprocess.run(
+              ["./scripts/run-pytest", "tests/integration"],
+              capture_output=True,
+              text=True,
+              check=False,
+          )
+          output = completed.stdout + completed.stderr
+          Path("integration-failure.txt").write_text(output, encoding="utf-8")
+          print(output, end="")
+          raise SystemExit(completed.returncode)
+          PY
+      - name: Upload integration failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-failure-${{ matrix.os }}
+          path: integration-failure.txt
+          if-no-files-found: error
       - name: Run security tests
         run: ./scripts/run-pytest tests/security
       - name: Run security checks
