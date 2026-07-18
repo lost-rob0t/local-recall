@@ -31,10 +31,11 @@ jobs:
         run: ./scripts/bootstrap
       - name: Capture strict type diagnostics
         run: |
-          set +e
-          uv run --no-sync pyright > .ci-pyright.txt 2>&1
-          status=$?
-          set -e
+          if uv run --no-sync pyright > .ci-pyright.txt 2>&1; then
+            status=0
+          else
+            status=$?
+          fi
           printf '\nexit_status=%s\n' "$status" >> .ci-pyright.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
