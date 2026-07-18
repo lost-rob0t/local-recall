@@ -17,7 +17,9 @@ class EncryptionLifecyclePreflight:
 
     def check(self, request: LifecyclePreflightRequest) -> LifecyclePreflightResult:
         if request.cancellation.cancelled:
-            return LifecyclePreflightResult.failure(LifecycleFaultCode.PREFLIGHT_FAILURE)
+            return LifecyclePreflightResult.failure(
+                LifecycleFaultCode.PREFLIGHT_FAILURE
+            )
         settings = request.configuration.configuration.encryption
         try:
             self._router.select_for_encryption(
@@ -25,9 +27,13 @@ class EncryptionLifecyclePreflight:
                 KeyRequest(
                     purpose=KeyPurpose.RECORD,
                     create_if_missing=True,
-                    reference=settings.key_reference.reference if settings.key_reference else None,
+                    reference=settings.key_reference.reference
+                    if settings.key_reference
+                    else None,
                 ),
             )
         except CryptoError:
-            return LifecyclePreflightResult.failure(LifecycleFaultCode.ENCRYPTION_UNAVAILABLE)
+            return LifecyclePreflightResult.failure(
+                LifecycleFaultCode.ENCRYPTION_UNAVAILABLE
+            )
         return LifecyclePreflightResult.success()
