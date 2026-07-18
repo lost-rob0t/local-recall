@@ -20,7 +20,9 @@ class StoragePaths:
 
 
 def prepare_paths(root: Path) -> StoragePaths:
-    expanded = root.expanduser()
+    expanded = root.expanduser().absolute()
+    if expanded == Path(expanded.anchor):
+        raise StorageFailure(StorageFailureCode.UNSAFE_ROOT)
     _reject_symlink_components(expanded)
     expanded.mkdir(mode=0o700, parents=True, exist_ok=True)
     ensure_directory(expanded)
@@ -59,6 +61,7 @@ def blob_path(paths: StoragePaths, token: str) -> Path:
         len(shard) != 2
         or len(stem) != 32
         or name != f"{stem}.lre"
+        or not stem.startswith(shard)
         or any(character not in "0123456789abcdef" for character in shard + stem)
     ):
         raise StorageFailure(StorageFailureCode.CORRUPTION)
@@ -79,6 +82,8 @@ def read_blob(paths: StoragePaths, token: str, maximum: int) -> bytes:
 
 
 def read_regular_file(path: Path, maximum: int) -> bytes:
+    if maximum <= 0:
+        raise ValueError("maximum must be positive")
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -112,6 +117,8 @@ def write_blob_atomically(
     blob: bytes,
     fault: Callable[[str], None],
 ) -> None:
+    if not blob:
+        raise StorageFailure(StorageFailureCode.IO_FAILURE)
     final = blob_path(paths, token)
     final.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     ensure_directory(final.parent)
@@ -121,28 +128,62 @@ def write_blob_atomically(
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    descriptor = os.open(temporary, flags, 0o600)
+    try:
+        descriptor = os.open(temporary, flags, 0o600)
+    except OSError as exc:
+        raise StorageFailure(StorageFailureCode.IO_FAILURE) from exc
     try:
         view = memoryview(blob)
         written = 0
         while written < len(view):
-            written += os.write(descriptor, view[written:])
+            count = os.write(descriptor, view[written:])
+            if count <= 0:
+                raise StorageFailure(StorageFailureCode.IO_FAILURE)
+            written += count
         os.fsync(descriptor)
+    except OSError as exc:
+        raise StorageFailure(StorageFailureCode.IO_FAILURE) from exc
     finally:
         os.close(descriptor)
     fault("after_temp_fsync")
-    os.replace(temporary, final)
-    os.chmod(final, 0o600)
-    fsync_directory(final.parent)
+    try:
+        os.replace(temporary, final)
+        os.chmod(final, 0o600)
+        info = final.lstat()
+        require_current_owner(info)
+        if not stat.S_ISREG(info.st_mode):
+            raise StorageFailure(StorageFailureCode.IO_FAILURE)
+        fsync_directory(final.parent)
+        fsync_directory(paths.temporary)
+    except OSError as exc:
+        raise StorageFailure(StorageFailureCode.IO_FAILURE) from exc
 
 
 def quarantine_path(paths: StoragePaths, path: Path) -> bool:
-    if not path.exists():
+    if not path.exists() and not path.is_symlink():
         return False
+    try:
+        resolved_parent = path.parent.resolve()
+    except OSError as exc:
+        raise StorageFailure(StorageFailureCode.CORRUPTION) from exc
+    allowed_roots = (
+        paths.blobs.resolve(),
+        paths.temporary.resolve(),
+        paths.quarantine.resolve(),
+    )
+    if not any(
+        resolved_parent == root or resolved_parent.is_relative_to(root) for root in allowed_roots
+    ):
+        raise StorageFailure(StorageFailureCode.UNSAFE_ROOT)
     target = paths.quarantine / f"{uuid4().hex}.lrq"
-    os.replace(path, target)
-    os.chmod(target, 0o600)
-    fsync_directory(paths.quarantine)
+    try:
+        os.replace(path, target)
+        os.chmod(target, 0o600)
+        fsync_directory(paths.quarantine)
+        if path.parent.exists():
+            fsync_directory(path.parent)
+    except OSError as exc:
+        raise StorageFailure(StorageFailureCode.IO_FAILURE) from exc
     return True
 
 
@@ -154,11 +195,12 @@ def iter_blob_files(paths: StoragePaths) -> Iterator[Path]:
         require_current_owner(info)
         for path in shard.iterdir():
             path_info = path.lstat()
-            if stat.S_ISLNK(path_info.st_mode):
+            if stat.S_ISLNK(path_info.st_mode) or not stat.S_ISREG(path_info.st_mode):
                 raise StorageFailure(StorageFailureCode.UNSAFE_ROOT)
             require_current_owner(path_info)
-            if stat.S_ISREG(path_info.st_mode) and path.suffix == ".lre":
-                yield path
+            if path.suffix != ".lre":
+                raise StorageFailure(StorageFailureCode.CORRUPTION)
+            yield path
 
 
 def content_bytes_on_disk(paths: StoragePaths) -> int:
@@ -188,11 +230,14 @@ def ensure_catalog_permissions(paths: StoragePaths) -> None:
         os.chmod(candidate, 0o600)
 
 
-def safe_unlink(path: Path) -> None:
+def safe_unlink(path: Path) -> bool:
     try:
-        path.unlink(missing_ok=True)
-    except OSError:
-        return
+        path.unlink()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise StorageFailure(StorageFailureCode.IO_FAILURE) from exc
+    return True
 
 
 def fsync_directory(path: Path) -> None:
@@ -201,9 +246,14 @@ def fsync_directory(path: Path) -> None:
         flags |= os.O_DIRECTORY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    descriptor = os.open(path, flags)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise StorageFailure(StorageFailureCode.IO_FAILURE) from exc
     try:
         os.fsync(descriptor)
+    except OSError as exc:
+        raise StorageFailure(StorageFailureCode.IO_FAILURE) from exc
     finally:
         os.close(descriptor)
 
