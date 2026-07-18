@@ -18,7 +18,7 @@ Requirements: CPython 3.14.x and `uv`, or Nix with flakes enabled.
 ./scripts/check
 ```
 
-The canonical command syncs the exact `requirements.lock` environment and runs formatting, linting, shell linting, strict type checking, all test layers, failure-propagation tests, repository policy checks, secret scanning, and source security scanning.
+The canonical command syncs the exact `requirements.lock` environment and runs formatting, linting, shell linting, strict type checking, all populated test layers, direct failure-propagation checks, repository policy checks, secret scanning, and source security scanning.
 
 ```sh
 nix develop -c ./scripts/check
