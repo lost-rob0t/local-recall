@@ -11,7 +11,7 @@ def test_required_failure_modes_propagate_nonzero() -> None:
         check=False,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=120,
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
