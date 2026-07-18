@@ -9,6 +9,7 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [System architecture](docs/architecture.md)
 - [Architecture decision records](docs/adr/README.md)
 - [Domain models and strategy contracts](docs/domain-contracts.md)
+- [Configuration and privacy profiles](docs/configuration.md)
 - [Testing policy](docs/testing.md)
 
 ## Development

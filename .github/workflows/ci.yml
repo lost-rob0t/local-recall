@@ -42,6 +42,8 @@ jobs:
         run: ./scripts/run-pytest tests/unit
       - name: Run contract tests
         run: ./scripts/run-pytest tests/contract
+      - name: Run security tests
+        run: ./scripts/run-pytest tests/security
       - name: Run security checks
         run: ./scripts/security-scan
 
