@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
 import subprocess
 from dataclasses import dataclass
 from typing import Protocol
@@ -108,7 +109,10 @@ class GPGKeyProvider:
 
     async def wrap_data_key(self, request: KeyWrapRequest) -> bytes:
         self._validate_handle(request.key)
-        payload = hashlib.sha256(request.associated_data).digest() + request.material.copy_bytes()
+        payload = (
+            hashlib.sha256(request.associated_data).digest()
+            + request.material.copy_bytes()
+        )
         result = self._run(
             (
                 self._executable,
@@ -135,11 +139,18 @@ class GPGKeyProvider:
             request.wrapped_data_key,
         )
         expected_digest = hashlib.sha256(request.associated_data).digest()
-        if result.returncode != 0 or len(result.stdout) != len(expected_digest) + KEY_BYTES:
-            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
+        if (
+            result.returncode != 0
+            or len(result.stdout) != len(expected_digest) + KEY_BYTES
+        ):
+            raise KeyProviderFailure(
+                self.provider_id, KeyProviderFailureCode.INVALID_KEY
+            )
         digest = result.stdout[: len(expected_digest)]
-        if not secrets_compare(digest, expected_digest):
-            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
+        if not secrets.compare_digest(digest, expected_digest):
+            raise KeyProviderFailure(
+                self.provider_id, KeyProviderFailureCode.INVALID_KEY
+            )
         return SecretKeyMaterial.from_bytes(result.stdout[len(expected_digest) :])
 
     async def rotate(self, request: KeyRotationRequest) -> KeyHandle:
@@ -170,10 +181,6 @@ class GPGKeyProvider:
 
     def _validate_handle(self, handle: KeyHandle) -> None:
         if handle != self._handle():
-            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
-
-
-def secrets_compare(left: bytes, right: bytes) -> bool:
-    import secrets
-
-    return secrets.compare_digest(left, right)
+            raise KeyProviderFailure(
+                self.provider_id, KeyProviderFailureCode.INVALID_KEY
+            )
