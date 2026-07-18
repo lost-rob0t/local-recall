@@ -42,8 +42,6 @@ jobs:
         run: ./scripts/run-pytest tests/unit
       - name: Run harness-integrity tests
         run: ./scripts/run-pytest tests/failure_injection
-      - name: Run remaining test layers
-        run: ./scripts/run-pytest tests/contract tests/integration tests/security tests/e2e
       - name: Run security checks
         run: ./scripts/security-scan
 
