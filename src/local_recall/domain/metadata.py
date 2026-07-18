@@ -3,11 +3,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TypeAlias
 
 from ._validation import require_aware, require_nonempty
 
-MetadataScalar: TypeAlias = str | int | float | bool | None
+type MetadataScalar = str | int | float | bool | None
 _FIELD_NAME = re.compile(r"^[a-z][a-z0-9_.-]{0,127}$")
 
 
