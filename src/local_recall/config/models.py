@@ -261,7 +261,32 @@ class ModelSettings(FrozenModel):
 class EncryptionSettings(FrozenModel):
     provider_id: str | None = Field(default=None, min_length=1, max_length=128)
     key_reference: CredentialReference | None = None
-    algorithm: str = Field(default="xchacha20-poly1305", min_length=1, max_length=128)
+    algorithm: Literal["xchacha20-poly1305-ietf"] = "xchacha20-poly1305-ietf"
+    fallback_provider_id: Literal["gpg"] | None = None
+    gpg_recipient: str | None = Field(default=None, min_length=1, max_length=512, repr=False)
+    gpg_executable: str = Field(default="gpg", min_length=1, max_length=4096)
+    gpg_timeout_seconds: float = Field(default=10.0, gt=0.0, le=120.0)
+
+    @field_validator("gpg_executable")
+    @classmethod
+    def validate_gpg_executable(cls, value: str) -> str:
+        if "\x00" in value or "\n" in value or "\r" in value:
+            raise ValueError("GPG executable path contains invalid characters")
+        if PurePath(value).name not in {"gpg", "gpg2"}:
+            raise ValueError("GPG executable must resolve to gpg or gpg2")
+        return value
+
+    @model_validator(mode="after")
+    def validate_fallback(self) -> EncryptionSettings:
+        if self.fallback_provider_id is None:
+            if self.gpg_recipient is not None:
+                raise ValueError("gpg_recipient requires fallback_provider_id = gpg")
+            return self
+        if self.provider_id == self.fallback_provider_id:
+            raise ValueError("encryption fallback provider must differ from primary provider")
+        if self.gpg_recipient is None:
+            raise ValueError("GPG fallback requires gpg_recipient")
+        return self
 
 
 class StorageSettings(FrozenModel):
