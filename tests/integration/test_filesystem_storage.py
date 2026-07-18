@@ -56,7 +56,9 @@ def test_interrupted_put_is_completed_by_recovery(
             raise OSError("synthetic interruption")
         real_replace(source, destination)
 
-    monkeypatch.setattr("local_recall.storage.filesystem.os.replace", fail_first_blob_publish)
+    monkeypatch.setattr(
+        "local_recall.storage.filesystem.os.replace", fail_first_blob_publish
+    )
     with pytest.raises(StorageFailure):
         asyncio.run(backend.put(envelope))
 
@@ -103,7 +105,9 @@ def test_time_range_query_supports_arbitrary_precise_intervals(tmp_path: Path) -
         )
     )
 
-    assert tuple(item.record_id for item in five_minute_window) == (four_minutes_ago.record_id,)
+    assert tuple(item.record_id for item in five_minute_window) == (
+        four_minutes_ago.record_id,
+    )
     assert five_minute_window[0].created_at == four_minutes_ago.created_at
     assert tuple(item.record_id for item in eighteen_hour_window) == (
         eighteen_hours_ago.record_id,
@@ -150,7 +154,9 @@ def test_delete_removes_record_without_claiming_secure_erase(tmp_path: Path) -> 
     asyncio.run(backend.put(envelope))
 
     result = asyncio.run(
-        backend.delete(DeleteRequest(record_id=envelope.record_id, reason_code="test-delete"))
+        backend.delete(
+            DeleteRequest(record_id=envelope.record_id, reason_code="test-delete")
+        )
     )
 
     assert result.deleted
