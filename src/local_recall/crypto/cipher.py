@@ -3,7 +3,9 @@ from __future__ import annotations
 import hmac
 import json
 import os
-from collections.abc import Mapping
+import threading
+from collections import deque
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
@@ -11,13 +13,13 @@ from uuid import UUID
 from nacl import bindings, exceptions
 
 from local_recall.config.models import EncryptionSettings
-from local_recall.domain.crypto import EncryptedRecordEnvelope, KeyPurpose, KeyRequest
+from local_recall.domain.crypto import EncryptedRecordEnvelope, KeyHandle, KeyPurpose, KeyRequest
 from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.pipeline.models import RedactedStageItem
 
-from .errors import AuthenticationFailed, EnvelopeFormatError, RotationError
+from .errors import AuthenticationFailed, CryptoError, EnvelopeFormatError, RotationError
 from .models import DecryptedRecordPayload, RewrapResult
-from .primitives import digest, key_wrap_aad, random_key, wipe
+from .primitives import digest, key_wrap_aad, wipe
 from .router import KeyProviderRouter
 
 ENVELOPE_SCHEMA_VERSION = 2
@@ -26,6 +28,9 @@ PAYLOAD_FORMAT = "frames-v1"
 _MAX_FRAMES = 64
 _MAX_PAYLOAD_BYTES = 256 * 1024 * 1024
 _NONCE_BYTES = bindings.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES
+_KEY_BYTES = bindings.crypto_aead_xchacha20poly1305_ietf_KEYBYTES
+_NONCE_GENERATION_ATTEMPTS = 3
+_NONCE_HISTORY_LIMIT = 4096
 
 
 class RecordCipher:
@@ -33,14 +38,24 @@ class RecordCipher:
         self,
         router: KeyProviderRouter,
         settings: EncryptionSettings,
+        *,
+        random_source: Callable[[int], bytes] | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._router = router
         self._settings = settings
+        self._random_source = random_source or os.urandom
+        self._clock = clock or _utc_now
+        self._nonce_lock = threading.RLock()
+        self._nonce_history: deque[tuple[str, str, int, bytes]] = deque()
+        self._seen_nonces: set[tuple[str, str, int, bytes]] = set()
         if settings.algorithm != ALGORITHM:
             raise ValueError("unsupported encryption algorithm")
 
     def encrypt(self, item: RedactedStageItem) -> EncryptedRecordEnvelope:
-        created_at = datetime.now(UTC)
+        created_at = self._clock()
+        if created_at.tzinfo is None or created_at.utcoffset() is None:
+            raise CryptoError("clock_not_timezone_aware", record_id=item.record_id)
         associated_data = _associated_data(
             record_id=str(item.record_id),
             generation=item.generation.value,
@@ -61,8 +76,8 @@ class RecordCipher:
                 ),
             ),
         )
-        data_key = random_key()
-        nonce = os.urandom(_NONCE_BYTES)
+        data_key = bytearray(self._random_bytes(_KEY_BYTES, item.record_id))
+        nonce = self._next_nonce(selection.key, item.record_id)
         try:
             plaintext = b"".join(item.frames)
             ciphertext = bindings.crypto_aead_xchacha20poly1305_ietf_encrypt(
@@ -177,6 +192,29 @@ class RecordCipher:
             used_fallback=target.used_fallback,
         )
 
+    def _random_bytes(self, length: int, record_id: UUID) -> bytes:
+        try:
+            value = self._random_source(length)
+        except Exception:
+            raise CryptoError("random_source_failure", record_id=record_id) from None
+        if len(value) != length:
+            raise CryptoError("random_source_length_invalid", record_id=record_id)
+        return bytes(value)
+
+    def _next_nonce(self, key: KeyHandle, record_id: UUID) -> bytes:
+        for _ in range(_NONCE_GENERATION_ATTEMPTS):
+            nonce = self._random_bytes(_NONCE_BYTES, record_id)
+            identity = (key.provider_id, key.key_id, key.version, nonce)
+            with self._nonce_lock:
+                if identity in self._seen_nonces:
+                    continue
+                self._seen_nonces.add(identity)
+                self._nonce_history.append(identity)
+                if len(self._nonce_history) > _NONCE_HISTORY_LIMIT:
+                    self._seen_nonces.discard(self._nonce_history.popleft())
+                return nonce
+        raise CryptoError("nonce_generation_failed", record_id=record_id)
+
 
 class _EnvelopeMetadata:
     def __init__(
@@ -189,6 +227,10 @@ class _EnvelopeMetadata:
         self.generation = generation
         self.configuration_revision = configuration_revision
         self.frame_sizes = frame_sizes
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _associated_data(
