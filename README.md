@@ -7,6 +7,23 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [v0.1 product requirements](docs/requirements.md)
 - [Threat model and privacy invariants](docs/threat-model.md)
 - [System architecture](docs/architecture.md)
-- [Architecture decision records](docs/adr/)
+- [Architecture decision records](docs/adr/README.md)
+- [Testing policy](docs/testing.md)
+
+## Development
+
+Requirements: Python 3.13+ and `uv`, or Nix with flakes enabled.
+
+```sh
+./scripts/check
+```
+
+The canonical command syncs the exact `requirements.lock` environment and runs formatting, linting, shell linting, strict type checking, all test layers, failure-propagation tests, repository policy checks, secret scanning, and source security scanning.
+
+```sh
+nix develop -c ./scripts/check
+```
+
+Development follows red → green → refactor. Required tests may not be skipped or marked expected-failure.
 
 Development is tracked through GitHub issues.

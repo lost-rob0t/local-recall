@@ -1,0 +1,6 @@
+import os
+import signal
+
+
+def test_process_signal() -> None:
+    os.kill(os.getpid(), signal.SIGTERM)
