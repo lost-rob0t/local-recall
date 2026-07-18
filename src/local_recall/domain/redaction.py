@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import StrEnum, auto
 from uuid import UUID
 
 from ._validation import require_nonempty
@@ -15,16 +15,16 @@ class RedactionTarget(StrEnum):
 
 
 class RedactionKind(StrEnum):
-    API_TOKEN = "api_token"
-    PASSWORD = "password"
-    USERNAME = "username"
-    PRIVATE_KEY = "private_key"
-    AUTHORIZATION_HEADER = "authorization_header"
-    CONNECTION_STRING = "connection_string"
-    HIGH_ENTROPY_SECRET = "high_entropy_secret"
-    EMAIL = "email"
-    CUSTOM_PATTERN = "custom_pattern"
-    POLICY = "policy"
+    API_TOKEN = auto()
+    PASSWORD = auto()
+    USERNAME = auto()
+    PRIVATE_KEY = auto()
+    AUTHORIZATION_HEADER = auto()
+    CONNECTION_STRING = auto()
+    HIGH_ENTROPY_SECRET = auto()
+    EMAIL = auto()
+    CUSTOM_PATTERN = auto()
+    POLICY = auto()
 
 
 class RedactionReason(StrEnum):
