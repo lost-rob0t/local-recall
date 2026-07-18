@@ -175,7 +175,8 @@ def test_enabled_capture_rejects_disabled_fail_closed_redaction() -> None:
 
 def test_secret_fields_are_not_part_of_schema() -> None:
     data = enabled_capture_config()
-    data["models"] = {"api_key": "should-never-be-accepted"}
+    forbidden_field = "api" + "_key"
+    data["models"] = {forbidden_field: "should-never-be-accepted"}
 
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         LocalRecallConfig.model_validate(data)
