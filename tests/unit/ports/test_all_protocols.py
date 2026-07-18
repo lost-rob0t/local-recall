@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from local_recall.domain.capture import CaptureDecision, CapturePolicyInput, MetadataRequest
-from local_recall.domain.crypto import KeyHandle, KeyRequest
+from local_recall.domain.crypto import KeyHandle, KeyRequest, SecretKeyMaterial
 from local_recall.domain.frames import OCRResult, RedactedRecord
 from local_recall.domain.metadata import ContextMetadata
 from local_recall.domain.providers import ProviderCapabilities, RoutingDecision, RoutingRequest
@@ -9,8 +9,12 @@ from local_recall.ports.clock import Clock
 from local_recall.ports.keys import (
     KeyDestructionRequest,
     KeyDestructionResult,
+    KeyHealthReport,
+    KeyHealthStatus,
     KeyProvider,
     KeyRotationRequest,
+    KeyUnwrapRequest,
+    KeyWrapRequest,
 )
 from local_recall.ports.metadata import MetadataSource
 from local_recall.ports.ocr import OCRProvider, OCRRequest
@@ -54,9 +58,14 @@ def test_protocol_annotations_resolve() -> None:
         RedactedRecord,
         KeyRequest,
         KeyHandle,
+        SecretKeyMaterial,
+        KeyHealthStatus,
+        KeyHealthReport,
         KeyRotationRequest,
         KeyDestructionRequest,
         KeyDestructionResult,
+        KeyWrapRequest,
+        KeyUnwrapRequest,
         OCRRequest,
         OCRResult,
         RoutingRequest,
