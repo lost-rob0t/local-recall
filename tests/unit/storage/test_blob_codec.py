@@ -3,13 +3,13 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from tests.storage_helpers import MemoryKeyProvider, make_envelope
 
 from local_recall.storage.codec import (
     CURRENT_STORAGE_SCHEMA_VERSION,
     EncryptedBlobCodec,
 )
 from local_recall.storage.errors import StorageFailure
-from tests.storage_helpers import MemoryKeyProvider, make_envelope
 
 
 def test_blob_codec_round_trip_hides_inner_envelope_fields() -> None:

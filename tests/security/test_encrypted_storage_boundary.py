@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from tests.storage_helpers import MemoryKeyProvider
 
 from local_recall.domain.crypto import EncryptedRecordEnvelope
 from local_recall.storage.filesystem import FilesystemStorageBackend
-from tests.storage_helpers import MemoryKeyProvider
 
 
 @pytest.mark.security
