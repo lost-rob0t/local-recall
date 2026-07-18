@@ -51,7 +51,7 @@ def test_interrupted_put_is_completed_by_recovery(
         destination: str | bytes | Path,
     ) -> None:
         nonlocal failed
-        if not failed and ".tmp-" in os.fspath(source):
+        if not failed and ".tmp-" in os.fsdecode(source):
             failed = True
             raise OSError("synthetic interruption")
         real_replace(source, destination)
