@@ -120,7 +120,9 @@ class FilesystemStorageBackend:
                     )
             except sqlite3.Error as exc:
                 temp_path.unlink(missing_ok=True)
-                raise StorageFailure(record_id, StorageFailureCode.CATALOG_FAILURE) from exc
+                raise StorageFailure(
+                    record_id, StorageFailureCode.CATALOG_FAILURE
+                ) from exc
             except OSError as exc:
                 raise StorageFailure(record_id, StorageFailureCode.IO_FAILURE) from exc
 
@@ -138,7 +140,9 @@ class FilesystemStorageBackend:
                         (str(record_id),),
                     )
             except sqlite3.Error as exc:
-                raise StorageFailure(record_id, StorageFailureCode.CATALOG_FAILURE) from exc
+                raise StorageFailure(
+                    record_id, StorageFailureCode.CATALOG_FAILURE
+                ) from exc
 
         return StoredRecordRef(
             record_id=record_id,
@@ -218,7 +222,9 @@ class FilesystemStorageBackend:
                     temp_path.unlink(missing_ok=True)
                 _fsync_directory(final_path.parent)
             except OSError as exc:
-                raise StorageFailure(request.record_id, StorageFailureCode.IO_FAILURE) from exc
+                raise StorageFailure(
+                    request.record_id, StorageFailureCode.IO_FAILURE
+                ) from exc
             try:
                 with self._connection:
                     self._connection.execute(
@@ -268,7 +274,9 @@ class FilesystemStorageBackend:
                 version = 0 if version_row is None else int(version_row[0])
                 if version > _CATALOG_SCHEMA_VERSION:
                     raise StorageFailure(None, StorageFailureCode.UNSUPPORTED_SCHEMA)
-                self._connection.execute(f"PRAGMA user_version = {_CATALOG_SCHEMA_VERSION}")
+                self._connection.execute(
+                    f"PRAGMA user_version = {_CATALOG_SCHEMA_VERSION}"
+                )
         except sqlite3.Error as exc:
             raise StorageFailure(None, StorageFailureCode.CATALOG_FAILURE) from exc
 
@@ -440,7 +448,9 @@ class FilesystemStorageBackend:
                         (str(record_id),),
                     )
             except sqlite3.Error as exc:
-                raise StorageFailure(record_id, StorageFailureCode.CATALOG_FAILURE) from exc
+                raise StorageFailure(
+                    record_id, StorageFailureCode.CATALOG_FAILURE
+                ) from exc
             except OSError as exc:
                 raise StorageFailure(record_id, StorageFailureCode.IO_FAILURE) from exc
 
@@ -476,7 +486,10 @@ class FilesystemStorageBackend:
                     SET state = 'quarantined', blob_token = ?, temp_token = NULL
                     WHERE record_id = ?
                     """,
-                    (quarantine_path.relative_to(self._root).as_posix(), str(record_id)),
+                    (
+                        quarantine_path.relative_to(self._root).as_posix(),
+                        str(record_id),
+                    ),
                 )
         except sqlite3.Error as exc:
             raise StorageFailure(record_id, StorageFailureCode.CATALOG_FAILURE) from exc
