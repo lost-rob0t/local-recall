@@ -13,7 +13,14 @@ from uuid import UUID
 from nacl.exceptions import CryptoError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from local_recall.crypto.bindings import KEY_BYTES, NONCE_BYTES, TAG_BYTES, decrypt, encrypt
+from local_recall.crypto.bindings import (
+    KEY_BYTES,
+    NONCE_BYTES,
+    TAG_BYTES,
+    decrypt,
+    encrypt,
+)
+from local_recall.crypto.errors import KeyProviderFailure
 from local_recall.domain.crypto import (
     EncryptedRecordEnvelope,
     KeyHandle,
@@ -91,8 +98,14 @@ class EncryptedBlobCodec:
     ) -> bytes:
         if not isinstance(envelope, EncryptedRecordEnvelope):
             raise TypeError("storage codec accepts EncryptedRecordEnvelope only")
-        if not _MIN_STORAGE_SCHEMA_VERSION <= storage_schema_version <= CURRENT_STORAGE_SCHEMA_VERSION:
-            raise StorageFailure(envelope.record_id, StorageFailureCode.UNSUPPORTED_SCHEMA)
+        if (
+            not _MIN_STORAGE_SCHEMA_VERSION
+            <= storage_schema_version
+            <= CURRENT_STORAGE_SCHEMA_VERSION
+        ):
+            raise StorageFailure(
+                envelope.record_id, StorageFailureCode.UNSUPPORTED_SCHEMA
+            )
 
         payload = _serialize_envelope(envelope)
         key = await self._key_provider.active_key(
@@ -123,8 +136,14 @@ class EncryptedBlobCodec:
             )
             header_bytes = _canonical_model_bytes(header)
             if len(header_bytes) > _MAX_HEADER_BYTES:
-                raise StorageFailure(envelope.record_id, StorageFailureCode.UNSUPPORTED_SCHEMA)
-            prefix = _MAGIC + len(header_bytes).to_bytes(_HEADER_SIZE_BYTES, "big") + header_bytes
+                raise StorageFailure(
+                    envelope.record_id, StorageFailureCode.UNSUPPORTED_SCHEMA
+                )
+            prefix = (
+                _MAGIC
+                + len(header_bytes).to_bytes(_HEADER_SIZE_BYTES, "big")
+                + header_bytes
+            )
             ciphertext = encrypt(payload, prefix, nonce, data_key.copy_bytes())
 
         blob = prefix + wrapped_data_key + nonce + ciphertext
@@ -141,11 +160,17 @@ class EncryptedBlobCodec:
         try:
             header, prefix, wrapped_data_key, nonce, ciphertext = _split_blob(blob)
             if header.record_id != expected_record_id:
-                raise StorageFailure(expected_record_id, StorageFailureCode.CORRUPT_RECORD)
+                raise StorageFailure(
+                    expected_record_id, StorageFailureCode.CORRUPT_RECORD
+                )
             if header.storage_schema_version > CURRENT_STORAGE_SCHEMA_VERSION:
-                raise StorageFailure(expected_record_id, StorageFailureCode.UNSUPPORTED_SCHEMA)
+                raise StorageFailure(
+                    expected_record_id, StorageFailureCode.UNSUPPORTED_SCHEMA
+                )
             if header.storage_schema_version < _MIN_STORAGE_SCHEMA_VERSION:
-                raise StorageFailure(expected_record_id, StorageFailureCode.UNSUPPORTED_SCHEMA)
+                raise StorageFailure(
+                    expected_record_id, StorageFailureCode.UNSUPPORTED_SCHEMA
+                )
             key = KeyHandle(
                 key_id=header.key_id,
                 provider_id=header.key_provider_id,
@@ -165,7 +190,9 @@ class EncryptedBlobCodec:
                 plaintext = decrypt(ciphertext, prefix, nonce, data_key.copy_bytes())
             envelope = _deserialize_envelope(plaintext)
             if envelope.record_id != expected_record_id:
-                raise StorageFailure(expected_record_id, StorageFailureCode.CORRUPT_RECORD)
+                raise StorageFailure(
+                    expected_record_id, StorageFailureCode.CORRUPT_RECORD
+                )
             return DecodedStoredRecord(
                 envelope=envelope,
                 storage_schema_version=header.storage_schema_version,
@@ -177,6 +204,7 @@ class EncryptedBlobCodec:
             raise
         except (
             CryptoError,
+            KeyProviderFailure,
             ValueError,
             ValidationError,
             UnicodeDecodeError,
@@ -202,7 +230,9 @@ def _split_blob(blob: bytes) -> tuple[_BlobHeader, bytes, bytes, bytes, bytes]:
     header_end = header_offset + header_size
     if header_end > len(blob):
         raise ValueError("truncated header")
-    raw = cast(dict[str, Any], json.loads(blob[header_offset:header_end].decode("utf-8")))
+    raw = cast(
+        dict[str, Any], json.loads(blob[header_offset:header_end].decode("utf-8"))
+    )
     header = _BlobHeader.model_validate(raw)
     if (
         header.format_version != _OUTER_FORMAT_VERSION
