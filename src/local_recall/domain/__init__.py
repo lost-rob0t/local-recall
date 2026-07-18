@@ -40,6 +40,7 @@ from .providers import (
 from .redaction import (
     PixelRegion,
     RedactionAction,
+    RedactionAllowlistDecision,
     RedactionFinding,
     RedactionKind,
     RedactionReason,
@@ -88,6 +89,7 @@ __all__ = [
     "RedactedFrame",
     "RedactedRecord",
     "RedactionAction",
+    "RedactionAllowlistDecision",
     "RedactionFinding",
     "RedactionKind",
     "RedactionReason",

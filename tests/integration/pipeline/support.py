@@ -2,8 +2,17 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
+from local_recall.domain.frames import PixelFormat, RawFrame
 from local_recall.domain.lifecycle import CaptureGeneration, TransitionReason
+from local_recall.domain.metadata import (
+    ContextField,
+    ContextMetadata,
+    MetadataProvenance,
+    SourceConfidence,
+)
 from local_recall.lifecycle.gate import CaptureGate
 from local_recall.pipeline import (
     AnalyzedStageItem,
@@ -13,6 +22,45 @@ from local_recall.pipeline import (
     RawStageItem,
     RedactedStageItem,
 )
+
+
+def provenance() -> tuple[MetadataProvenance, ...]:
+    return (
+        MetadataProvenance(
+            source_id="synthetic",
+            observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+            confidence=SourceConfidence(1.0),
+            adapter_revision="test-v1",
+        ),
+    )
+
+
+def metadata(*fields: tuple[str, str | int | float | bool | None]) -> ContextMetadata:
+    return ContextMetadata(
+        observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+        fields=tuple(ContextField(name, value, provenance()) for name, value in fields),
+    )
+
+
+def gray_frame(
+    *,
+    width: int,
+    height: int,
+    pixels: bytes,
+    frame_id: UUID | None = None,
+    context: ContextMetadata | None = None,
+) -> RawFrame:
+    return RawFrame(
+        frame_id=frame_id or uuid4(),
+        generation=CaptureGeneration(1),
+        captured_at=datetime(2026, 1, 1, tzinfo=UTC),
+        width=width,
+        height=height,
+        stride=width,
+        pixel_format=PixelFormat.GRAY8,
+        pixels=pixels,
+        metadata=context or metadata(("application", "synthetic")),
+    )
 
 
 def recording_gate() -> tuple[CaptureGate, CaptureGeneration]:

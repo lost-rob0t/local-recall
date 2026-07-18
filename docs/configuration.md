@@ -60,12 +60,27 @@ change_threshold = 0.02
 [metadata]
 enabled_sources = ["generic-xorg"]
 
+[ocr]
+provider_id = "tesseract-local"
+executable = "tesseract"
+languages = ["eng"]
+timeout_seconds = 10.0
+max_input_bytes = 67108864
+
 [redaction]
 enabled = true
 deterministic_required = true
 fail_on_uncertain = true
 model_assistance_enabled = false
 policy_revision = "builtin-v1"
+low_confidence_threshold = 0.6
+
+[redaction.entropy]
+enabled = true
+min_length = 20
+min_bits_per_character = 3.5
+hex_min_length = 32
+max_token_length = 512
 
 [rules]
 default_effect = "deny"
@@ -114,6 +129,16 @@ The bounded in-memory pipeline reads these capture settings:
 - `overload_policy` is `drop-newest` or `coalesce-latest`.
 
 Both queue limits are validated in the range 1–256. `coalesce-latest` permits at most one additional raw item in memory; it does not create a general-purpose queue. These fields are additive version-1 settings, so older version-1 files retain safe defaults without migration.
+
+## OCR and redaction
+
+The v0.1 OCR provider is fixed to `tesseract-local`. The configured executable must resolve to a binary named `tesseract`; language identifiers, input size, and timeout are validated. OCR uses standard input/output and does not require a temporary image file.
+
+Deterministic redaction is mandatory before encryption or persistence. The policy covers provider tokens, authorization headers, private keys, credentials and connection strings, email/user identity fields, configurable patterns, and measured high-entropy values. OCR below `low_confidence_threshold` is masked and replaced in full. Any invalid OCR region or policy failure rejects the record.
+
+Custom patterns are declared as `[[redaction.custom_patterns]]` with a safe identifier and regular expression. Allowlists are declared as `[[redaction.allowlists]]`; each entry names exactly one built-in detector ID or `custom:<pattern-id>` and contains at most sixteen exact values. Unknown targets are rejected. Effective-configuration inspection hides exact values, and runtime audit decisions contain a SHA-256 digest rather than the value.
+
+Model assistance may classify only after deterministic filtering and cannot be the sole redaction control. `privacy-strict` forbids model-assisted redaction entirely.
 
 ## Capture rules
 

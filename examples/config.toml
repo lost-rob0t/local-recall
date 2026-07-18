@@ -3,3 +3,25 @@ profile = "privacy-strict"
 
 [capture]
 enabled = false
+
+[ocr]
+provider_id = "tesseract-local"
+executable = "tesseract"
+languages = ["eng"]
+timeout_seconds = 10.0
+max_input_bytes = 67108864
+
+[redaction]
+enabled = true
+deterministic_required = true
+fail_on_uncertain = true
+model_assistance_enabled = false
+policy_revision = "builtin-v1"
+low_confidence_threshold = 0.6
+
+[redaction.entropy]
+enabled = true
+min_length = 20
+min_bits_per_character = 3.5
+hex_min_length = 32
+max_token_length = 512

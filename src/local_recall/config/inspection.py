@@ -16,6 +16,17 @@ def inspect_effective_configuration(configuration: LocalRecallConfig) -> dict[st
         rendered["credential_reference"] = _inspect_reference(provider.credential_reference)
         providers.append(rendered)
     result["models"]["remote_providers"] = providers
+
+    rendered_allowlists: list[dict[str, Any]] = []
+    for allowlist in configuration.redaction.allowlists:
+        rendered_allowlists.append(
+            {
+                "allowlist_id": allowlist.allowlist_id,
+                "pattern_id": allowlist.pattern_id,
+                "exact_values": f"<configured:{len(allowlist.exact_values)}>",
+            }
+        )
+    result["redaction"]["allowlists"] = rendered_allowlists
     return result
 
 

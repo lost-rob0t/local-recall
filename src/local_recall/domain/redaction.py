@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum, auto
 from uuid import UUID
@@ -16,6 +17,7 @@ class RedactionTarget(StrEnum):
 
 class RedactionKind(StrEnum):
     API_TOKEN = auto()
+    ACCESS_TOKEN = auto()
     PASSWORD = auto()
     USERNAME = auto()
     PRIVATE_KEY = auto()
@@ -102,3 +104,25 @@ class RedactionFinding:
             ):
                 raise ValueError("metadata findings require exactly one metadata field")
             require_nonempty(self.metadata_field, "metadata_field")
+
+
+@dataclass(frozen=True, slots=True)
+class RedactionAllowlistDecision:
+    decision_id: UUID
+    detector_id: str
+    allowlist_id: str
+    target: RedactionTarget
+    value_digest: str
+    metadata_field: str | None = None
+
+    def __post_init__(self) -> None:
+        require_nonempty(self.detector_id, "detector_id")
+        require_nonempty(self.allowlist_id, "allowlist_id")
+        if not re.fullmatch(r"[0-9a-f]{64}", self.value_digest):
+            raise ValueError("allowlist value digest must be lowercase SHA-256")
+        if self.target is RedactionTarget.METADATA:
+            if self.metadata_field is None:
+                raise ValueError("metadata allowlist decisions require a field name")
+            require_nonempty(self.metadata_field, "metadata_field")
+        elif self.metadata_field is not None:
+            raise ValueError("non-metadata allowlist decisions cannot include a field name")
