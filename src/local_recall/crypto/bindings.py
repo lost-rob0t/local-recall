@@ -8,9 +8,9 @@ from nacl import bindings
 EncryptFunction = Callable[[bytes, bytes, bytes, bytes], bytes]
 DecryptFunction = Callable[[bytes, bytes, bytes, bytes], bytes]
 
-KEY_BYTES = cast(int, bindings.crypto_aead_xchacha20poly1305_ietf_KEYBYTES)
-NONCE_BYTES = cast(int, bindings.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES)
-TAG_BYTES = cast(int, bindings.crypto_aead_xchacha20poly1305_ietf_ABYTES)
+KEY_BYTES = bindings.crypto_aead_xchacha20poly1305_ietf_KEYBYTES
+NONCE_BYTES = bindings.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES
+TAG_BYTES = bindings.crypto_aead_xchacha20poly1305_ietf_ABYTES
 
 encrypt = cast(EncryptFunction, bindings.crypto_aead_xchacha20poly1305_ietf_encrypt)
 decrypt = cast(DecryptFunction, bindings.crypto_aead_xchacha20poly1305_ietf_decrypt)
