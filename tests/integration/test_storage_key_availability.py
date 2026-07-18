@@ -6,13 +6,14 @@ from pathlib import Path
 import pytest
 
 from local_recall.crypto.errors import KeyProviderFailure, KeyProviderFailureCode
+from local_recall.domain.crypto import SecretKeyMaterial
 from local_recall.ports.keys import KeyUnwrapRequest
 from local_recall.storage import FilesystemStorageBackend
 from tests.storage_helpers import MemoryKeyProvider, make_envelope
 
 
 class LockedMemoryKeyProvider(MemoryKeyProvider):
-    async def unwrap_data_key(self, request: KeyUnwrapRequest):  # type: ignore[no-untyped-def]
+    async def unwrap_data_key(self, request: KeyUnwrapRequest) -> SecretKeyMaterial:
         del request
         raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.KEY_LOCKED)
 
