@@ -20,6 +20,7 @@ from local_recall.crypto.bindings import (
     decrypt,
     encrypt,
 )
+from local_recall.crypto.errors import KeyProviderFailure
 from local_recall.domain.crypto import (
     EncryptedRecordEnvelope,
     KeyHandle,
@@ -185,6 +186,7 @@ class EncryptedBlobCodec:
             raise
         except (
             CryptoError,
+            KeyProviderFailure,
             ValueError,
             ValidationError,
             UnicodeDecodeError,
