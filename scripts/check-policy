@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Reject false-green test paths, disabled tests, and unsafe fixture content."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+FALSE_GREEN_PATTERNS = {
+    "ignored shell failure": re.compile(r"\|\|\s*(?:true|:)(?:\s|$)"),
+    "disabled shell error handling": re.compile(r"(?:^|\n)\s*set\s+\+e(?:\s|$)"),
+    "unconditional shell success": re.compile(r"(?:^|\n)\s*exit\s+0(?:\s|$)"),
+    "GitHub Actions continue-on-error": re.compile(r"continue-on-error\s*:\s*true", re.I),
+    "failure-tolerant CI": re.compile(r"allow_failure\s*[:=]\s*true", re.I),
+    "pass with no tests": re.compile(r"pass-with-no-tests", re.I),
+}
+
+DISABLED_TEST_PATTERNS = {
+    "pytest skip marker": re.compile(r"pytest\.mark\.skip"),
+    "pytest expected failure": re.compile(r"pytest\.mark\.xfail"),
+    "imperative pytest skip": re.compile(r"pytest\.skip\s*\("),
+    "unittest skip": re.compile(r"unittest\.skip"),
+}
+
+FIXTURE_LEAK_PATTERNS = {
+    "Unix home path": re.compile(r"/home/[^/\s]+/"),
+    "macOS home path": re.compile(r"/Users/[^/\s]+/"),
+    "Windows home path": re.compile(r"[A-Za-z]:\\\\Users\\\\[^\\\s]+\\\\"),
+    "private key": re.compile(r"BEGIN [A-Z ]*PRIVATE KEY"),
+    "AWS access key": re.compile(r"AKIA[0-9A-Z]{16}"),
+    "GitHub token": re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
+}
+
+
+def _candidate_files() -> list[Path]:
+    files: set[Path] = set()
+    for base in (ROOT / "scripts", ROOT / ".github" / "workflows"):
+        if base.exists():
+            files.update(path for path in base.rglob("*") if path.is_file())
+    return sorted(files)
+
+
+def main() -> int:
+    findings: list[str] = []
+
+    for path in _candidate_files():
+        if path == Path(__file__).resolve():
+            continue
+        text = path.read_text(encoding="utf-8")
+        relative = path.relative_to(ROOT)
+        for label, pattern in FALSE_GREEN_PATTERNS.items():
+            if pattern.search(text):
+                findings.append(f"{relative}: {label}")
+
+    for path in sorted((ROOT / "tests").rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        relative = path.relative_to(ROOT)
+        for label, pattern in DISABLED_TEST_PATTERNS.items():
+            if pattern.search(text):
+                findings.append(f"{relative}: {label}")
+
+    fixtures = ROOT / "tests" / "fixtures"
+    if fixtures.exists():
+        for path in sorted(candidate for candidate in fixtures.rglob("*") if candidate.is_file()):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            relative = path.relative_to(ROOT)
+            for label, pattern in FIXTURE_LEAK_PATTERNS.items():
+                if pattern.search(text):
+                    findings.append(f"{relative}: {label}")
+
+    workflow_dir = ROOT / ".github" / "workflows"
+    if workflow_dir.exists():
+        for path in workflow_dir.glob("*.yml"):
+            text = path.read_text(encoding="utf-8")
+            if "actions/upload-artifact" in text:
+                findings.append(f"{path.relative_to(ROOT)}: artifact upload is prohibited")
+
+    if findings:
+        print("repository policy violations:")
+        for finding in findings:
+            print(f"- {finding}")
+        return 1
+
+    print("repository policy checks passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

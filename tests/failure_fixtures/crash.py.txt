@@ -1,0 +1,5 @@
+import os
+
+
+def test_process_crash() -> None:
+    os._exit(17)

@@ -1,0 +1,11 @@
+import pytest
+
+
+@pytest.fixture
+def broken_teardown():
+    yield
+    raise RuntimeError("deliberate teardown failure")
+
+
+def test_teardown_failure(broken_teardown) -> None:
+    assert True

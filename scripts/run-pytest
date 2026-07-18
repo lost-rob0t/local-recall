@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONHASHSEED=0
+
+uv run --no-sync pytest "$@" 2>&1 | cat

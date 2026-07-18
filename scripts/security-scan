@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+./scripts/check-policy
+uv run --no-sync bandit --quiet --recursive src
+mapfile -d '' tracked_files < <(git ls-files -z)
+uv run --no-sync detect-secrets-hook --baseline .secrets.baseline "${tracked_files[@]}"

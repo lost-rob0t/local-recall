@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install locked dependencies
+        run: ./scripts/bootstrap
+      - name: Check formatting
+        run: uv run --no-sync ruff format --check .
+      - name: Check Python lint
+        run: uv run --no-sync ruff check .
+      - name: Check shell scripts
+        run: uv run --no-sync shellcheck scripts/bootstrap scripts/check scripts/test scripts/run-pytest scripts/security-scan
+      - name: Check static types
+        run: uv run --no-sync pyright
+      - name: Run unit tests
+        run: ./scripts/run-pytest tests/unit
+      - name: Run security checks
+        run: ./scripts/security-scan
+
+  failure-propagation:
+    name: Failure propagation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+      - name: Install locked dependencies
+        run: ./scripts/bootstrap
+      - name: Verify known failures remain non-zero
+        run: ./scripts/verify-failure-modes
