@@ -15,6 +15,8 @@
           default = pkgs.mkShell {
             packages = with pkgs; [
               git
+              gnupg
+              libsecret
               libsodium
               pkg-config
               python314
