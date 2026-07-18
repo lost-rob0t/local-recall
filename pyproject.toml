@@ -12,6 +12,7 @@ authors = [{ name = "lost-rob0t" }]
 dependencies = [
   "pydantic>=2.11,<3",
   "pykka>=4.4,<5",
+  "pynacl>=1.6.2,<2",
   "pyzmq>=27,<28",
   "typer>=0.16,<1",
 ]
