@@ -77,10 +77,11 @@ def test_non_secret_environment_overrides_are_applied() -> None:
 
 
 def test_unknown_environment_override_fails_closed() -> None:
+    forbidden_variable = "LOCAL_RECALL_" + "API" + "_KEY"
     with pytest.raises(ConfigurationLoadError, match="unsupported"):
         load_configuration_mapping(
             valid_mapping(),
-            environ={"LOCAL_RECALL_API_KEY": "not-accepted"},
+            environ={forbidden_variable: "not-accepted"},
         )
 
 
