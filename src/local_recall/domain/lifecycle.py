@@ -20,6 +20,7 @@ class CaptureState(StrEnum):
 
 class TransitionReason(StrEnum):
     USER_START = "user_start"
+    STARTUP_OPT_IN = "startup_opt_in"
     USER_STOP = "user_stop"
     USER_PAUSE = "user_pause"
     USER_RESUME = "user_resume"
@@ -44,9 +45,14 @@ class CaptureGeneration:
 
 
 _ALLOWED_TRANSITIONS: dict[CaptureState, frozenset[CaptureState]] = {
-    CaptureState.OFF: frozenset({CaptureState.STARTING}),
+    CaptureState.OFF: frozenset({CaptureState.STARTING, CaptureState.FAULTED}),
     CaptureState.STARTING: frozenset(
-        {CaptureState.RECORDING, CaptureState.OFF, CaptureState.FAULTED}
+        {
+            CaptureState.RECORDING,
+            CaptureState.STOPPING,
+            CaptureState.OFF,
+            CaptureState.FAULTED,
+        }
     ),
     CaptureState.RECORDING: frozenset(
         {
@@ -61,7 +67,6 @@ _ALLOWED_TRANSITIONS: dict[CaptureState, frozenset[CaptureState]] = {
             CaptureState.RECORDING,
             CaptureState.PRIVACY,
             CaptureState.STOPPING,
-            CaptureState.OFF,
             CaptureState.FAULTED,
         }
     ),
@@ -70,7 +75,6 @@ _ALLOWED_TRANSITIONS: dict[CaptureState, frozenset[CaptureState]] = {
             CaptureState.RECORDING,
             CaptureState.PAUSED,
             CaptureState.STOPPING,
-            CaptureState.OFF,
             CaptureState.FAULTED,
         }
     ),
