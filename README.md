@@ -11,6 +11,7 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [Domain models and strategy contracts](docs/domain-contracts.md)
 - [Configuration and privacy profiles](docs/configuration.md)
 - [Capture lifecycle and hard gate](docs/lifecycle.md)
+- [Bounded in-memory capture pipeline](docs/pipeline.md)
 - [Testing policy](docs/testing.md)
 
 ## Development
