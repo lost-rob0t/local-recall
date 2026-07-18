@@ -10,8 +10,10 @@ readme = "README.md"
 requires-python = ">=3.14,<3.15"
 authors = [{ name = "lost-rob0t" }]
 dependencies = [
+  "keyring[recommended]>=25,<26",
   "pydantic>=2.11,<3",
   "pykka>=4.4,<5",
+  "pynacl>=1.5,<2",
   "pyzmq>=27,<28",
   "typer>=0.16,<1",
 ]
