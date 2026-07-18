@@ -2,10 +2,32 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
+from pathlib import PurePath
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 CURRENT_SCHEMA_VERSION = 1
+
+_BUILTIN_REDACTION_PATTERN_IDS = frozenset(
+    {
+        "private-key",
+        "authorization-header",
+        "aws-access-key",
+        "github-token",
+        "slack-token",
+        "stripe-secret",
+        "google-api-key",
+        "jwt",
+        "password-assignment",
+        "username-assignment",
+        "generic-token-assignment",
+        "credentialed-connection-string",
+        "account-key-connection-string",
+        "email-address",
+        "high-entropy",
+    }
+)
 
 
 class PrivacyProfile(StrEnum):
@@ -93,12 +115,111 @@ class MetadataSettings(FrozenModel):
         return normalized
 
 
+class OCRSettings(FrozenModel):
+    provider_id: Literal["tesseract-local"] = "tesseract-local"
+    executable: str = Field(default="tesseract", min_length=1, max_length=4096)
+    languages: tuple[str, ...] = ("eng",)
+    timeout_seconds: float = Field(default=10.0, gt=0.0, le=120.0)
+    max_input_bytes: int = Field(default=64 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
+
+    @field_validator("executable")
+    @classmethod
+    def validate_executable(cls, value: str) -> str:
+        if "\x00" in value or "\n" in value or "\r" in value:
+            raise ValueError("OCR executable path contains invalid characters")
+        if PurePath(value).name != "tesseract":
+            raise ValueError("OCR executable must resolve to the tesseract binary")
+        return value
+
+    @field_validator("languages")
+    @classmethod
+    def validate_languages(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value:
+            raise ValueError("at least one OCR language is required")
+        normalized = tuple(language.strip() for language in value)
+        if any(not re.fullmatch(r"[A-Za-z0-9_+-]{1,32}", language) for language in normalized):
+            raise ValueError("OCR language identifiers are invalid")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("OCR language identifiers must be unique")
+        return normalized
+
+
+class HighEntropySettings(FrozenModel):
+    enabled: bool = True
+    min_length: int = Field(default=20, ge=12, le=256)
+    min_bits_per_character: float = Field(default=3.5, ge=2.0, le=6.0)
+    hex_min_length: int = Field(default=32, ge=16, le=512)
+    max_token_length: int = Field(default=512, ge=32, le=4096)
+
+    @model_validator(mode="after")
+    def validate_lengths(self) -> HighEntropySettings:
+        if self.max_token_length < self.min_length:
+            raise ValueError("max_token_length must be at least min_length")
+        if self.max_token_length < self.hex_min_length:
+            raise ValueError("max_token_length must be at least hex_min_length")
+        return self
+
+
+class CustomRedactionPattern(FrozenModel):
+    pattern_id: str = Field(min_length=1, max_length=112, pattern=r"^[a-z][a-z0-9_.-]*$")
+    pattern: str = Field(min_length=1, max_length=2048, repr=False)
+
+    @field_validator("pattern")
+    @classmethod
+    def validate_pattern(cls, value: str) -> str:
+        try:
+            re.compile(value)
+        except re.error as exc:
+            raise ValueError("custom redaction pattern must be a valid regular expression") from exc
+        return value
+
+
+class RedactionAllowlist(FrozenModel):
+    allowlist_id: str = Field(min_length=1, max_length=128, pattern=r"^[a-z][a-z0-9_.-]*$")
+    pattern_id: str = Field(min_length=1, max_length=120, pattern=r"^[a-z][a-z0-9_.:-]*$")
+    exact_values: tuple[str, ...] = Field(min_length=1, max_length=16, repr=False)
+
+    @field_validator("exact_values")
+    @classmethod
+    def validate_exact_values(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not item or len(item) > 256 for item in value):
+            raise ValueError("allowlist values must be non-empty and at most 256 characters")
+        if len(set(value)) != len(value):
+            raise ValueError("allowlist values must be unique")
+        return value
+
+
 class RedactionSettings(FrozenModel):
     enabled: bool = True
     deterministic_required: bool = True
     fail_on_uncertain: bool = True
     model_assistance_enabled: bool = False
-    policy_revision: str = Field(default="builtin-v1", min_length=1, max_length=128)
+    policy_revision: str = Field(default="builtin-v1", pattern=r"^[A-Za-z0-9_.:-]{1,128}$")
+    low_confidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    entropy: HighEntropySettings = HighEntropySettings()
+    custom_patterns: tuple[CustomRedactionPattern, ...] = ()
+    allowlists: tuple[RedactionAllowlist, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_pattern_sets(self) -> RedactionSettings:
+        pattern_ids = tuple(pattern.pattern_id for pattern in self.custom_patterns)
+        if len(set(pattern_ids)) != len(pattern_ids):
+            raise ValueError("custom redaction pattern identifiers must be unique")
+        allowlist_ids = tuple(item.allowlist_id for item in self.allowlists)
+        if len(set(allowlist_ids)) != len(allowlist_ids):
+            raise ValueError("redaction allowlist identifiers must be unique")
+        pairs = tuple((item.pattern_id, item.exact_values) for item in self.allowlists)
+        if len(set(pairs)) != len(pairs):
+            raise ValueError("duplicate redaction allowlists are not allowed")
+        known_patterns = _BUILTIN_REDACTION_PATTERN_IDS | {
+            f"custom:{pattern_id}" for pattern_id in pattern_ids
+        }
+        unknown_patterns = sorted({item.pattern_id for item in self.allowlists} - known_patterns)
+        if unknown_patterns:
+            raise ValueError("redaction allowlist references an unknown pattern")
+        if self.model_assistance_enabled and not self.deterministic_required:
+            raise ValueError("model-assisted redaction requires deterministic filters")
+        return self
 
 
 class RetentionSettings(FrozenModel):
@@ -161,6 +282,7 @@ class LocalRecallConfig(FrozenModel):
     capture: CaptureSettings = CaptureSettings()
     rules: RuleSettings = RuleSettings()
     metadata: MetadataSettings = MetadataSettings()
+    ocr: OCRSettings = OCRSettings()
     redaction: RedactionSettings = RedactionSettings()
     retention: RetentionSettings = RetentionSettings()
     models: ModelSettings = ModelSettings()

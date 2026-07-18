@@ -19,6 +19,7 @@
               pkg-config
               python314
               shellcheck
+              tesseract4
               uv
               zeromq
             ];

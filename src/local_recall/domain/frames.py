@@ -8,7 +8,7 @@ from uuid import UUID
 from ._validation import require_aware, require_nonempty
 from .lifecycle import CaptureGeneration
 from .metadata import ContextMetadata, SourceConfidence
-from .redaction import PixelRegion, RedactionFinding
+from .redaction import PixelRegion, RedactionAllowlistDecision, RedactionFinding
 
 
 class PixelFormat(StrEnum):
@@ -111,6 +111,7 @@ class RedactedFrame:
     ocr_text: tuple[str, ...] = field(repr=False)
     findings: tuple[RedactionFinding, ...]
     policy_revision: str
+    allowlist_decisions: tuple[RedactionAllowlistDecision, ...] = ()
 
     def __post_init__(self) -> None:
         _validate_frame(
@@ -129,6 +130,7 @@ class RedactedFrame:
             f"captured_at={self.captured_at!r}, dimensions={self.width}x{self.height}, "
             f"pixel_format={self.pixel_format.value!r}, pixel_bytes={len(self.pixels)}, "
             f"ocr_blocks={len(self.ocr_text)}, findings={len(self.findings)}, "
+            f"allowlist_decisions={len(self.allowlist_decisions)}, "
             f"policy_revision={self.policy_revision!r})"
         )
 
