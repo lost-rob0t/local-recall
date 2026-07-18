@@ -28,8 +28,20 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - name: Run canonical checks
-        run: ./scripts/check
+      - name: Install locked dependencies
+        run: ./scripts/bootstrap
+      - name: Check formatting
+        run: uv run --no-sync ruff format --check .
+      - name: Check Python lint
+        run: uv run --no-sync ruff check .
+      - name: Check shell scripts
+        run: uv run --no-sync shellcheck scripts/bootstrap scripts/check scripts/test scripts/run-pytest scripts/security-scan
+      - name: Check static types
+        run: uv run --no-sync pyright
+      - name: Run test suite
+        run: ./scripts/test
+      - name: Run security checks
+        run: ./scripts/security-scan
 
   failure-propagation:
     name: Failure propagation
