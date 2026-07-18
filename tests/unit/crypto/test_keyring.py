@@ -115,4 +115,4 @@ def test_locked_keyring_fails_closed_without_backend_details() -> None:
         asyncio.run(provider.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True)))
 
     assert captured.value.code is KeyProviderFailureCode.KEY_LOCKED
-    assert "locked" not in str(captured.value)
+    assert str(captured.value) == "key provider os-keyring: key_locked"
