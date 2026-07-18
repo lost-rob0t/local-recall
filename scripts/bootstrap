@@ -4,5 +4,5 @@ set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-uv venv --python 3.13 --allow-existing
+uv venv --python 3.14 --allow-existing
 uv pip sync requirements.lock
