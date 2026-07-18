@@ -7,6 +7,7 @@ from uuid import UUID
 class StorageFailureCode(StrEnum):
     INVALID_TYPE = "invalid_type"
     INVALID_RECORD_ID = "invalid_record_id"
+    INVALID_CONFIGURATION = "invalid_configuration"
     UNSAFE_ROOT = "unsafe_root"
     DUPLICATE_RECORD = "duplicate_record"
     QUOTA_EXCEEDED = "quota_exceeded"
