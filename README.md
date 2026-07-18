@@ -12,7 +12,7 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 
 ## Development
 
-Requirements: Python 3.13+ and `uv`, or Nix with flakes enabled.
+Requirements: CPython 3.14.x and `uv`, or Nix with flakes enabled.
 
 ```sh
 ./scripts/check
