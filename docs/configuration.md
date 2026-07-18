@@ -52,7 +52,9 @@ profile = "local-only"
 enabled = true
 cadence_seconds = 15.0
 screenshots_enabled = true
+raw_queue_items = 1
 max_queue_items = 32
+overload_policy = "drop-newest"
 change_threshold = 0.02
 
 [metadata]
@@ -102,6 +104,16 @@ root_directory = "~/.local/share/local-recall"
 ```
 
 The `reference` fields identify entries managed by a key provider. They are not secret values. Effective-configuration inspection replaces reference names with `<configured>`.
+
+## Capture pipeline bounds
+
+The bounded in-memory pipeline reads these capture settings:
+
+- `raw_queue_items` controls the raw `inproc://` edge and defaults to `1`;
+- `max_queue_items` controls each later stage edge and defaults to `32`;
+- `overload_policy` is `drop-newest` or `coalesce-latest`.
+
+Both queue limits are validated in the range 1–256. `coalesce-latest` permits at most one additional raw item in memory; it does not create a general-purpose queue. These fields are additive version-1 settings, so older version-1 files retain safe defaults without migration.
 
 ## Capture rules
 

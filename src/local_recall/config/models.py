@@ -19,6 +19,11 @@ class RuleEffect(StrEnum):
     DENY = "deny"
 
 
+class CaptureOverloadPolicy(StrEnum):
+    DROP_NEWEST = "drop-newest"
+    COALESCE_LATEST = "coalesce-latest"
+
+
 class FrozenModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=False)
 
@@ -68,7 +73,9 @@ class CaptureSettings(FrozenModel):
     enabled: bool = False
     cadence_seconds: float = Field(default=15.0, ge=1.0, le=3600.0)
     screenshots_enabled: bool = True
+    raw_queue_items: int = Field(default=1, ge=1, le=256)
     max_queue_items: int = Field(default=32, ge=1, le=256)
+    overload_policy: CaptureOverloadPolicy = CaptureOverloadPolicy.DROP_NEWEST
     change_threshold: float = Field(default=0.02, ge=0.0, le=1.0)
 
 
