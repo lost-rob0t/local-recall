@@ -41,9 +41,7 @@ class KeyProviderRegistry:
                 _failure_code(primary_health.status),
             )
         if explicit_fallback_provider_id == primary_provider_id:
-            raise KeyProviderFailure(
-                primary_provider_id, KeyProviderFailureCode.INVALID_KEY
-            )
+            raise KeyProviderFailure(primary_provider_id, KeyProviderFailureCode.INVALID_KEY)
 
         fallback = self._require_provider(explicit_fallback_provider_id)
         fallback_health = await fallback.health(request)

@@ -106,9 +106,7 @@ class EncryptedRecordEnvelope:
         if self.schema_version <= 0:
             raise ValueError("envelope schema version must be positive")
         require_nonempty(self.algorithm, "algorithm")
-        if not self.plaintext_frame_sizes or any(
-            size <= 0 for size in self.plaintext_frame_sizes
-        ):
+        if not self.plaintext_frame_sizes or any(size <= 0 for size in self.plaintext_frame_sizes):
             raise ValueError("plaintext frame sizes must be positive")
         require_nonempty_bytes(self.wrapped_data_key, "wrapped_data_key")
         require_nonempty_bytes(self.nonce, "nonce")

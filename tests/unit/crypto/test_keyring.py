@@ -60,19 +60,13 @@ def test_health_reports_missing_and_ready_keys() -> None:
 
 def test_keyring_wrap_and_unwrap_round_trip() -> None:
     provider = OSKeyringProvider(MemoryBackend())
-    key = asyncio.run(
-        provider.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True))
-    )
+    key = asyncio.run(provider.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True)))
     material = SecretKeyMaterial.from_bytes(bytes(range(32)))
     wrapped = asyncio.run(
-        provider.wrap_data_key(
-            KeyWrapRequest(key, material, b"synthetic-associated-data")
-        )
+        provider.wrap_data_key(KeyWrapRequest(key, material, b"synthetic-associated-data"))
     )
     recovered = asyncio.run(
-        provider.unwrap_data_key(
-            KeyUnwrapRequest(key, wrapped, b"synthetic-associated-data")
-        )
+        provider.unwrap_data_key(KeyUnwrapRequest(key, wrapped, b"synthetic-associated-data"))
     )
 
     assert recovered.copy_bytes() == bytes(range(32))
@@ -86,9 +80,7 @@ def test_rotation_keeps_old_version_available_until_revoked() -> None:
         provider.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True))
     )
     material = SecretKeyMaterial.from_bytes(bytes(range(32)))
-    wrapped = asyncio.run(
-        provider.wrap_data_key(KeyWrapRequest(original, material, b"rewrap-aad"))
-    )
+    wrapped = asyncio.run(provider.wrap_data_key(KeyWrapRequest(original, material, b"rewrap-aad")))
     rotated = asyncio.run(provider.rotate(KeyRotationRequest(original, "scheduled")))
     recovered = asyncio.run(
         provider.unwrap_data_key(KeyUnwrapRequest(original, wrapped, b"rewrap-aad"))
@@ -102,9 +94,7 @@ def test_rotation_keeps_old_version_available_until_revoked() -> None:
 
 def test_revoked_key_can_no_longer_unwrap() -> None:
     provider = OSKeyringProvider(MemoryBackend())
-    key = asyncio.run(
-        provider.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True))
-    )
+    key = asyncio.run(provider.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True)))
     material = SecretKeyMaterial.from_bytes(bytes(range(32)))
     wrapped = asyncio.run(provider.wrap_data_key(KeyWrapRequest(key, material, b"aad")))
     result = asyncio.run(provider.destroy(KeyDestructionRequest(key, "revocation")))
@@ -122,9 +112,7 @@ def test_locked_keyring_fails_closed_without_backend_details() -> None:
     provider = OSKeyringProvider(backend)
 
     with pytest.raises(KeyProviderFailure) as captured:
-        asyncio.run(
-            provider.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True))
-        )
+        asyncio.run(provider.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True)))
 
     assert captured.value.code is KeyProviderFailureCode.KEY_LOCKED
     assert "locked" not in str(captured.value)

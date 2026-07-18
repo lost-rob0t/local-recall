@@ -60,9 +60,7 @@ class EnvelopeEncryptionStageProcessor:
                 )
             )
         except KeyProviderFailure as exc:
-            raise EncryptionFailure(
-                item.record_id, EncryptionFailureCode.KEY_UNAVAILABLE
-            ) from exc
+            raise EncryptionFailure(item.record_id, EncryptionFailureCode.KEY_UNAVAILABLE) from exc
         envelope = asyncio.run(
             self._cipher.encrypt_frames(
                 record_id=item.record_id,

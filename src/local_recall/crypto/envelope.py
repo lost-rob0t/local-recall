@@ -64,9 +64,7 @@ class EnvelopeCipher:
                 provider,
             )
         except KeyProviderFailure as exc:
-            raise EncryptionFailure(
-                record_id, EncryptionFailureCode.KEY_UNAVAILABLE
-            ) from exc
+            raise EncryptionFailure(record_id, EncryptionFailureCode.KEY_UNAVAILABLE) from exc
         finally:
             plaintext[:] = b"\x00" * len(plaintext)
 
@@ -168,9 +166,7 @@ async def _encrypt_payload(
     aad_digest: bytes,
     provider: KeyProvider,
 ) -> tuple[KeyHandle, bytes, bytes, bytes]:
-    key_handle = await provider.active_key(
-        KeyRequest(KeyPurpose.RECORD, create_if_missing=True)
-    )
+    key_handle = await provider.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True))
     with SecretKeyMaterial.random(KEY_BYTES) as data_key:
         wrapped_data_key = await provider.wrap_data_key(
             KeyWrapRequest(
@@ -194,14 +190,10 @@ def _validated_associated_data_digest(envelope: EncryptedRecordEnvelope) -> byte
         envelope.schema_version != ENVELOPE_SCHEMA_VERSION
         or envelope.algorithm != ENVELOPE_ALGORITHM
     ):
-        raise EncryptionFailure(
-            envelope.record_id, EncryptionFailureCode.AUTHENTICATION_FAILED
-        )
+        raise EncryptionFailure(envelope.record_id, EncryptionFailureCode.AUTHENTICATION_FAILED)
     aad_digest = hashlib.sha256(_associated_data_from_envelope(envelope)).digest()
     if not secrets.compare_digest(aad_digest, envelope.associated_data_digest):
-        raise EncryptionFailure(
-            envelope.record_id, EncryptionFailureCode.AUTHENTICATION_FAILED
-        )
+        raise EncryptionFailure(envelope.record_id, EncryptionFailureCode.AUTHENTICATION_FAILED)
     return aad_digest
 
 

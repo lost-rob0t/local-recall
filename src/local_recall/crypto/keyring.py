@@ -105,9 +105,7 @@ class OSKeyringProvider:
                 self._service_name, self._active_username(request.purpose.value)
             )
         except KeyringBackendLocked as exc:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.KEY_LOCKED
-            ) from exc
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.KEY_LOCKED) from exc
         except Exception as exc:
             raise KeyProviderFailure(
                 self.provider_id, KeyProviderFailureCode.PROVIDER_UNAVAILABLE
@@ -115,17 +113,13 @@ class OSKeyringProvider:
 
         if active is None:
             if not request.create_if_missing:
-                raise KeyProviderFailure(
-                    self.provider_id, KeyProviderFailureCode.KEY_NOT_FOUND
-                )
+                raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.KEY_NOT_FOUND)
             return self._create_initial(request)
 
         try:
             version = int(active)
         except ValueError as exc:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            ) from exc
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY) from exc
         handle = self._handle(request.purpose.value, version)
         with self._load_master(handle):
             return handle
@@ -143,9 +137,7 @@ class OSKeyringProvider:
 
     async def unwrap_data_key(self, request: KeyUnwrapRequest) -> SecretKeyMaterial:
         if len(request.wrapped_data_key) <= NONCE_BYTES:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            )
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
         nonce = request.wrapped_data_key[:NONCE_BYTES]
         ciphertext = request.wrapped_data_key[NONCE_BYTES:]
         with self._load_master(request.key) as master:
@@ -176,20 +168,12 @@ class OSKeyringProvider:
         self._validate_handle(request.key)
         purpose = self._purpose_from_handle(request.key)
         try:
-            self._backend.delete_password(
-                self._service_name, self._material_username(request.key)
-            )
-            active = self._backend.get_password(
-                self._service_name, self._active_username(purpose)
-            )
+            self._backend.delete_password(self._service_name, self._material_username(request.key))
+            active = self._backend.get_password(self._service_name, self._active_username(purpose))
             if active == str(request.key.version):
-                self._backend.delete_password(
-                    self._service_name, self._active_username(purpose)
-                )
+                self._backend.delete_password(self._service_name, self._active_username(purpose))
         except KeyringBackendLocked as exc:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.KEY_LOCKED
-            ) from exc
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.KEY_LOCKED) from exc
         except Exception as exc:
             raise KeyProviderFailure(
                 self.provider_id, KeyProviderFailureCode.PROVIDER_UNAVAILABLE
@@ -205,13 +189,9 @@ class OSKeyringProvider:
     def _store_master(self, handle: KeyHandle, material: bytes) -> None:
         encoded = base64.b64encode(material).decode("ascii")
         try:
-            self._backend.set_password(
-                self._service_name, self._material_username(handle), encoded
-            )
+            self._backend.set_password(self._service_name, self._material_username(handle), encoded)
         except KeyringBackendLocked as exc:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.KEY_LOCKED
-            ) from exc
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.KEY_LOCKED) from exc
         except Exception as exc:
             raise KeyProviderFailure(
                 self.provider_id, KeyProviderFailureCode.PROVIDER_UNAVAILABLE
@@ -223,9 +203,7 @@ class OSKeyringProvider:
                 self._service_name, self._active_username(purpose), str(version)
             )
         except KeyringBackendLocked as exc:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.KEY_LOCKED
-            ) from exc
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.KEY_LOCKED) from exc
         except Exception as exc:
             raise KeyProviderFailure(
                 self.provider_id, KeyProviderFailureCode.PROVIDER_UNAVAILABLE
@@ -238,61 +216,43 @@ class OSKeyringProvider:
                 self._service_name, self._material_username(handle)
             )
         except KeyringBackendLocked as exc:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.KEY_LOCKED
-            ) from exc
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.KEY_LOCKED) from exc
         except Exception as exc:
             raise KeyProviderFailure(
                 self.provider_id, KeyProviderFailureCode.PROVIDER_UNAVAILABLE
             ) from exc
         if encoded is None:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.KEY_NOT_FOUND
-            )
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.KEY_NOT_FOUND)
         try:
             material = base64.b64decode(encoded, validate=True)
         except (ValueError, binascii.Error) as exc:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            ) from exc
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY) from exc
         if len(material) != KEY_BYTES:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            )
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
         return SecretKeyMaterial.from_bytes(material)
 
     def _validate_handle(self, handle: KeyHandle) -> None:
         if handle.provider_id != self.provider_id:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            )
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
         self._purpose_from_handle(handle)
 
     def _purpose_from_handle(self, handle: KeyHandle) -> str:
         suffix = "-master"
         if not handle.key_id.endswith(suffix):
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            )
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
         purpose = handle.key_id[: -len(suffix)]
         try:
             return KeyPurpose(purpose).value
         except ValueError as exc:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            ) from exc
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY) from exc
 
     def _handle(self, purpose: str, version: int) -> KeyHandle:
         try:
             validated_purpose = KeyPurpose(purpose).value
         except ValueError as exc:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            ) from exc
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY) from exc
         if version <= 0:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            )
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
         return KeyHandle(f"{validated_purpose}-master", self.provider_id, version)
 
     @staticmethod

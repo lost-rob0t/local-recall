@@ -104,9 +104,7 @@ def test_wrong_master_key_fails_authentication() -> None:
     first = OSKeyringProvider(MemoryKeyringBackend())
     second = OSKeyringProvider(MemoryKeyringBackend())
     cipher, _, envelope = encrypt_fixture(first)
-    asyncio.run(
-        second.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True))
-    )
+    asyncio.run(second.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True)))
 
     with pytest.raises(EncryptionFailure) as captured:
         asyncio.run(cipher.decrypt_frames(envelope, second))
@@ -117,9 +115,7 @@ def test_wrong_master_key_fails_authentication() -> None:
 def test_rotation_rewraps_data_key_without_changing_ciphertext() -> None:
     provider = OSKeyringProvider(MemoryKeyringBackend())
     cipher, item, envelope = encrypt_fixture(provider)
-    rotated = asyncio.run(
-        provider.rotate(KeyRotationRequest(envelope.key, "scheduled-rotation"))
-    )
+    rotated = asyncio.run(provider.rotate(KeyRotationRequest(envelope.key, "scheduled-rotation")))
     assert rotated.version == envelope.key.version + 1
 
     rewrapped = asyncio.run(
