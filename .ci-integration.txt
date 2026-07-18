@@ -1,0 +1,122 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.6, pytest-8.4.2, pluggy-1.6.0
+rootdir: /home/runner/work/local-recall/local-recall
+configfile: pyproject.toml
+plugins: hypothesis-6.156.6, timeout-2.4.0
+timeout: 10.0s
+timeout method: thread
+timeout func_only: False
+collected 8 items
+
+tests/integration/pipeline/test_in_memory_pipeline.py ...                [ 37%]
+tests/integration/pipeline/test_redaction_pipeline.py ..                 [ 62%]
+tests/integration/test_encryption_stage.py F..                           [100%]
+
+=================================== FAILURES ===================================
+___________ test_redacted_stage_encrypts_before_persistence_boundary ___________
+
+self = <local_recall.crypto.processor.EnvelopeEncryptionStageProcessor object at 0x7f8babf8acf0>
+item = RedactedStageItem(record_id=UUID('62e509f9-647a-4318-8708-1bb1bb937cef'), generation=CaptureGeneration(value=3), stage='redacted', frame_sizes=(15, 13))
+cancellation = <local_recall.pipeline.cancellation.PipelineCancellationToken object at 0x7f8babfcea80>
+
+    def process(
+        self,
+        item: RedactedStageItem,
+        cancellation: PipelineCancellationToken,
+    ) -> EncryptedStageItem:
+        if cancellation.cancelled:
+            raise EncryptionFailure(item.record_id, EncryptionFailureCode.CANCELLED)
+        try:
+>           selection = asyncio.run(
+                self._registry.select(
+                    self._primary_provider_id,
+                    KeyRequest(KeyPurpose.RECORD, create_if_missing=True),
+                    explicit_fallback_provider_id=self._explicit_fallback_provider_id,
+                )
+            )
+
+src/local_recall/crypto/processor.py:55: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/hostedtoolcache/Python/3.14.6/x64/lib/python3.14/asyncio/runners.py:205: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/hostedtoolcache/Python/3.14.6/x64/lib/python3.14/asyncio/runners.py:128: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/hostedtoolcache/Python/3.14.6/x64/lib/python3.14/asyncio/base_events.py:719: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <local_recall.crypto.registry.KeyProviderRegistry object at 0x7f8babf8a120>
+primary_provider_id = 'os-keyring'
+request = KeyRequest(purpose=<KeyPurpose.RECORD: 'record'>, create_if_missing=True)
+
+    async def select(
+        self,
+        primary_provider_id: str,
+        request: KeyRequest,
+        *,
+        explicit_fallback_provider_id: str | None = None,
+    ) -> KeyProviderSelection:
+        primary = self._require_provider(primary_provider_id)
+        primary_health = await primary.health(request)
+        if primary_health.ready:
+            return KeyProviderSelection(primary, used_explicit_fallback=False)
+    
+        if explicit_fallback_provider_id is None:
+>           raise KeyProviderFailure(
+                primary_provider_id,
+                _failure_code(primary_health.status),
+            )
+E           local_recall.crypto.errors.KeyProviderFailure: key provider os-keyring: provider_unavailable
+
+src/local_recall/crypto/registry.py:39: KeyProviderFailure
+
+The above exception was the direct cause of the following exception:
+
+    def test_redacted_stage_encrypts_before_persistence_boundary() -> None:
+        provider = OSKeyringProvider(MemoryBackend())
+        processor = EnvelopeEncryptionStageProcessor(
+            KeyProviderRegistry((provider,)),
+            primary_provider_id=provider.provider_id,
+            clock=FixedClock(),
+        )
+        item = redacted_item()
+        token = PipelineCancellationToken(item.generation, threading.Event())
+    
+>       encrypted_item = processor.process(item, token)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_encryption_stage.py:66: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <local_recall.crypto.processor.EnvelopeEncryptionStageProcessor object at 0x7f8babf8acf0>
+item = RedactedStageItem(record_id=UUID('62e509f9-647a-4318-8708-1bb1bb937cef'), generation=CaptureGeneration(value=3), stage='redacted', frame_sizes=(15, 13))
+cancellation = <local_recall.pipeline.cancellation.PipelineCancellationToken object at 0x7f8babfcea80>
+
+    def process(
+        self,
+        item: RedactedStageItem,
+        cancellation: PipelineCancellationToken,
+    ) -> EncryptedStageItem:
+        if cancellation.cancelled:
+            raise EncryptionFailure(item.record_id, EncryptionFailureCode.CANCELLED)
+        try:
+            selection = asyncio.run(
+                self._registry.select(
+                    self._primary_provider_id,
+                    KeyRequest(KeyPurpose.RECORD, create_if_missing=True),
+                    explicit_fallback_provider_id=self._explicit_fallback_provider_id,
+                )
+            )
+        except KeyProviderFailure as exc:
+>           raise EncryptionFailure(item.record_id, EncryptionFailureCode.KEY_UNAVAILABLE) from exc
+E           local_recall.crypto.errors.EncryptionFailure: record 62e509f9-647a-4318-8708-1bb1bb937cef: encryption failure (key_unavailable)
+
+src/local_recall/crypto/processor.py:63: EncryptionFailure
+=========================== short test summary info ============================
+FAILED tests/integration/test_encryption_stage.py::test_redacted_stage_encrypts_before_persistence_boundary - local_recall.crypto.errors.EncryptionFailure: record 62e509f9-647a-4318-8708-1bb1bb937cef: encryption failure (key_unavailable)
+========================= 1 failed, 7 passed in 1.93s ==========================
+
+exit_status=1
