@@ -261,7 +261,22 @@ class ModelSettings(FrozenModel):
 class EncryptionSettings(FrozenModel):
     provider_id: str | None = Field(default=None, min_length=1, max_length=128)
     key_reference: CredentialReference | None = None
+    fallback_key_reference: CredentialReference | None = None
     algorithm: str = Field(default="xchacha20-poly1305", min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_key_provider_references(self) -> EncryptionSettings:
+        if self.key_reference is not None and self.provider_id != self.key_reference.provider_id:
+            raise ValueError("encryption provider_id must match key_reference provider_id")
+        fallback = self.fallback_key_reference
+        if fallback is not None:
+            if fallback.provider_id != "gpg":
+                raise ValueError("encryption fallback_key_reference must use gpg")
+            if self.key_reference is None or self.provider_id is None:
+                raise ValueError("encryption fallback requires a primary key provider")
+            if fallback == self.key_reference:
+                raise ValueError("encryption fallback must differ from the primary key reference")
+        return self
 
 
 class StorageSettings(FrozenModel):
