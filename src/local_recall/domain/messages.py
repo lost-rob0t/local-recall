@@ -2,14 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Generic, TypeVar
 from uuid import UUID
 
 from ._validation import require_aware, require_nonempty
 from .lifecycle import CaptureGeneration
 from .privacy import PrivacyClass
-
-PayloadT = TypeVar("PayloadT", covariant=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,13 +33,13 @@ class MessageHeader:
 
 
 @dataclass(frozen=True, slots=True)
-class MessageEnvelope(Generic[PayloadT]):
+class MessageEnvelope[PayloadT]:
     header: MessageHeader
     payload: PayloadT
 
 
 @dataclass(frozen=True, slots=True)
-class EventEnvelope(Generic[PayloadT]):
+class EventEnvelope[PayloadT]:
     event_id: UUID
     event_type: str
     occurred_at: datetime
