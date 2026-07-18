@@ -26,7 +26,11 @@ from local_recall.ports.keys import (
 class MemoryKeyProvider:
     def __init__(self, master_key: bytes = b"K" * 32) -> None:
         self._master_key = master_key
-        self._handle = KeyHandle(key_id="memory-index-key", provider_id=self.provider_id, version=1)
+        self._handle = KeyHandle(
+            key_id="memory-index-key",
+            provider_id=self.provider_id,
+            version=1,
+        )
 
     @property
     def provider_id(self) -> str:
@@ -44,7 +48,11 @@ class MemoryKeyProvider:
         material = request.material.copy_bytes()
         stream = _expand(self._master_key, len(material))
         wrapped = bytes(left ^ right for left, right in zip(material, stream, strict=True))
-        tag = hmac.new(self._master_key, request.associated_data + material, hashlib.sha256).digest()
+        tag = hmac.new(
+            self._master_key,
+            request.associated_data + material,
+            hashlib.sha256,
+        ).digest()
         return wrapped + tag
 
     async def unwrap_data_key(self, request: KeyUnwrapRequest) -> SecretKeyMaterial:
