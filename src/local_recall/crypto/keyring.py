@@ -86,9 +86,7 @@ class OSKeyringProvider:
 
     async def health(self, request: KeyRequest) -> KeyHealthReport:
         try:
-            key = await self.active_key(
-                KeyRequest(purpose=request.purpose, create_if_missing=False)
-            )
+            key = await self.active_key(request)
         except KeyProviderFailure as exc:
             status = {
                 KeyProviderFailureCode.KEY_LOCKED: KeyHealthStatus.LOCKED,
