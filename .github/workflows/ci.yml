@@ -13,35 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  format-autofix:
-    name: Canonical current GPG formatting
-    if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-      - uses: astral-sh/setup-uv@v6
-      - name: Install locked dependencies
-        run: ./scripts/bootstrap
-      - name: Apply pinned Ruff formatting
-        run: |
-          uv run --no-sync ruff format src/local_recall/crypto/gpg.py tests/unit/crypto/test_gpg_and_registry.py
-          if git diff --quiet; then
-            echo "Formatting already canonical"
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src/local_recall/crypto/gpg.py tests/unit/crypto/test_gpg_and_registry.py
-            git commit -m "Apply canonical current GPG formatting"
-            git push origin HEAD:${{ github.head_ref }}
-          fi
-
   checks:
     name: Checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
