@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedClass=false
 from __future__ import annotations
 
 import hashlib
