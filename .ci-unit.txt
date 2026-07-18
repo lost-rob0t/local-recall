@@ -15,7 +15,7 @@ tests/unit/config/test_pipeline_settings.py ...                          [ 23%]
 tests/unit/config/test_redaction_settings.py ....                        [ 25%]
 tests/unit/crypto/test_envelope.py ......                                [ 30%]
 tests/unit/crypto/test_gpg_and_registry.py ...                           [ 32%]
-tests/unit/crypto/test_keyring.py ....F                                  [ 35%]
+tests/unit/crypto/test_keyring.py .....                                  [ 35%]
 tests/unit/domain/test_capture.py ..                                     [ 37%]
 tests/unit/domain/test_crypto.py ...                                     [ 39%]
 tests/unit/domain/test_frames_and_redaction.py ......                    [ 43%]
@@ -39,32 +39,6 @@ tests/unit/redaction/test_policy.py ....                                 [ 95%]
 tests/unit/redaction/test_tesseract.py ...                               [ 97%]
 tests/unit/test_package.py ...                                           [100%]
 
-=================================== FAILURES ===================================
-___________ test_locked_keyring_fails_closed_without_backend_details ___________
+============================= 143 passed in 2.79s ==============================
 
-    def test_locked_keyring_fails_closed_without_backend_details() -> None:
-        backend = MemoryBackend()
-        backend.locked = True
-        provider = OSKeyringProvider(backend)
-    
-        with pytest.raises(KeyProviderFailure) as captured:
-            asyncio.run(provider.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True)))
-    
-        assert captured.value.code is KeyProviderFailureCode.KEY_LOCKED
->       assert "locked" not in str(captured.value)
-E       AssertionError: assert 'locked' not in 'key provide...: key_locked'
-E         
-E         'locked' is contained here:
-E           key provider os-keyring: key_locked
-E         ?                              ++++++
-
-tests/unit/crypto/test_keyring.py:118: AssertionError
-=========================== short test summary info ============================
-FAILED tests/unit/crypto/test_keyring.py::test_locked_keyring_fails_closed_without_backend_details - AssertionError: assert 'locked' not in 'key provide...: key_locked'
-  
-  'locked' is contained here:
-    key provider os-keyring: key_locked
-  ?                              ++++++
-======================== 1 failed, 142 passed in 1.68s =========================
-
-exit_status=1
+exit_status=0
