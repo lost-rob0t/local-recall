@@ -46,8 +46,16 @@ jobs:
         run: ./scripts/run-pytest tests/integration
       - name: Run security tests
         run: ./scripts/run-pytest tests/security
-      - name: Run security checks
-        run: ./scripts/security-scan
+      - name: Check repository policy
+        run: ./scripts/check-policy
+      - name: Run Bandit
+        run: uv run --no-sync bandit --quiet --recursive src
+      - name: Scan tracked files for secrets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -d '' tracked_files < <(git ls-files -z)
+          uv run --no-sync detect-secrets-hook --baseline .secrets.baseline "${tracked_files[@]}"
 
   failure-propagation:
     name: Failure propagation
