@@ -13,6 +13,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  format-diagnostics:
+    name: Format diagnostic (${{ matrix.group }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: config
+            paths: src/local_recall/config tests/unit/config
+          - group: crypto-source
+            paths: src/local_recall/crypto src/local_recall/domain/crypto.py src/local_recall/ports/keys.py src/local_recall/domain/__init__.py src/local_recall/ports/__init__.py
+          - group: crypto-tests
+            paths: tests/unit/crypto tests/integration/test_encryption_stage.py tests/unit/domain/test_crypto.py tests/unit/ports/test_all_protocols.py tests/contract/test_reusable_suites.py
+          - group: remaining
+            paths: src tests scripts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+      - name: Install locked dependencies
+        run: ./scripts/bootstrap
+      - name: Check selected formatting
+        run: uv run --no-sync ruff format --check ${{ matrix.paths }}
+
   checks:
     name: Checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
