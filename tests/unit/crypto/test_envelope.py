@@ -15,9 +15,14 @@ from local_recall.crypto import (
     decode_encrypted_stage,
     encode_encrypted_stage,
 )
-from local_recall.domain.crypto import KeyRequest
+from local_recall.domain.crypto import (
+    EncryptedRecordEnvelope,
+    KeyPurpose,
+    KeyRequest,
+)
 from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.pipeline.models import RedactedStageItem
+from local_recall.ports.keys import KeyRotationRequest
 
 
 class MemoryKeyringBackend:
@@ -36,7 +41,7 @@ class MemoryKeyringBackend:
 
 def encrypt_fixture(
     provider: OSKeyringProvider,
-) -> tuple[EnvelopeCipher, RedactedStageItem, object]:
+) -> tuple[EnvelopeCipher, RedactedStageItem, EncryptedRecordEnvelope]:
     cipher = EnvelopeCipher()
     item = RedactedStageItem(
         record_id=uuid4(),
@@ -99,7 +104,7 @@ def test_wrong_master_key_fails_authentication() -> None:
     first = OSKeyringProvider(MemoryKeyringBackend())
     second = OSKeyringProvider(MemoryKeyringBackend())
     cipher, _, envelope = encrypt_fixture(first)
-    asyncio.run(second.active_key(KeyRequest(envelope.key.key_id.split("-")[0], True)))
+    asyncio.run(second.active_key(KeyRequest(KeyPurpose.RECORD, create_if_missing=True)))
 
     with pytest.raises(EncryptionFailure) as captured:
         asyncio.run(cipher.decrypt_frames(envelope, second))
@@ -111,12 +116,7 @@ def test_rotation_rewraps_data_key_without_changing_ciphertext() -> None:
     provider = OSKeyringProvider(MemoryKeyringBackend())
     cipher, item, envelope = encrypt_fixture(provider)
     rotated = asyncio.run(
-        provider.rotate(
-            __import__("local_recall.ports.keys", fromlist=["KeyRotationRequest"]).KeyRotationRequest(
-                envelope.key,
-                "scheduled-rotation",
-            )
-        )
+        provider.rotate(KeyRotationRequest(envelope.key, "scheduled-rotation"))
     )
     assert rotated.version == envelope.key.version + 1
 
