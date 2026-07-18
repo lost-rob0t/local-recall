@@ -5,7 +5,11 @@ from collections.abc import Iterable
 from local_recall.config.models import CredentialReference, EncryptionSettings
 from local_recall.domain.crypto import KeyHandle, KeyPurpose, KeyRequest
 
-from .errors import KeyProviderInvalid, KeyProviderLocked, KeyProviderUnavailable
+from .errors import (
+    KeyProviderInvalid,
+    KeyProviderLocked,
+    KeyProviderUnavailable,
+)
 from .models import KeyProviderSelection, KeyProviderState, WrappingKeyProvider
 
 
