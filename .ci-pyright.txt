@@ -1,7 +1,0 @@
-/home/runner/work/local-recall/local-recall/src/local_recall/crypto/bindings.py
-  /home/runner/work/local-recall/local-recall/src/local_recall/crypto/bindings.py:11:13 - error: Unnecessary "cast" call; type is already "int" (reportUnnecessaryCast)
-  /home/runner/work/local-recall/local-recall/src/local_recall/crypto/bindings.py:12:15 - error: Unnecessary "cast" call; type is already "int" (reportUnnecessaryCast)
-  /home/runner/work/local-recall/local-recall/src/local_recall/crypto/bindings.py:13:13 - error: Unnecessary "cast" call; type is already "int" (reportUnnecessaryCast)
-3 errors, 0 warnings, 0 informations
-
-exit_status=1
