@@ -116,7 +116,10 @@ class GPGKeyProvider:
 
     async def wrap_data_key(self, request: KeyWrapRequest) -> bytes:
         self._validate_handle(request.key)
-        payload = hashlib.sha256(request.associated_data).digest() + request.material.copy_bytes()
+        payload = (
+            hashlib.sha256(request.associated_data).digest()
+            + request.material.copy_bytes()
+        )
         result = await self._run(
             (
                 self._executable,
@@ -143,7 +146,10 @@ class GPGKeyProvider:
             request.wrapped_data_key,
         )
         expected_digest = hashlib.sha256(request.associated_data).digest()
-        if result.returncode != 0 or len(result.stdout) != len(expected_digest) + KEY_BYTES:
+        if (
+            result.returncode != 0
+            or len(result.stdout) != len(expected_digest) + KEY_BYTES
+        ):
             raise KeyProviderFailure(
                 self.provider_id, KeyProviderFailureCode.INVALID_KEY
             )
