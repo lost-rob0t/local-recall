@@ -4,7 +4,10 @@ import asyncio
 
 import pytest
 
-from local_recall.storage.codec import CURRENT_STORAGE_SCHEMA_VERSION, EncryptedBlobCodec
+from local_recall.storage.codec import (
+    CURRENT_STORAGE_SCHEMA_VERSION,
+    EncryptedBlobCodec,
+)
 from local_recall.storage.errors import StorageFailure
 from tests.storage_helpers import MemoryKeyProvider, make_envelope
 
