@@ -1,1 +1,2 @@
-"""Storage failures."""
+class StorageFailure(RuntimeError):
+    pass
