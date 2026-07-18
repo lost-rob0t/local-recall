@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from local_recall.domain.crypto import EncryptedRecordEnvelope, KeyHandle
 from local_recall.domain.frames import RedactedRecord
 
-RecordT = TypeVar("RecordT", bound=RedactedRecord)
-
 
 @dataclass(frozen=True, slots=True)
-class EncryptionRequest(Generic[RecordT]):
+class EncryptionRequest[RecordT: RedactedRecord]:
     record: RecordT
     key: KeyHandle
     schema_version: int
