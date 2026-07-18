@@ -28,7 +28,9 @@ def test_filesystem_storage_round_trip_and_plaintext_inspection(tmp_path: Path) 
 
     assert stored.record_id == envelope.record_id
     assert loaded == envelope
-    persisted = b"".join(path.read_bytes() for path in (tmp_path / "store").rglob("*") if path.is_file())
+    persisted = b"".join(
+        path.read_bytes() for path in (tmp_path / "store").rglob("*") if path.is_file()
+    )
     assert envelope.configuration_revision.encode() not in persisted
     assert envelope.ciphertext not in persisted
     assert envelope.created_at.isoformat().encode() not in persisted
@@ -44,7 +46,10 @@ def test_interrupted_put_is_completed_by_recovery(
     real_replace = os.replace
     failed = False
 
-    def fail_first_blob_publish(source: str | bytes | Path, destination: str | bytes | Path) -> None:
+    def fail_first_blob_publish(
+        source: str | bytes | Path,
+        destination: str | bytes | Path,
+    ) -> None:
         nonlocal failed
         if not failed and ".tmp-" in os.fspath(source):
             failed = True
@@ -61,29 +66,49 @@ def test_interrupted_put_is_completed_by_recovery(
     assert asyncio.run(reopened.get(envelope.record_id)) == envelope
 
 
-def test_time_range_query_decrypts_only_coarse_day_candidates(tmp_path: Path) -> None:
+def test_time_range_query_supports_arbitrary_precise_intervals(tmp_path: Path) -> None:
     provider = MemoryKeyProvider()
     backend = FilesystemStorageBackend(tmp_path / "store", provider)
-    first = make_envelope(created_at=datetime(2026, 7, 17, 23, 59, tzinfo=UTC))
-    second = make_envelope(
-        record_id=UUID("4de4d64d-556d-4184-b284-78afcd4f98e1"),
-        created_at=datetime(2026, 7, 18, 0, 1, tzinfo=UTC),
+    eighteen_hours_ago = make_envelope(
+        record_id=UUID("3b832319-4182-49dd-a3f3-fc73674ac829"),
+        created_at=datetime(2026, 7, 17, 18, 0, 0, tzinfo=UTC),
     )
-    asyncio.run(backend.put(first))
-    asyncio.run(backend.put(second))
+    six_minutes_ago = make_envelope(
+        record_id=UUID("4de4d64d-556d-4184-b284-78afcd4f98e1"),
+        created_at=datetime(2026, 7, 18, 11, 54, 0, tzinfo=UTC),
+    )
+    four_minutes_ago = make_envelope(
+        record_id=UUID("a0a4abcf-c7f1-47d5-a6ea-a5993b609ffe"),
+        created_at=datetime(2026, 7, 18, 11, 56, 0, tzinfo=UTC),
+    )
+    for envelope in (eighteen_hours_ago, six_minutes_ago, four_minutes_ago):
+        asyncio.run(backend.put(envelope))
 
-    matches = asyncio.run(
+    five_minute_window = asyncio.run(
         backend.list_time_range(
             TimeRangeQuery(
-                start_at=datetime(2026, 7, 18, tzinfo=UTC),
-                end_at=datetime(2026, 7, 19, tzinfo=UTC),
+                start_at=datetime(2026, 7, 18, 11, 55, 0, tzinfo=UTC),
+                end_at=datetime(2026, 7, 18, 12, 0, 0, tzinfo=UTC),
+                limit=10,
+            )
+        )
+    )
+    eighteen_hour_window = asyncio.run(
+        backend.list_time_range(
+            TimeRangeQuery(
+                start_at=datetime(2026, 7, 17, 17, 59, 30, tzinfo=UTC),
+                end_at=datetime(2026, 7, 17, 18, 0, 30, tzinfo=UTC),
                 limit=10,
             )
         )
     )
 
-    assert tuple(item.record_id for item in matches) == (second.record_id,)
-    assert matches[0].created_at == second.created_at
+    assert tuple(item.record_id for item in five_minute_window) == (four_minutes_ago.record_id,)
+    assert five_minute_window[0].created_at == four_minutes_ago.created_at
+    assert tuple(item.record_id for item in eighteen_hour_window) == (
+        eighteen_hours_ago.record_id,
+    )
+    assert eighteen_hour_window[0].created_at == eighteen_hours_ago.created_at
 
 
 def test_quota_rejection_is_fail_closed(tmp_path: Path) -> None:
