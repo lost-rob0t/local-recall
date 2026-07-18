@@ -14,6 +14,7 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [Bounded in-memory capture pipeline](docs/pipeline.md)
 - [Local OCR and deterministic redaction](docs/redaction.md)
 - [Authenticated encryption and key providers](docs/encryption.md)
+- [Encrypted storage and precise time retrieval](docs/storage.md)
 - [Testing policy](docs/testing.md)
 
 ## Development
