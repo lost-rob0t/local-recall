@@ -114,7 +114,10 @@ class RoutingDecision:
     def __post_init__(self) -> None:
         require_nonempty(self.provider_id, "provider_id")
         require_nonempty(self.reason_code, "reason_code")
-        if self.location is ProviderLocation.REMOTE:
-            if self.egress_authorization_id is None:
-                raise ValueError("remote routing requires explicit egress authorization")
+        if (
+            self.location is ProviderLocation.REMOTE
+            and self.egress_authorization_id is None
+        ):
+            raise ValueError("remote routing requires explicit egress authorization")
+        if self.egress_authorization_id is not None:
             require_nonempty(self.egress_authorization_id, "egress_authorization_id")
