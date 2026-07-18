@@ -10,7 +10,12 @@ from local_recall.crypto import (
     KeyProviderFailure,
     KeyProviderRegistry,
 )
-from local_recall.domain.crypto import KeyHandle, KeyPurpose, KeyRequest, SecretKeyMaterial
+from local_recall.domain.crypto import (
+    KeyHandle,
+    KeyPurpose,
+    KeyRequest,
+    SecretKeyMaterial,
+)
 from local_recall.ports.keys import (
     KeyDestructionRequest,
     KeyDestructionResult,
@@ -90,7 +95,9 @@ def test_gpg_associated_data_mismatch_is_rejected() -> None:
     provider = GPGKeyProvider("synthetic-recipient", runner=FakeGPGRunner())
     key = asyncio.run(provider.active_key(KeyRequest(KeyPurpose.RECORD)))
     material = SecretKeyMaterial.from_bytes(bytes(range(32)))
-    wrapped = asyncio.run(provider.wrap_data_key(KeyWrapRequest(key, material, b"first")))
+    wrapped = asyncio.run(
+        provider.wrap_data_key(KeyWrapRequest(key, material, b"first"))
+    )
 
     with pytest.raises(KeyProviderFailure):
         asyncio.run(provider.unwrap_data_key(KeyUnwrapRequest(key, wrapped, b"second")))
