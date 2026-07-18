@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import importlib
 import secrets
 from typing import Protocol, cast
@@ -9,6 +10,7 @@ from nacl.exceptions import CryptoError
 
 from local_recall.domain.crypto import (
     KeyHandle,
+    KeyPurpose,
     KeyRequest,
     SecretKeyMaterial,
 )
@@ -158,9 +160,10 @@ class OSKeyringProvider:
         self._validate_handle(request.current)
         with self._load_master(request.current):
             next_version = request.current.version + 1
-        handle = self._handle(self._purpose_from_handle(request.current), next_version)
+        purpose = self._purpose_from_handle(request.current)
+        handle = self._handle(purpose, next_version)
         self._store_master(handle, secrets.token_bytes(KEY_BYTES))
-        self._set_active(self._purpose_from_handle(handle), next_version)
+        self._set_active(purpose, next_version)
         return handle
 
     async def destroy(self, request: KeyDestructionRequest) -> KeyDestructionResult:
@@ -232,7 +235,7 @@ class OSKeyringProvider:
             raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.KEY_NOT_FOUND)
         try:
             material = base64.b64decode(encoded, validate=True)
-        except ValueError as exc:
+        except (ValueError, binascii.Error) as exc:
             raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY) from exc
         if len(material) != KEY_BYTES:
             raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
@@ -248,14 +251,19 @@ class OSKeyringProvider:
         if not handle.key_id.endswith(suffix):
             raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
         purpose = handle.key_id[: -len(suffix)]
-        if not purpose:
-            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
-        return purpose
+        try:
+            return KeyPurpose(purpose).value
+        except ValueError as exc:
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY) from exc
 
     def _handle(self, purpose: str, version: int) -> KeyHandle:
+        try:
+            validated_purpose = KeyPurpose(purpose).value
+        except ValueError as exc:
+            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY) from exc
         if version <= 0:
             raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
-        return KeyHandle(f"{purpose}-master", self.provider_id, version)
+        return KeyHandle(f"{validated_purpose}-master", self.provider_id, version)
 
     @staticmethod
     def _active_username(purpose: str) -> str:
