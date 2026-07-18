@@ -22,6 +22,9 @@ from local_recall.ports.keys import (
     KeyWrapRequest,
 )
 
+_DEFAULT_RECORD_ID = UUID("2eb1204a-6c45-4da5-a7fb-88fa0c10a111")
+_DEFAULT_CREATED_AT = datetime(2026, 7, 18, 12, 34, 56, 123456, tzinfo=UTC)
+
 
 class MemoryKeyProvider:
     def __init__(self, master_key: bytes = b"K" * 32) -> None:
@@ -85,8 +88,8 @@ class MemoryKeyProvider:
 
 def make_envelope(
     *,
-    record_id: UUID = UUID("2eb1204a-6c45-4da5-a7fb-88fa0c10a111"),
-    created_at: datetime = datetime(2026, 7, 18, 12, 34, 56, 123456, tzinfo=UTC),
+    record_id: UUID = _DEFAULT_RECORD_ID,
+    created_at: datetime = _DEFAULT_CREATED_AT,
 ) -> EncryptedRecordEnvelope:
     return EncryptedRecordEnvelope(
         record_id=record_id,
