@@ -120,7 +120,9 @@ class OCRSettings(FrozenModel):
     executable: str = Field(default="tesseract", min_length=1, max_length=4096)
     languages: tuple[str, ...] = ("eng",)
     timeout_seconds: float = Field(default=10.0, gt=0.0, le=120.0)
-    max_input_bytes: int = Field(default=64 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
+    max_input_bytes: int = Field(
+        default=64 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024
+    )
 
     @field_validator("executable")
     @classmethod
@@ -137,7 +139,10 @@ class OCRSettings(FrozenModel):
         if not value:
             raise ValueError("at least one OCR language is required")
         normalized = tuple(language.strip() for language in value)
-        if any(not re.fullmatch(r"[A-Za-z0-9_+-]{1,32}", language) for language in normalized):
+        if any(
+            not re.fullmatch(r"[A-Za-z0-9_+-]{1,32}", language)
+            for language in normalized
+        ):
             raise ValueError("OCR language identifiers are invalid")
         if len(set(normalized)) != len(normalized):
             raise ValueError("OCR language identifiers must be unique")
@@ -161,7 +166,9 @@ class HighEntropySettings(FrozenModel):
 
 
 class CustomRedactionPattern(FrozenModel):
-    pattern_id: str = Field(min_length=1, max_length=112, pattern=r"^[a-z][a-z0-9_.-]*$")
+    pattern_id: str = Field(
+        min_length=1, max_length=112, pattern=r"^[a-z][a-z0-9_.-]*$"
+    )
     pattern: str = Field(min_length=1, max_length=2048, repr=False)
 
     @field_validator("pattern")
@@ -175,8 +182,12 @@ class CustomRedactionPattern(FrozenModel):
 
 
 class RedactionAllowlist(FrozenModel):
-    allowlist_id: str = Field(min_length=1, max_length=128, pattern=r"^[a-z][a-z0-9_.-]*$")
-    pattern_id: str = Field(min_length=1, max_length=120, pattern=r"^[a-z][a-z0-9_.:-]*$")
+    allowlist_id: str = Field(
+        min_length=1, max_length=128, pattern=r"^[a-z][a-z0-9_.-]*$"
+    )
+    pattern_id: str = Field(
+        min_length=1, max_length=120, pattern=r"^[a-z][a-z0-9_.:-]*$"
+    )
     exact_values: tuple[str, ...] = Field(min_length=1, max_length=16, repr=False)
 
     @field_validator("exact_values")
@@ -194,7 +205,9 @@ class RedactionSettings(FrozenModel):
     deterministic_required: bool = True
     fail_on_uncertain: bool = True
     model_assistance_enabled: bool = False
-    policy_revision: str = Field(default="builtin-v1", pattern=r"^[A-Za-z0-9_.:-]{1,128}$")
+    policy_revision: str = Field(
+        default="builtin-v1", pattern=r"^[A-Za-z0-9_.:-]{1,128}$"
+    )
     low_confidence_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     entropy: HighEntropySettings = HighEntropySettings()
     custom_patterns: tuple[CustomRedactionPattern, ...] = ()
@@ -214,7 +227,9 @@ class RedactionSettings(FrozenModel):
         known_patterns = _BUILTIN_REDACTION_PATTERN_IDS | {
             f"custom:{pattern_id}" for pattern_id in pattern_ids
         }
-        unknown_patterns = sorted({item.pattern_id for item in self.allowlists} - known_patterns)
+        unknown_patterns = sorted(
+            {item.pattern_id for item in self.allowlists} - known_patterns
+        )
         if unknown_patterns:
             raise ValueError("redaction allowlist references an unknown pattern")
         if self.model_assistance_enabled and not self.deterministic_required:
@@ -251,9 +266,13 @@ class ModelSettings(FrozenModel):
         identifiers = tuple(provider.provider_id for provider in self.remote_providers)
         if len(set(identifiers)) != len(identifiers):
             raise ValueError("remote provider identifiers must be unique")
-        if self.remote_enabled and not any(provider.enabled for provider in self.remote_providers):
+        if self.remote_enabled and not any(
+            provider.enabled for provider in self.remote_providers
+        ):
             raise ValueError("remote_enabled requires at least one enabled remote provider")
-        if not self.remote_enabled and any(provider.enabled for provider in self.remote_providers):
+        if not self.remote_enabled and any(
+            provider.enabled for provider in self.remote_providers
+        ):
             raise ValueError("enabled remote providers require remote_enabled")
         return self
 
@@ -263,7 +282,9 @@ class EncryptionSettings(FrozenModel):
     key_reference: CredentialReference | None = None
     algorithm: Literal["xchacha20-poly1305-ietf"] = "xchacha20-poly1305-ietf"
     fallback_provider_id: Literal["gpg"] | None = None
-    gpg_recipient: str | None = Field(default=None, min_length=1, max_length=512, repr=False)
+    gpg_recipient: str | None = Field(
+        default=None, min_length=1, max_length=512, repr=False
+    )
     gpg_executable: str = Field(default="gpg", min_length=1, max_length=4096)
     gpg_timeout_seconds: float = Field(default=10.0, gt=0.0, le=120.0)
 
@@ -349,7 +370,9 @@ class LocalRecallConfig(FrozenModel):
                 missing.append("storage.root_directory")
             if missing:
                 joined = ", ".join(missing)
-                raise ValueError(f"capture cannot start; missing security configuration: {joined}")
+                raise ValueError(
+                    f"capture cannot start; missing security configuration: {joined}"
+                )
         return self
 
     @property
