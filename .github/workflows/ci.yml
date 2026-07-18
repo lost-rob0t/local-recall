@@ -32,6 +32,15 @@ jobs:
         run: ./scripts/bootstrap
       - name: Check formatting
         run: uv run --no-sync ruff format --check .
+      - name: Check pipeline lint
+        run: >-
+          uv run --no-sync ruff check
+          src/local_recall/pipeline
+          src/local_recall/config
+          tests/unit/pipeline
+          tests/unit/config/test_pipeline_settings.py
+          tests/integration/pipeline
+          tests/security/test_pipeline_architecture.py
       - name: Check Python lint
         run: uv run --no-sync ruff check .
       - name: Check shell scripts
