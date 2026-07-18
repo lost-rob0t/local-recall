@@ -38,8 +38,12 @@ jobs:
         run: uv run --no-sync shellcheck scripts/bootstrap scripts/check scripts/test scripts/run-pytest scripts/security-scan
       - name: Check static types
         run: uv run --no-sync pyright
-      - name: Run test suite
-        run: ./scripts/test
+      - name: Run unit tests
+        run: ./scripts/run-pytest tests/unit
+      - name: Run harness-integrity tests
+        run: ./scripts/run-pytest tests/failure_injection
+      - name: Run remaining test layers
+        run: ./scripts/run-pytest tests/contract tests/integration tests/security tests/e2e
       - name: Run security checks
         run: ./scripts/security-scan
 
