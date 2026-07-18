@@ -1,0 +1,21 @@
+name: Issue 11 lint diagnostic
+
+on:
+  push:
+    branches:
+      - agent/issue-11-storage-catalog
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+      - name: Run concise Ruff diagnostics
+        run: |
+          python -m pip install --quiet ruff==0.15.22
+          ruff check . --output-format=concise
