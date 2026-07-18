@@ -3,15 +3,23 @@ from uuid import uuid4
 
 import pytest
 
-from local_recall.domain.crypto import EncryptedRecordEnvelope, KeyHandle
+from local_recall.domain.crypto import (
+    EncryptedRecordEnvelope,
+    KeyHandle,
+    SecretKeyMaterial,
+)
+from local_recall.domain.lifecycle import CaptureGeneration
 
 
 def envelope() -> EncryptedRecordEnvelope:
     return EncryptedRecordEnvelope(
         record_id=uuid4(),
+        generation=CaptureGeneration(1),
+        configuration_revision="config-v1",
         schema_version=1,
         algorithm="xchacha20-poly1305",
         key=KeyHandle(key_id="key-1", provider_id="synthetic", version=1),
+        plaintext_frame_sizes=(8, 16),
         wrapped_data_key=b"wrapped-key",
         nonce=b"nonce-value",
         ciphertext=b"ciphertext-value",
@@ -24,9 +32,12 @@ def test_envelope_requires_positive_schema_version() -> None:
     with pytest.raises(ValueError, match="schema version"):
         EncryptedRecordEnvelope(
             record_id=uuid4(),
+            generation=CaptureGeneration(1),
+            configuration_revision="config-v1",
             schema_version=0,
             algorithm="xchacha20-poly1305",
             key=KeyHandle(key_id="key-1", provider_id="synthetic", version=1),
+            plaintext_frame_sizes=(8,),
             wrapped_data_key=b"wrapped",
             nonce=b"nonce",
             ciphertext=b"ciphertext",
@@ -41,3 +52,15 @@ def test_envelope_repr_hides_crypto_material() -> None:
     assert "ciphertext-value" not in rendered
     assert "wrapped-key" not in rendered
     assert "nonce-value" not in rendered
+
+
+def test_secret_key_material_is_destroyable_and_hidden() -> None:
+    material = SecretKeyMaterial.from_bytes(b"synthetic-key-material")
+
+    assert "synthetic-key-material" not in repr(material)
+    assert material.copy_bytes() == b"synthetic-key-material"
+    material.destroy()
+
+    assert material.destroyed
+    with pytest.raises(RuntimeError, match="destroyed"):
+        material.copy_bytes()
