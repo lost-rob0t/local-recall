@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import struct
 from datetime import datetime
-from typing import Any, cast
+from typing import cast
 from uuid import UUID
 
 from local_recall.domain.crypto import EncryptedRecordEnvelope, KeyHandle
@@ -32,9 +32,9 @@ _REQUIRED_KEYS = {
 
 
 def encode_envelope(envelope: EncryptedRecordEnvelope) -> bytes:
-    if not isinstance(envelope, EncryptedRecordEnvelope):
-        raise StorageFailure(StorageFailureCode.INVALID_TYPE)
-    _validate_uuid(envelope.record_id)
+    checked = _require_envelope(envelope)
+    _validate_uuid(checked.record_id)
+    envelope = checked
     header = {
         "record_id": str(envelope.record_id),
         "generation": envelope.generation.value,
@@ -72,7 +72,7 @@ def decode_envelope(data: bytes, *, max_blob_bytes: int) -> EncryptedRecordEnvel
     if max_blob_bytes <= 0:
         raise ValueError("max_blob_bytes must be positive")
     minimum = _HEADER_PREFIX.size + _LENGTHS.size
-    if not isinstance(data, bytes) or not data or len(data) > max_blob_bytes or len(data) < minimum:
+    if not data or len(data) > max_blob_bytes or len(data) < minimum:
         raise StorageFailure(StorageFailureCode.CORRUPTION)
     magic, version, header_len = _HEADER_PREFIX.unpack_from(data)
     if magic != _MAGIC or version != _FORMAT_VERSION or not 1 <= header_len <= _MAX_HEADER_BYTES:
@@ -90,7 +90,7 @@ def decode_envelope(data: bytes, *, max_blob_bytes: int) -> EncryptedRecordEnvel
         decoded: object = json.loads(data[offset : offset + header_len].decode("utf-8"))
         if not isinstance(decoded, dict):
             raise ValueError
-        raw = cast(dict[str, Any], decoded)
+        raw = cast(dict[str, object], decoded)
         if set(raw) != _REQUIRED_KEYS:
             raise ValueError
         record_id_value = raw["record_id"]
@@ -107,15 +107,19 @@ def decode_envelope(data: bytes, *, max_blob_bytes: int) -> EncryptedRecordEnvel
             or type(key_version_object) is not int
         ):
             raise ValueError
-        generation = cast(int, generation_object)
-        schema_version = cast(int, schema_version_object)
-        key_version = cast(int, key_version_object)
+        generation = generation_object
+        schema_version = schema_version_object
+        key_version = key_version_object
         sizes_object = raw["plaintext_frame_sizes"]
-        if not isinstance(sizes_object, list) or any(
-            type(value) is not int for value in sizes_object
-        ):
+        if not isinstance(sizes_object, list):
             raise ValueError
-        sizes = tuple(cast(int, value) for value in sizes_object)
+        size_values = cast(list[object], sizes_object)
+        sizes_list: list[int] = []
+        for value in size_values:
+            if type(value) is not int:
+                raise ValueError
+            sizes_list.append(value)
+        sizes = tuple(sizes_list)
         created_at_value = raw["created_at"]
         if not isinstance(created_at_value, str):
             raise ValueError
@@ -160,6 +164,12 @@ def decode_envelope(data: bytes, *, max_blob_bytes: int) -> EncryptedRecordEnvel
         )
     except ValueError:
         raise StorageFailure(StorageFailureCode.CORRUPTION, record_id=record_id) from None
+
+
+def _require_envelope(value: object) -> EncryptedRecordEnvelope:
+    if not isinstance(value, EncryptedRecordEnvelope):
+        raise StorageFailure(StorageFailureCode.INVALID_TYPE)
+    return value
 
 
 def _validate_uuid(record_id: UUID) -> None:
