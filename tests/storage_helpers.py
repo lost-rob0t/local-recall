@@ -1,17 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID
 
-from nacl import bindings
-from nacl.exceptions import CryptoError
-
-from local_recall.crypto.bindings import KEY_BYTES, NONCE_BYTES, decrypt, encrypt
-from local_recall.crypto.errors import KeyProviderFailure, KeyProviderFailureCode
 from local_recall.domain.crypto import (
     EncryptedRecordEnvelope,
     KeyHandle,
-    KeyPurpose,
     KeyRequest,
     SecretKeyMaterial,
 )
@@ -26,86 +22,87 @@ from local_recall.ports.keys import (
     KeyWrapRequest,
 )
 
+_DEFAULT_RECORD_ID = UUID("2eb1204a-6c45-4da5-a7fb-88fa0c10a111")
+_DEFAULT_CREATED_AT = datetime(2026, 7, 18, 12, 34, 56, 123456, tzinfo=UTC)
+
 
 class MemoryKeyProvider:
-    provider_id = "memory-storage"
+    def __init__(self, master_key: bytes = b"K" * 32) -> None:
+        self._master_key = master_key
+        self._handle = KeyHandle(
+            key_id="memory-index-key",
+            provider_id=self.provider_id,
+            version=1,
+        )
 
-    def __init__(self) -> None:
-        self._handle = KeyHandle("storage-master", self.provider_id, 1)
-        self._key = bytes(range(KEY_BYTES))
+    @property
+    def provider_id(self) -> str:
+        return "memory-test"
 
     async def health(self, request: KeyRequest) -> KeyHealthReport:
         del request
         return KeyHealthReport(self.provider_id, KeyHealthStatus.READY, self._handle)
 
     async def active_key(self, request: KeyRequest) -> KeyHandle:
-        if request.purpose is not KeyPurpose.INDEX:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            )
+        del request
         return self._handle
 
     async def wrap_data_key(self, request: KeyWrapRequest) -> bytes:
-        if request.key != self._handle:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            )
-        nonce = bytes(range(NONCE_BYTES))
-        return nonce + encrypt(
-            request.material.copy_bytes(),
-            request.associated_data,
-            nonce,
-            self._key,
-        )
+        material = request.material.copy_bytes()
+        stream = _expand(self._master_key, len(material))
+        wrapped = bytes(left ^ right for left, right in zip(material, stream, strict=True))
+        tag = hmac.new(
+            self._master_key,
+            request.associated_data + material,
+            hashlib.sha256,
+        ).digest()
+        return wrapped + tag
 
     async def unwrap_data_key(self, request: KeyUnwrapRequest) -> SecretKeyMaterial:
-        if request.key != self._handle or len(request.wrapped_data_key) <= NONCE_BYTES:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            )
-        nonce = request.wrapped_data_key[:NONCE_BYTES]
-        ciphertext = request.wrapped_data_key[NONCE_BYTES:]
-        try:
-            plaintext = decrypt(
-                ciphertext,
-                request.associated_data,
-                nonce,
-                self._key,
-            )
-        except CryptoError as exc:
-            raise KeyProviderFailure(
-                self.provider_id, KeyProviderFailureCode.INVALID_KEY
-            ) from exc
-        return SecretKeyMaterial.from_bytes(plaintext)
+        if len(request.wrapped_data_key) < 33:
+            raise ValueError("invalid wrapped key")
+        wrapped = request.wrapped_data_key[:-32]
+        tag = request.wrapped_data_key[-32:]
+        stream = _expand(self._master_key, len(wrapped))
+        material = bytes(left ^ right for left, right in zip(wrapped, stream, strict=True))
+        expected = hmac.new(
+            self._master_key,
+            request.associated_data + material,
+            hashlib.sha256,
+        ).digest()
+        if not hmac.compare_digest(tag, expected):
+            raise ValueError("invalid wrapped key")
+        return SecretKeyMaterial.from_bytes(material)
 
     async def rotate(self, request: KeyRotationRequest) -> KeyHandle:
         del request
         return self._handle
 
     async def destroy(self, request: KeyDestructionRequest) -> KeyDestructionResult:
-        return KeyDestructionResult(request.key, False)
+        return KeyDestructionResult(request.key, destroyed=False)
 
 
 def make_envelope(
     *,
-    created_at: datetime | None = None,
-    marker: bytes = b"synthetic-redacted-record",
+    record_id: UUID = _DEFAULT_RECORD_ID,
+    created_at: datetime = _DEFAULT_CREATED_AT,
 ) -> EncryptedRecordEnvelope:
-    timestamp = created_at or datetime(2026, 7, 18, 12, 34, 56, 123456, tzinfo=UTC)
-    record_key = bindings.randombytes(KEY_BYTES)
-    nonce = bindings.randombytes(NONCE_BYTES)
-    ciphertext = encrypt(marker, b"inner-associated-data", nonce, record_key)
     return EncryptedRecordEnvelope(
-        record_id=uuid4(),
-        generation=CaptureGeneration(4),
-        configuration_revision="synthetic-config-revision",
+        record_id=record_id,
+        generation=CaptureGeneration(7),
+        configuration_revision="seeded-window-title-do-not-persist",
         schema_version=1,
         algorithm="xchacha20-poly1305-ietf",
-        key=KeyHandle("record-key", "memory-record", 1),
-        plaintext_frame_sizes=(len(marker),),
-        wrapped_data_key=b"synthetic-wrapped-record-key",
-        nonce=nonce,
-        ciphertext=ciphertext,
-        associated_data_digest=b"d" * 32,
-        created_at=timestamp,
+        key=KeyHandle(key_id="record-key", provider_id="memory-test", version=3),
+        plaintext_frame_sizes=(17, 19),
+        wrapped_data_key=b"wrapped-record-key-material" * 2,
+        nonce=b"N" * 24,
+        ciphertext=b"seeded-screenshot-and-ocr-content-must-remain-hidden",
+        associated_data_digest=b"D" * 32,
+        created_at=created_at,
     )
+
+
+def _expand(key: bytes, size: int) -> bytes:
+    repeats = (size + len(key) - 1) // len(key)
+    return (key * repeats)[:size]
