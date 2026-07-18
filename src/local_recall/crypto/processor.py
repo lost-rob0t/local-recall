@@ -10,7 +10,11 @@ from local_recall.ports.clock import Clock
 
 from .codec import encode_encrypted_stage
 from .envelope import EnvelopeCipher
-from .errors import EncryptionFailure, EncryptionFailureCode
+from .errors import (
+    EncryptionFailure,
+    EncryptionFailureCode,
+    KeyProviderFailure,
+)
 from .registry import KeyProviderRegistry
 
 
@@ -47,13 +51,18 @@ class EnvelopeEncryptionStageProcessor:
     ) -> EncryptedStageItem:
         if cancellation.cancelled:
             raise EncryptionFailure(item.record_id, EncryptionFailureCode.CANCELLED)
-        selection = asyncio.run(
-            self._registry.select(
-                self._primary_provider_id,
-                KeyRequest(KeyPurpose.RECORD, create_if_missing=True),
-                explicit_fallback_provider_id=self._explicit_fallback_provider_id,
+        try:
+            selection = asyncio.run(
+                self._registry.select(
+                    self._primary_provider_id,
+                    KeyRequest(KeyPurpose.RECORD, create_if_missing=True),
+                    explicit_fallback_provider_id=self._explicit_fallback_provider_id,
+                )
             )
-        )
+        except KeyProviderFailure as exc:
+            raise EncryptionFailure(
+                item.record_id, EncryptionFailureCode.KEY_UNAVAILABLE
+            ) from exc
         envelope = asyncio.run(
             self._cipher.encrypt_frames(
                 record_id=item.record_id,
