@@ -47,7 +47,9 @@ class MemoryKeyProvider:
     async def wrap_data_key(self, request: KeyWrapRequest) -> bytes:
         material = request.material.copy_bytes()
         stream = _expand(self._master_key, len(material))
-        wrapped = bytes(left ^ right for left, right in zip(material, stream, strict=True))
+        wrapped = bytes(
+            left ^ right for left, right in zip(material, stream, strict=True)
+        )
         tag = hmac.new(
             self._master_key,
             request.associated_data + material,
@@ -61,7 +63,9 @@ class MemoryKeyProvider:
         wrapped = request.wrapped_data_key[:-32]
         tag = request.wrapped_data_key[-32:]
         stream = _expand(self._master_key, len(wrapped))
-        material = bytes(left ^ right for left, right in zip(wrapped, stream, strict=True))
+        material = bytes(
+            left ^ right for left, right in zip(wrapped, stream, strict=True)
+        )
         expected = hmac.new(
             self._master_key,
             request.associated_data + material,
