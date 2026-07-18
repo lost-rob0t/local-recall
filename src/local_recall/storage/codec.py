@@ -14,7 +14,6 @@ from nacl.exceptions import CryptoError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from local_recall.crypto.bindings import KEY_BYTES, NONCE_BYTES, TAG_BYTES, decrypt, encrypt
-from local_recall.crypto.errors import KeyProviderFailure
 from local_recall.domain.crypto import (
     EncryptedRecordEnvelope,
     KeyHandle,
@@ -178,7 +177,6 @@ class EncryptedBlobCodec:
             raise
         except (
             CryptoError,
-            KeyProviderFailure,
             ValueError,
             ValidationError,
             UnicodeDecodeError,
