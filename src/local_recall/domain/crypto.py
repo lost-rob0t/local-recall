@@ -32,6 +32,11 @@ class KeyHandle:
 class KeyRequest:
     purpose: KeyPurpose
     create_if_missing: bool = False
+    reference: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.reference is not None:
+            require_nonempty(self.reference, "reference")
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -45,6 +50,7 @@ class EncryptedRecordEnvelope:
     ciphertext: bytes = field(repr=False)
     associated_data_digest: bytes = field(repr=False)
     created_at: datetime
+    associated_data: bytes = field(default=b"", repr=False)
 
     def __post_init__(self) -> None:
         if self.schema_version <= 0:
@@ -55,6 +61,8 @@ class EncryptedRecordEnvelope:
         require_nonempty_bytes(self.ciphertext, "ciphertext")
         require_nonempty_bytes(self.associated_data_digest, "associated_data_digest")
         require_aware(self.created_at, "created_at")
+        if self.schema_version >= 2:
+            require_nonempty_bytes(self.associated_data, "associated_data")
 
     def __repr__(self) -> str:
         return (
@@ -62,6 +70,7 @@ class EncryptedRecordEnvelope:
             f"schema_version={self.schema_version}, algorithm={self.algorithm!r}, "
             f"key={self.key!r}, wrapped_key_bytes={len(self.wrapped_data_key)}, "
             f"nonce_bytes={len(self.nonce)}, ciphertext_bytes={len(self.ciphertext)}, "
+            f"associated_data_bytes={len(self.associated_data)}, "
             f"associated_data_digest_bytes={len(self.associated_data_digest)}, "
             f"created_at={self.created_at!r})"
         )
