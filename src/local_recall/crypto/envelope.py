@@ -11,6 +11,7 @@ from nacl.exceptions import CryptoError
 
 from local_recall.domain.crypto import (
     EncryptedRecordEnvelope,
+    KeyHandle,
     KeyPurpose,
     KeyRequest,
     SecretKeyMaterial,
@@ -56,24 +57,12 @@ class EnvelopeCipher:
         aad_digest = hashlib.sha256(aad).digest()
         plaintext = bytearray().join(frames)
         try:
-            key_handle = await provider.active_key(
-                KeyRequest(KeyPurpose.RECORD, create_if_missing=True)
+            key_handle, wrapped_data_key, nonce, ciphertext = await _encrypt_payload(
+                bytes(plaintext),
+                aad,
+                aad_digest,
+                provider,
             )
-            with SecretKeyMaterial.random(KEY_BYTES) as data_key:
-                wrapped_data_key = await provider.wrap_data_key(
-                    KeyWrapRequest(
-                        key=key_handle,
-                        material=data_key,
-                        associated_data=_wrap_associated_data(aad_digest),
-                    )
-                )
-                nonce = secrets.token_bytes(NONCE_BYTES)
-                ciphertext = encrypt(
-                    bytes(plaintext),
-                    aad,
-                    nonce,
-                    data_key.copy_bytes(),
-                )
         except KeyProviderFailure as exc:
             raise EncryptionFailure(
                 record_id, EncryptionFailureCode.KEY_UNAVAILABLE
@@ -101,12 +90,8 @@ class EnvelopeCipher:
         envelope: EncryptedRecordEnvelope,
         provider: KeyProvider,
     ) -> tuple[bytes, ...]:
+        aad_digest = _validated_associated_data_digest(envelope)
         aad = _associated_data_from_envelope(envelope)
-        aad_digest = hashlib.sha256(aad).digest()
-        if not secrets.compare_digest(aad_digest, envelope.associated_data_digest):
-            raise EncryptionFailure(
-                envelope.record_id, EncryptionFailureCode.AUTHENTICATION_FAILED
-            )
         try:
             data_key = await provider.unwrap_data_key(
                 KeyUnwrapRequest(
@@ -127,12 +112,15 @@ class EnvelopeCipher:
                 envelope.record_id, EncryptionFailureCode.AUTHENTICATION_FAILED
             ) from exc
 
+        plaintext_buffer = bytearray(plaintext)
         try:
-            return _split_frames(plaintext, envelope.plaintext_frame_sizes)
+            return _split_frames(plaintext_buffer, envelope.plaintext_frame_sizes)
         except ValueError as exc:
             raise EncryptionFailure(
                 envelope.record_id, EncryptionFailureCode.AUTHENTICATION_FAILED
             ) from exc
+        finally:
+            plaintext_buffer[:] = b"\x00" * len(plaintext_buffer)
 
     async def rewrap_data_key(
         self,
@@ -141,7 +129,12 @@ class EnvelopeCipher:
         current_provider: KeyProvider,
         replacement_provider: KeyProvider,
     ) -> EncryptedRecordEnvelope:
-        aad_digest = envelope.associated_data_digest
+        try:
+            aad_digest = _validated_associated_data_digest(envelope)
+        except EncryptionFailure as exc:
+            raise EncryptionFailure(
+                envelope.record_id, EncryptionFailureCode.REWRAP_FAILED
+            ) from exc
         wrap_aad = _wrap_associated_data(aad_digest)
         try:
             data_key = await current_provider.unwrap_data_key(
@@ -167,6 +160,49 @@ class EnvelopeCipher:
                 envelope.record_id, EncryptionFailureCode.REWRAP_FAILED
             ) from exc
         return replace(envelope, key=replacement_key, wrapped_data_key=wrapped)
+
+
+async def _encrypt_payload(
+    plaintext: bytes,
+    aad: bytes,
+    aad_digest: bytes,
+    provider: KeyProvider,
+) -> tuple[KeyHandle, bytes, bytes, bytes]:
+    key_handle = await provider.active_key(
+        KeyRequest(KeyPurpose.RECORD, create_if_missing=True)
+    )
+    with SecretKeyMaterial.random(KEY_BYTES) as data_key:
+        wrapped_data_key = await provider.wrap_data_key(
+            KeyWrapRequest(
+                key=key_handle,
+                material=data_key,
+                associated_data=_wrap_associated_data(aad_digest),
+            )
+        )
+        nonce = secrets.token_bytes(NONCE_BYTES)
+        ciphertext = encrypt(
+            plaintext,
+            aad,
+            nonce,
+            data_key.copy_bytes(),
+        )
+    return key_handle, wrapped_data_key, nonce, ciphertext
+
+
+def _validated_associated_data_digest(envelope: EncryptedRecordEnvelope) -> bytes:
+    if (
+        envelope.schema_version != ENVELOPE_SCHEMA_VERSION
+        or envelope.algorithm != ENVELOPE_ALGORITHM
+    ):
+        raise EncryptionFailure(
+            envelope.record_id, EncryptionFailureCode.AUTHENTICATION_FAILED
+        )
+    aad_digest = hashlib.sha256(_associated_data_from_envelope(envelope)).digest()
+    if not secrets.compare_digest(aad_digest, envelope.associated_data_digest):
+        raise EncryptionFailure(
+            envelope.record_id, EncryptionFailureCode.AUTHENTICATION_FAILED
+        )
+    return aad_digest
 
 
 def _associated_data_from_envelope(envelope: EncryptedRecordEnvelope) -> bytes:
@@ -207,12 +243,15 @@ def _wrap_associated_data(aad_digest: bytes) -> bytes:
     return b"local-recall-key-wrap-v1\x00" + aad_digest
 
 
-def _split_frames(plaintext: bytes, frame_sizes: tuple[int, ...]) -> tuple[bytes, ...]:
+def _split_frames(
+    plaintext: bytes | bytearray,
+    frame_sizes: tuple[int, ...],
+) -> tuple[bytes, ...]:
     if sum(frame_sizes) != len(plaintext):
         raise ValueError("plaintext size does not match authenticated frame sizes")
     frames: list[bytes] = []
     offset = 0
     for size in frame_sizes:
-        frames.append(plaintext[offset : offset + size])
+        frames.append(bytes(plaintext[offset : offset + size]))
         offset += size
     return tuple(frames)
