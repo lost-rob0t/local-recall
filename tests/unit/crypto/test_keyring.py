@@ -65,10 +65,14 @@ def test_keyring_wrap_and_unwrap_round_trip() -> None:
     )
     material = SecretKeyMaterial.from_bytes(bytes(range(32)))
     wrapped = asyncio.run(
-        provider.wrap_data_key(KeyWrapRequest(key, material, b"synthetic-associated-data"))
+        provider.wrap_data_key(
+            KeyWrapRequest(key, material, b"synthetic-associated-data")
+        )
     )
     recovered = asyncio.run(
-        provider.unwrap_data_key(KeyUnwrapRequest(key, wrapped, b"synthetic-associated-data"))
+        provider.unwrap_data_key(
+            KeyUnwrapRequest(key, wrapped, b"synthetic-associated-data")
+        )
     )
 
     assert recovered.copy_bytes() == bytes(range(32))
