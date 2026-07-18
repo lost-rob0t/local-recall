@@ -109,12 +109,17 @@ class GPGKeyProvider:
     async def active_key(self, request: KeyRequest) -> KeyHandle:
         health = await self.health(request)
         if not health.ready or health.key is None:
-            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.PROVIDER_UNAVAILABLE)
+            raise KeyProviderFailure(
+                self.provider_id, KeyProviderFailureCode.PROVIDER_UNAVAILABLE
+            )
         return health.key
 
     async def wrap_data_key(self, request: KeyWrapRequest) -> bytes:
         self._validate_handle(request.key)
-        payload = hashlib.sha256(request.associated_data).digest() + request.material.copy_bytes()
+        payload = (
+            hashlib.sha256(request.associated_data).digest()
+            + request.material.copy_bytes()
+        )
         result = await self._run(
             (
                 self._executable,
@@ -129,7 +134,9 @@ class GPGKeyProvider:
             payload,
         )
         if result.returncode != 0 or not result.stdout:
-            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.PROVIDER_UNAVAILABLE)
+            raise KeyProviderFailure(
+                self.provider_id, KeyProviderFailureCode.PROVIDER_UNAVAILABLE
+            )
         return result.stdout
 
     async def unwrap_data_key(self, request: KeyUnwrapRequest) -> SecretKeyMaterial:
@@ -139,11 +146,18 @@ class GPGKeyProvider:
             request.wrapped_data_key,
         )
         expected_digest = hashlib.sha256(request.associated_data).digest()
-        if result.returncode != 0 or len(result.stdout) != len(expected_digest) + KEY_BYTES:
-            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
+        if (
+            result.returncode != 0
+            or len(result.stdout) != len(expected_digest) + KEY_BYTES
+        ):
+            raise KeyProviderFailure(
+                self.provider_id, KeyProviderFailureCode.INVALID_KEY
+            )
         digest = result.stdout[: len(expected_digest)]
         if not secrets.compare_digest(digest, expected_digest):
-            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
+            raise KeyProviderFailure(
+                self.provider_id, KeyProviderFailureCode.INVALID_KEY
+            )
         return SecretKeyMaterial.from_bytes(result.stdout[len(expected_digest) :])
 
     async def rotate(self, request: KeyRotationRequest) -> KeyHandle:
@@ -182,4 +196,6 @@ class GPGKeyProvider:
 
     def _validate_handle(self, handle: KeyHandle) -> None:
         if handle != self._handle():
-            raise KeyProviderFailure(self.provider_id, KeyProviderFailureCode.INVALID_KEY)
+            raise KeyProviderFailure(
+                self.provider_id, KeyProviderFailureCode.INVALID_KEY
+            )
