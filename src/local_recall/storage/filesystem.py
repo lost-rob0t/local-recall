@@ -120,9 +120,7 @@ class FilesystemStorageBackend:
                     )
             except sqlite3.Error as exc:
                 temp_path.unlink(missing_ok=True)
-                raise StorageFailure(
-                    record_id, StorageFailureCode.CATALOG_FAILURE
-                ) from exc
+                raise StorageFailure(record_id, StorageFailureCode.CATALOG_FAILURE) from exc
             except OSError as exc:
                 raise StorageFailure(record_id, StorageFailureCode.IO_FAILURE) from exc
 
@@ -140,9 +138,7 @@ class FilesystemStorageBackend:
                         (str(record_id),),
                     )
             except sqlite3.Error as exc:
-                raise StorageFailure(
-                    record_id, StorageFailureCode.CATALOG_FAILURE
-                ) from exc
+                raise StorageFailure(record_id, StorageFailureCode.CATALOG_FAILURE) from exc
 
         return StoredRecordRef(
             record_id=record_id,
@@ -222,9 +218,7 @@ class FilesystemStorageBackend:
                     temp_path.unlink(missing_ok=True)
                 _fsync_directory(final_path.parent)
             except OSError as exc:
-                raise StorageFailure(
-                    request.record_id, StorageFailureCode.IO_FAILURE
-                ) from exc
+                raise StorageFailure(request.record_id, StorageFailureCode.IO_FAILURE) from exc
             try:
                 with self._connection:
                     self._connection.execute(
@@ -274,9 +268,7 @@ class FilesystemStorageBackend:
                 version = 0 if version_row is None else int(version_row[0])
                 if version > _CATALOG_SCHEMA_VERSION:
                     raise StorageFailure(None, StorageFailureCode.UNSUPPORTED_SCHEMA)
-                self._connection.execute(
-                    f"PRAGMA user_version = {_CATALOG_SCHEMA_VERSION}"
-                )
+                self._connection.execute(f"PRAGMA user_version = {_CATALOG_SCHEMA_VERSION}")
         except sqlite3.Error as exc:
             raise StorageFailure(None, StorageFailureCode.CATALOG_FAILURE) from exc
 
@@ -389,8 +381,7 @@ class FilesystemStorageBackend:
             _fsync_directory(final_path.parent)
             with self._connection:
                 self._connection.execute(
-                    "UPDATE records SET state = 'committed', temp_token = NULL "
-                    "WHERE record_id = ?",
+                    "UPDATE records SET state = 'committed', temp_token = NULL WHERE record_id = ?",
                     (str(record_id),),
                 )
         except sqlite3.Error as exc:
@@ -448,9 +439,7 @@ class FilesystemStorageBackend:
                         (str(record_id),),
                     )
             except sqlite3.Error as exc:
-                raise StorageFailure(
-                    record_id, StorageFailureCode.CATALOG_FAILURE
-                ) from exc
+                raise StorageFailure(record_id, StorageFailureCode.CATALOG_FAILURE) from exc
             except OSError as exc:
                 raise StorageFailure(record_id, StorageFailureCode.IO_FAILURE) from exc
 
@@ -464,8 +453,7 @@ class FilesystemStorageBackend:
     def _mark_committed(self, record_id: UUID) -> None:
         with self._connection:
             self._connection.execute(
-                "UPDATE records SET state = 'committed', temp_token = NULL "
-                "WHERE record_id = ?",
+                "UPDATE records SET state = 'committed', temp_token = NULL WHERE record_id = ?",
                 (str(record_id),),
             )
 
