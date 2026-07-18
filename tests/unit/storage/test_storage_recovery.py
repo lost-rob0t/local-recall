@@ -31,9 +31,7 @@ def envelope() -> EncryptedRecordEnvelope:
     )
 
 
-def storage(
-    root: Path, fault: Callable[[str], None] | None = None
-) -> SQLiteEncryptedStorage:
+def storage(root: Path, fault: Callable[[str], None] | None = None) -> SQLiteEncryptedStorage:
     return SQLiteEncryptedStorage(
         root,
         quota_bytes=1_000_000,
