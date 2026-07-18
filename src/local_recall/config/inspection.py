@@ -8,7 +8,9 @@ from .models import CredentialReference, LocalRecallConfig
 def inspect_effective_configuration(configuration: LocalRecallConfig) -> dict[str, Any]:
     result = configuration.model_dump(mode="json")
     key_reference = configuration.encryption.key_reference
+    fallback_reference = configuration.encryption.fallback_key_reference
     result["encryption"]["key_reference"] = _inspect_reference(key_reference)
+    result["encryption"]["fallback_key_reference"] = _inspect_reference(fallback_reference)
 
     providers: list[dict[str, Any]] = []
     for provider in configuration.models.remote_providers:
