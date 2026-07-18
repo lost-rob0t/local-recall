@@ -33,29 +33,7 @@ jobs:
       - name: Check formatting
         run: uv run --no-sync ruff format --check .
       - name: Check Python lint
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import subprocess
-
-          completed = subprocess.run(
-              ["uv", "run", "--no-sync", "ruff", "check", "."],
-              capture_output=True,
-              text=True,
-              check=False,
-          )
-          output = completed.stdout + completed.stderr
-          Path("ruff-full.txt").write_text(output, encoding="utf-8")
-          print(output, end="")
-          raise SystemExit(completed.returncode)
-          PY
-      - name: Upload full lint diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ruff-full-${{ matrix.os }}
-          path: ruff-full.txt
-          if-no-files-found: error
+        run: uv run --no-sync ruff check .
       - name: Check shell scripts
         run: uv run --no-sync shellcheck scripts/bootstrap scripts/check scripts/test scripts/run-pytest scripts/security-scan
       - name: Check static types
