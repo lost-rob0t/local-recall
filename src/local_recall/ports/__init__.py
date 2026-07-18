@@ -19,12 +19,22 @@ from .policy import CapturePolicy
 from .providers import EmbeddingProvider, GenerationProvider
 from .redaction import RedactionPolicy, RedactionRequest
 from .routing import ModelRoutingPolicy
-from .storage import DeleteRequest, DeleteResult, StorageBackend
+from .storage import (
+    CatalogRecord,
+    DayRangeQuery,
+    DeleteRequest,
+    DeleteResult,
+    QueryableStorageBackend,
+    StorageBackend,
+    StorageIntegrityReport,
+)
 
 __all__ = [
     "CaptureBackend",
     "CapturePolicy",
+    "CatalogRecord",
     "Clock",
+    "DayRangeQuery",
     "DecryptionRequest",
     "DeleteRequest",
     "DeleteResult",
@@ -44,7 +54,9 @@ __all__ = [
     "ModelRoutingPolicy",
     "OCRProvider",
     "OCRRequest",
+    "QueryableStorageBackend",
     "RedactionPolicy",
     "RedactionRequest",
     "StorageBackend",
+    "StorageIntegrityReport",
 ]
