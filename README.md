@@ -33,4 +33,4 @@ nix develop -c ./scripts/check
 
 Development follows red → green → refactor. Required tests may not be skipped or marked expected-failure.
 
-Development is tracked through GitHub issues.
+Development is tracked through GitHub issues and required pull-request checks.
