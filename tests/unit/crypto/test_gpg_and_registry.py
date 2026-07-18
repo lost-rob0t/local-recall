@@ -79,10 +79,14 @@ def test_gpg_wrap_and_unwrap_requires_health_checked_recipient() -> None:
     key = asyncio.run(provider.active_key(request))
     material = SecretKeyMaterial.from_bytes(bytes(range(32)))
     wrapped = asyncio.run(
-        provider.wrap_data_key(KeyWrapRequest(key, material, b"associated-data"))
+        provider.wrap_data_key(
+            KeyWrapRequest(key, material, b"associated-data")
+        )
     )
     unwrapped = asyncio.run(
-        provider.unwrap_data_key(KeyUnwrapRequest(key, wrapped, b"associated-data"))
+        provider.unwrap_data_key(
+            KeyUnwrapRequest(key, wrapped, b"associated-data")
+        )
     )
 
     assert health.status is KeyHealthStatus.READY
@@ -95,10 +99,14 @@ def test_gpg_associated_data_mismatch_is_rejected() -> None:
     provider = GPGKeyProvider("synthetic-recipient", runner=FakeGPGRunner())
     key = asyncio.run(provider.active_key(KeyRequest(KeyPurpose.RECORD)))
     material = SecretKeyMaterial.from_bytes(bytes(range(32)))
-    wrapped = asyncio.run(provider.wrap_data_key(KeyWrapRequest(key, material, b"first")))
+    wrapped = asyncio.run(
+        provider.wrap_data_key(KeyWrapRequest(key, material, b"first"))
+    )
 
     with pytest.raises(KeyProviderFailure):
-        asyncio.run(provider.unwrap_data_key(KeyUnwrapRequest(key, wrapped, b"second")))
+        asyncio.run(
+            provider.unwrap_data_key(KeyUnwrapRequest(key, wrapped, b"second"))
+        )
     material.destroy()
 
 
