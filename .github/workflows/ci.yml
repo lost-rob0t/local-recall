@@ -40,6 +40,8 @@ jobs:
         run: uv run --no-sync pyright
       - name: Run unit tests
         run: ./scripts/run-pytest tests/unit
+      - name: Run contract tests
+        run: ./scripts/run-pytest tests/contract
       - name: Run security checks
         run: ./scripts/security-scan
 
