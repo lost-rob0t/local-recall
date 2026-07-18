@@ -30,7 +30,7 @@ class MetadataRequest:
     job_id: UUID
     generation: CaptureGeneration
     deadline_monotonic_ns: int
-    requested_fields: frozenset[str] = field(default_factory=frozenset)
+    requested_fields: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if self.deadline_monotonic_ns <= 0:
