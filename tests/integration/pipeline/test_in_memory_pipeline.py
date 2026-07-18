@@ -6,9 +6,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-
-from local_recall.domain.lifecycle import TransitionReason
-from local_recall.pipeline import BoundedCapturePipeline, SubmissionStatus
 from tests.unit.pipeline.support import (
     BlockingRawProcessor,
     CopyAnalysisProcessor,
@@ -19,6 +16,9 @@ from tests.unit.pipeline.support import (
     RecordingSink,
     recording_gate,
 )
+
+from local_recall.domain.lifecycle import TransitionReason
+from local_recall.pipeline import BoundedCapturePipeline, SubmissionStatus
 
 
 def test_end_to_end_pipeline_never_uses_filesystem_backing(monkeypatch: pytest.MonkeyPatch) -> None:
