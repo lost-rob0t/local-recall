@@ -106,6 +106,6 @@ class CaptureStateSnapshot:
 
     def __post_init__(self) -> None:
         require_aware(self.observed_at, "observed_at")
-        if self.state in {CaptureState.STARTING, CaptureState.RECORDING, CaptureState.PAUSED}:
-            if self.generation is None:
-                raise ValueError("active capture states require a generation")
+        active_states = {CaptureState.STARTING, CaptureState.RECORDING, CaptureState.PAUSED}
+        if self.state in active_states and self.generation is None:
+            raise ValueError("active capture states require a generation")
