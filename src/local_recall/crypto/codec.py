@@ -58,7 +58,9 @@ def encode_encrypted_stage(
         key_provider_id=envelope.key.provider_id,
         key_version=envelope.key.version,
         plaintext_frame_sizes=envelope.plaintext_frame_sizes,
-        binary_frame_sizes=cast(tuple[int, int, int, int], tuple(map(len, binary_frames))),
+        binary_frame_sizes=cast(
+            tuple[int, int, int, int], tuple(map(len, binary_frames))
+        ),
         created_at=envelope.created_at,
     )
     header_bytes = json.dumps(
@@ -83,8 +85,15 @@ def decode_encrypted_stage(item: EncryptedStageItem) -> EncryptedRecordEnvelope:
     try:
         raw = cast(dict[str, Any], json.loads(header_bytes.decode("utf-8")))
         header = _EnvelopeHeader.model_validate(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError, ValidationError, TypeError) as exc:
-        raise EncryptionFailure(item.record_id, EncryptionFailureCode.CODEC_FAILURE) from exc
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValidationError,
+        TypeError,
+    ) as exc:
+        raise EncryptionFailure(
+            item.record_id, EncryptionFailureCode.CODEC_FAILURE
+        ) from exc
     if header.codec_version != _CODEC_VERSION:
         raise EncryptionFailure(item.record_id, EncryptionFailureCode.CODEC_FAILURE)
     if (
