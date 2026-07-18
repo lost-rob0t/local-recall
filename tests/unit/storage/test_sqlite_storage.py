@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sqlite3
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -10,7 +11,6 @@ from typing import cast
 from uuid import UUID, uuid1, uuid4
 
 import pytest
-
 from local_recall.domain.crypto import EncryptedRecordEnvelope, KeyHandle
 from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.ports.storage import DayRangeQuery, DeleteRequest
@@ -46,12 +46,18 @@ def encrypted_envelope(
     )
 
 
-def backend(root: Path, **kwargs: object) -> SQLiteEncryptedStorage:
+def backend(
+    root: Path,
+    *,
+    quota_bytes: int = 1_000_000,
+    max_blob_bytes: int = 100_000,
+    fault_injector: Callable[[str], None] | None = None,
+) -> SQLiteEncryptedStorage:
     return SQLiteEncryptedStorage(
         root,
-        quota_bytes=cast(int, kwargs.pop("quota_bytes", 1_000_000)),
-        max_blob_bytes=cast(int, kwargs.pop("max_blob_bytes", 100_000)),
-        **cast(dict[str, object], kwargs),
+        quota_bytes=quota_bytes,
+        max_blob_bytes=max_blob_bytes,
+        fault_injector=fault_injector,
     )
 
 
