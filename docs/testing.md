@@ -1,6 +1,6 @@
 # Testing policy
 
-Local Recall uses test-driven development for all production behavior.
+Local Recall uses test-driven development for all production behavior. All required development and CI checks target the standard CPython 3.14 series.
 
 ## Red → green → refactor
 
@@ -18,7 +18,7 @@ Bug fixes start with a regression test that reproduces the defect. A production 
 ./scripts/check
 ```
 
-The command syncs exactly the pinned dependency graph from `requirements.lock` and runs formatting, linting, shell linting, strict static typing, all test layers, repository-policy checks, secret scanning, and source security scanning.
+The command creates or synchronizes a Python 3.14 environment from `requirements.lock` and runs formatting, linting, shell linting, strict static typing, populated test layers, direct failure-propagation verification, repository-policy checks, secret scanning, and source security scanning.
 
 Focused tests use the same failure-honest wrapper:
 
@@ -31,6 +31,13 @@ A NixOS development shell runs the same command:
 ```sh
 nix develop -c ./scripts/check
 ```
+
+## Runtime target
+
+- Packaging requires `>=3.14,<3.15`.
+- Bootstrap, CI, Ruff, Pyright, tests, and Nix must select Python 3.14.
+- Python 3.13 and Python 3.15 are unsupported until a later ADR changes the target.
+- The standard GIL-enabled CPython build is the v0.1 target; free-threaded builds require separate validation.
 
 ## Test layers
 
@@ -45,6 +52,8 @@ nix develop -c ./scripts/check
 
 A behavior crossing a component or process boundary requires coverage at each materially different boundary. Unit coverage does not replace integration or end-to-end coverage.
 
+An empty future layer is not invoked as a standalone required selection. Once a layer contains required tests, CI must execute it.
+
 ## Failure semantics
 
 A required run fails when any of these occurs:
@@ -58,7 +67,7 @@ A required run fails when any of these occurs:
 - no required tests are collected;
 - a lint, format, type, policy, secret, or security scan fails.
 
-The shell wrappers use strict error handling and pipeline failure propagation. Test output is intentionally piped through a neutral process inside `scripts/run-pytest`; meta-tests prove the original pytest status is preserved.
+The shell wrappers use strict error handling and pipeline failure propagation. Test output is intentionally piped through a neutral process inside `scripts/run-pytest`; the direct failure harness proves the original pytest status is preserved.
 
 Required test and CI paths may not neutralize errors, return unconditional success, tolerate failed jobs, or treat an empty test selection as passing. The repository policy scanner checks the executable test and workflow paths for those constructs.
 
@@ -88,7 +97,7 @@ The default branch and release gate require zero skipped and zero expected-failu
 
 ## Failure-injection verification
 
-`scripts/verify-failure-modes` runs isolated known-failing fixtures and succeeds only when each nested run returns non-zero. It verifies:
+`scripts/verify-failure-modes` runs isolated known-failing fixtures and succeeds only when each nested run returns non-zero. The canonical check invokes it directly, and CI runs it as an independent required Python 3.14 job. It verifies:
 
 - assertion failure;
 - collection failure;
