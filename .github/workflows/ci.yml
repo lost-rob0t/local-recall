@@ -39,7 +39,29 @@ jobs:
       - name: Check pipeline unit lint
         run: uv run --no-sync ruff check tests/unit/pipeline
       - name: Check pipeline integration lint
-        run: uv run --no-sync ruff check tests/integration/pipeline
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          completed = subprocess.run(
+              ["uv", "run", "--no-sync", "ruff", "check", "tests/integration/pipeline"],
+              capture_output=True,
+              text=True,
+              check=False,
+          )
+          output = completed.stdout + completed.stderr
+          Path("ruff-integration.txt").write_text(output, encoding="utf-8")
+          print(output, end="")
+          raise SystemExit(completed.returncode)
+          PY
+      - name: Upload integration lint diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-integration-${{ matrix.os }}
+          path: ruff-integration.txt
+          if-no-files-found: error
       - name: Check pipeline architecture lint
         run: uv run --no-sync ruff check tests/security/test_pipeline_architecture.py
       - name: Check Python lint
