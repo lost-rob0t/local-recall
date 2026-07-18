@@ -108,9 +108,10 @@ class FilesystemStorageBackend:
 
         try:
             decoded = await self._codec.decode(blob, expected_record_id=record_id)
-        except StorageFailure:
-            with self._lock:
-                self._operations.quarantine_entry(entry)
+        except StorageFailure as exc:
+            if exc.code is StorageFailureCode.CORRUPT_RECORD:
+                with self._lock:
+                    self._operations.quarantine_entry(entry)
             raise
 
         if decoded.requires_migration:
