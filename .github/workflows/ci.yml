@@ -54,5 +54,5 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Install locked dependencies
         run: ./scripts/bootstrap
-      - name: Run failure-injection tests
-        run: ./scripts/run-pytest tests/failure_injection
+      - name: Verify known failures remain non-zero
+        run: ./scripts/verify-failure-modes
