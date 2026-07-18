@@ -67,10 +67,12 @@ def encode_envelope(envelope: EncryptedRecordEnvelope) -> bytes:
 def decode_envelope(data: bytes, *, max_blob_bytes: int) -> EncryptedRecordEnvelope:
     if not data or len(data) > max_blob_bytes or len(data) < _HEADER_PREFIX.size + _LENGTHS.size:
         raise StorageFailure(StorageFailureCode.CORRUPTION)
-    magic, version, header_len = _HEADER_PREFIX.unpack_from(data)
+    magic, version, header_len = cast(
+        tuple[bytes, int, int], _HEADER_PREFIX.unpack_from(data)
+    )
     if magic != _MAGIC or version != _FORMAT_VERSION or not 1 <= header_len <= _MAX_HEADER_BYTES:
         raise StorageFailure(StorageFailureCode.CORRUPTION)
-    lengths = _LENGTHS.unpack_from(data, _HEADER_PREFIX.size)
+    lengths = cast(tuple[int, int, int, int], _LENGTHS.unpack_from(data, _HEADER_PREFIX.size))
     if any(length <= 0 or length > _MAX_BINARY_PART for length in lengths):
         raise StorageFailure(StorageFailureCode.CORRUPTION)
     offset = _HEADER_PREFIX.size + _LENGTHS.size
@@ -84,37 +86,34 @@ def decode_envelope(data: bytes, *, max_blob_bytes: int) -> EncryptedRecordEnvel
         raw = cast(dict[str, Any], decoded)
         if set(raw) != _REQUIRED_KEYS:
             raise ValueError
-        record_id = UUID(cast(str, raw["record_id"]))
-        _validate_uuid(record_id)
-        generation_object = raw["generation"]
-        schema_version_object = raw["schema_version"]
-        key_version_object = raw["key_version"]
-        if (
-            type(generation_object) is not int
-            or type(schema_version_object) is not int
-            or type(key_version_object) is not int
-        ):
+        record_id_object = raw["record_id"]
+        created_at_object = raw["created_at"]
+        if not isinstance(record_id_object, str) or not isinstance(created_at_object, str):
             raise ValueError
-        generation = cast(int, generation_object)
-        schema_version = cast(int, schema_version_object)
-        key_version = cast(int, key_version_object)
+        record_id = UUID(record_id_object)
+        _validate_uuid(record_id)
+        generation = raw["generation"]
+        schema_version = raw["schema_version"]
+        key_version = raw["key_version"]
+        if type(generation) is not int or type(schema_version) is not int or type(key_version) is not int:
+            raise ValueError
         sizes_object = raw["plaintext_frame_sizes"]
         if not isinstance(sizes_object, list):
             raise ValueError
-        if any(type(value) is not int for value in sizes_object):
+        size_values = cast(list[object], sizes_object)
+        if any(type(value) is not int for value in size_values):
             raise ValueError
-        sizes = tuple(cast(int, value) for value in sizes_object)
-        created_at = datetime.fromisoformat(cast(str, raw["created_at"]))
+        sizes = tuple(cast(int, value) for value in size_values)
+        created_at = datetime.fromisoformat(created_at_object)
         if generation <= 0 or schema_version <= 0 or key_version <= 0 or created_at.tzinfo is None:
             raise ValueError
         if not sizes or any(value <= 0 for value in sizes):
             raise ValueError
-        strings = [
-            raw["configuration_revision"],
-            raw["algorithm"],
-            raw["key_id"],
-            raw["key_provider_id"],
-        ]
+        configuration_revision = raw["configuration_revision"]
+        algorithm = raw["algorithm"]
+        key_id = raw["key_id"]
+        key_provider_id = raw["key_provider_id"]
+        strings = (configuration_revision, algorithm, key_id, key_provider_id)
         if any(not isinstance(value, str) or not value for value in strings):
             raise ValueError
     except ValueError, TypeError, KeyError, json.JSONDecodeError, UnicodeDecodeError:
@@ -124,18 +123,17 @@ def decode_envelope(data: bytes, *, max_blob_bytes: int) -> EncryptedRecordEnvel
     for length in lengths:
         parts.append(data[cursor : cursor + length])
         cursor += length
-    wrapped, nonce, ciphertext, associated_data_digest = parts
+    wrapped = parts[0]
+    nonce = parts[1]
+    ciphertext = parts[2]
+    associated_data_digest = parts[3]
     return EncryptedRecordEnvelope(
         record_id=record_id,
         generation=CaptureGeneration(generation),
-        configuration_revision=cast(str, raw["configuration_revision"]),
+        configuration_revision=cast(str, configuration_revision),
         schema_version=schema_version,
-        algorithm=cast(str, raw["algorithm"]),
-        key=KeyHandle(
-            cast(str, raw["key_id"]),
-            cast(str, raw["key_provider_id"]),
-            key_version,
-        ),
+        algorithm=cast(str, algorithm),
+        key=KeyHandle(cast(str, key_id), cast(str, key_provider_id), key_version),
         plaintext_frame_sizes=sizes,
         wrapped_data_key=wrapped,
         nonce=nonce,
