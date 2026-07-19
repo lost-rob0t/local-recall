@@ -154,15 +154,9 @@ class AuditEvent:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
         if self.key_version is not None and self.key_version <= 0:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
-        if (
-            self.previous_state is not None
-            and type(self.previous_state) is not CaptureState
-        ):
+        if self.previous_state is not None and type(self.previous_state) is not CaptureState:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
-        if (
-            self.current_state is not None
-            and type(self.current_state) is not CaptureState
-        ):
+        if self.current_state is not None and type(self.current_state) is not CaptureState:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
         if (self.previous_state is None) != (self.current_state is None):
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
@@ -198,20 +192,20 @@ class AuditEvent:
 
 def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]) -> None:
     if event.action is AuditAction.LIFECYCLE_TRANSITION:
-        if (
-            event.previous_state is None
-            or event.current_state is None
-            or event.generation is None
-        ):
+        if event.previous_state is None or event.current_state is None or event.generation is None:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
     elif event.previous_state is not None or event.current_state is not None:
         raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
-    if event.action in {
-        AuditAction.CAPTURE_DECISION,
-        AuditAction.POLICY_DECISION,
-        AuditAction.RECORD_REJECTED,
-    } and event.generation is None:
+    if (
+        event.action
+        in {
+            AuditAction.CAPTURE_DECISION,
+            AuditAction.POLICY_DECISION,
+            AuditAction.RECORD_REJECTED,
+        }
+        and event.generation is None
+    ):
         raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action in {AuditAction.RECORD_REJECTED, AuditAction.RECORD_DELETED}:
@@ -227,11 +221,7 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.KEY_OPERATION:
-        if (
-            event.provider_id is None
-            or event.key_version is None
-            or event.key_id_digest is None
-        ):
+        if event.provider_id is None or event.key_version is None or event.key_id_digest is None:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
 
@@ -242,12 +232,9 @@ def _safe_identifier(value: str) -> bool:
     if not (first.isascii() and first.isalnum()):
         return False
     return all(
-        character.isascii() and (character.isalnum() or character in "_.:-")
-        for character in value
+        character.isascii() and (character.isalnum() or character in "_.:-") for character in value
     )
 
 
 def _digest(value: str) -> bool:
-    return len(value) == 32 and all(
-        character in "0123456789abcdef" for character in value
-    )
+    return len(value) == 32 and all(character in "0123456789abcdef" for character in value)
