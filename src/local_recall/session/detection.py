@@ -35,9 +35,7 @@ class EnvironmentSnapshot:
     @classmethod
     def from_mapping(cls, environment: Mapping[str, str]) -> EnvironmentSnapshot:
         raw_session_type = environment.get("XDG_SESSION_TYPE")
-        session_type_present = raw_session_type is not None and bool(
-            raw_session_type.strip()
-        )
+        session_type_present = raw_session_type is not None and bool(raw_session_type.strip())
         session_type = _normalize_session_type(raw_session_type)
         desktop_candidates = _known_desktops(
             environment.get("XDG_CURRENT_DESKTOP"),
@@ -47,9 +45,7 @@ class EnvironmentSnapshot:
             session_type=session_type,
             session_type_present=session_type_present,
             display_present=bool(environment.get("DISPLAY", "").strip()),
-            wayland_display_present=bool(
-                environment.get("WAYLAND_DISPLAY", "").strip()
-            ),
+            wayland_display_present=bool(environment.get("WAYLAND_DISPLAY", "").strip()),
             desktop_candidates=desktop_candidates,
         )
 
