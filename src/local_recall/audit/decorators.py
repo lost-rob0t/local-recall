@@ -84,7 +84,16 @@ class AuditedModelRoutingPolicy:
         request: RoutingRequest,
         providers: tuple[ProviderCapabilities, ...],
     ) -> RoutingDecision:
-        decision = await self._inner.route(request, providers)
+        try:
+            decision = await self._inner.route(request, providers)
+        except Exception:
+            self._recorder.provider_selection(
+                provider_id=None,
+                remote=request.allow_remote,
+                authorized=False,
+                reason=AuditReasonCode.PROVIDER_REJECTED,
+            )
+            raise
         remote = decision.location is ProviderLocation.REMOTE
         self._recorder.provider_selection(
             provider_id=decision.provider_id,
@@ -115,12 +124,26 @@ class AuditedStorageBackend:
         return await self._inner.get(record_id)
 
     async def delete(self, request: DeleteRequest) -> DeleteResult:
-        result = await self._inner.delete(request)
-        if result.deleted:
-            self._recorder.record_deleted(
-                record_id=result.record_id,
-                cryptographic_material_destroyed=result.cryptographic_material_destroyed,
+        try:
+            result = await self._inner.delete(request)
+        except Exception:
+            self._recorder.record_deletion(
+                record_id=request.record_id,
+                deleted=False,
+                failed=True,
+                reason=AuditReasonCode.PERSISTENCE_FAILED,
             )
+            raise
+        self._recorder.record_deletion(
+            record_id=result.record_id,
+            deleted=result.deleted,
+            reason=(
+                AuditReasonCode.DELETION_COMPLETED
+                if result.deleted
+                else AuditReasonCode.INVALID_RECORD
+            ),
+            cryptographic_material_destroyed=result.cryptographic_material_destroyed,
+        )
         return result
 
 
