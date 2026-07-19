@@ -56,9 +56,10 @@ def test_runtime_hardening_disables_core_dumps_and_fault_handler() -> None:
     assert result.core_dumps_disabled
     assert result.restrictive_umask_installed
     assert result.fault_handler_disabled
+    assert result.validated_storage_roots == 0
 
 
-def test_lifecycle_adapter_hashes_configuration_revision() -> None:
+def test_lifecycle_adapter_hashes_revision_and_records_states() -> None:
     sink = MemorySink()
     adapter = LifecycleAuditAdapter(
         AuditRecorder(sink, clock=lambda: datetime(2026, 7, 18, tzinfo=UTC))
@@ -78,5 +79,7 @@ def test_lifecycle_adapter_hashes_configuration_revision() -> None:
     assert len(sink.events) == 1
     event = sink.events[0]
     assert event.reason is AuditReasonCode.STARTUP_OPT_IN
+    assert event.previous_state is CaptureState.OFF
+    assert event.current_state is CaptureState.STARTING
     assert event.configuration_revision_digest is not None
     assert "synthetic-private-config-revision" not in repr(event)
