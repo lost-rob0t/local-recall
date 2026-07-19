@@ -14,18 +14,28 @@ from .models import (
     SessionReasonCode,
     SessionResolution,
 )
+from .probes import (
+    ActivityWatchMetadataProbe,
+    AsyncHealthCheck,
+    GenericXorgMetadataProbe,
+    QtileMetadataProbe,
+)
 from .resolver import MetadataStrategyProbe, SessionResolver
 
 __all__ = [
+    "ActivityWatchMetadataProbe",
+    "AsyncHealthCheck",
     "DesktopEnvironment",
     "DesktopSession",
     "DisplayProtocol",
     "EnvironmentSnapshot",
+    "GenericXorgMetadataProbe",
     "MetadataCapability",
     "MetadataProbeResult",
     "MetadataStrategyProbe",
     "ProbeOutcome",
     "ProbeReasonCode",
+    "QtileMetadataProbe",
     "ResolutionReasonCode",
     "SessionReasonCode",
     "SessionResolution",
