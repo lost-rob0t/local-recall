@@ -89,6 +89,35 @@ def test_rotation_stays_bounded_and_owner_only(tmp_path: Path) -> None:
     assert all(os.stat(path).st_mode & 0o777 == 0o600 for path in rotated)
 
 
+def test_failed_rotation_leaves_sink_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sink = OwnerOnlyAuditFileSink(
+        AuditFileSettings(
+            tmp_path / "audit",
+            max_file_bytes=4096,
+            max_event_bytes=2048,
+        )
+    )
+    sink.path.write_bytes(b"x" * 4000)
+
+    def fail_replace(source: Path, destination: Path) -> None:
+        del source, destination
+        raise OSError("synthetic rotation failure")
+
+    monkeypatch.setattr(os, "replace", fail_replace)
+
+    with pytest.raises(AuditFailure) as captured:
+        sink.emit(event())
+    assert captured.value.code is AuditFailureCode.IO_FAILURE
+
+    with pytest.raises(AuditFailure) as closed:
+        sink.emit(event())
+    assert closed.value.code is AuditFailureCode.IO_FAILURE
+    sink.close()
+
+
 def test_debug_path_uses_the_same_serializer(tmp_path: Path) -> None:
     sink = OwnerOnlyAuditFileSink(AuditFileSettings(tmp_path / "audit"))
     source = event()
@@ -110,6 +139,8 @@ def test_debug_path_uses_the_same_serializer(tmp_path: Path) -> None:
         "generation",
         "provider_id",
         "key_version",
+        "previous_state",
+        "current_state",
         "configuration_revision_digest",
         "key_id_digest",
         "attributes",
