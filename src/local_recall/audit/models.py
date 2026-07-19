@@ -208,9 +208,11 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
     ):
         raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
-    if event.action in {AuditAction.RECORD_REJECTED, AuditAction.RECORD_DELETED}:
-        if event.record_id is None:
-            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+    if (
+        event.action in {AuditAction.RECORD_REJECTED, AuditAction.RECORD_DELETED}
+        and event.record_id is None
+    ):
+        raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.PROVIDER_SELECTION:
         if set(attributes) != {"remote", "authorized"}:
@@ -220,9 +222,11 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
         if type(remote) is not bool or type(authorized) is not bool:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
-    if event.action is AuditAction.KEY_OPERATION:
-        if event.provider_id is None or event.key_version is None or event.key_id_digest is None:
-            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+    if (
+        event.action is AuditAction.KEY_OPERATION
+        and (event.provider_id is None or event.key_version is None or event.key_id_digest is None)
+    ):
+        raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
 
 def _safe_identifier(value: str) -> bool:
