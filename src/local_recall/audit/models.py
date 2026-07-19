@@ -84,6 +84,20 @@ class AuditReasonCode(StrEnum):
     CRITICAL_FAULT = "critical_fault"
 
 
+_ACTION_CATEGORIES: dict[AuditAction, AuditCategory] = {
+    AuditAction.LIFECYCLE_TRANSITION: AuditCategory.LIFECYCLE,
+    AuditAction.CAPTURE_DECISION: AuditCategory.CAPTURE,
+    AuditAction.POLICY_DECISION: AuditCategory.POLICY,
+    AuditAction.PROVIDER_SELECTION: AuditCategory.PROVIDER,
+    AuditAction.RECORD_REJECTED: AuditCategory.RECORD,
+    AuditAction.RECORD_DELETED: AuditCategory.RECORD,
+    AuditAction.EXPORT_DECISION: AuditCategory.EXPORT,
+    AuditAction.KEY_OPERATION: AuditCategory.KEY,
+    AuditAction.SYSTEM_HARDENING: AuditCategory.SYSTEM,
+    AuditAction.STORAGE_PERMISSION_CHECK: AuditCategory.SYSTEM,
+    AuditAction.LOG_ROTATION: AuditCategory.SYSTEM,
+}
+
 _ALLOWED_ATTRIBUTE_KEYS = frozenset(
     {
         "remote",
@@ -128,6 +142,8 @@ class AuditEvent:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
         if type(self.reason) is not AuditReasonCode:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if _ACTION_CATEGORIES[self.action] is not self.category:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
         if self.event_id.version != 4 or self.correlation_id.version != 4:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
         if self.occurred_at.tzinfo is None or self.occurred_at.utcoffset() is None:
@@ -161,6 +177,7 @@ class AuditEvent:
             if type(value) is int and value < 0:
                 raise AuditFailure(AuditFailureCode.INVALID_EVENT)
             normalized[key] = value
+        _validate_action_fields(self, normalized)
         object.__setattr__(self, "attributes", MappingProxyType(normalized))
 
     def __repr__(self) -> str:
@@ -171,6 +188,43 @@ class AuditEvent:
             f"record_id={self.record_id!r}, generation={self.generation!r}, "
             f"previous_state={self.previous_state!r}, current_state={self.current_state!r})"
         )
+
+
+def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]) -> None:
+    if event.action is AuditAction.LIFECYCLE_TRANSITION:
+        if (
+            event.previous_state is None
+            or event.current_state is None
+            or event.generation is None
+        ):
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+    elif event.previous_state is not None or event.current_state is not None:
+        raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action in {
+        AuditAction.CAPTURE_DECISION,
+        AuditAction.POLICY_DECISION,
+        AuditAction.RECORD_REJECTED,
+    } and event.generation is None:
+        raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action in {AuditAction.RECORD_REJECTED, AuditAction.RECORD_DELETED}:
+        if event.record_id is None:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action is AuditAction.PROVIDER_SELECTION:
+        if set(attributes) != {"remote", "authorized"}:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if type(attributes["remote"]) is not bool or type(attributes["authorized"]) is not bool:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action is AuditAction.KEY_OPERATION:
+        if (
+            event.provider_id is None
+            or event.key_version is None
+            or event.key_id_digest is None
+        ):
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
 
 def _safe_identifier(value: str) -> bool:
