@@ -103,10 +103,7 @@ def test_recorder_hashes_references_and_records_lifecycle_states() -> None:
     assert key_event.key_id_digest is not None
     assert key_event.key_id_digest != "synthetic-sensitive-key-reference"
     assert lifecycle_event.configuration_revision_digest is not None
-    assert (
-        lifecycle_event.configuration_revision_digest
-        != "synthetic-configuration-revision"
-    )
+    assert lifecycle_event.configuration_revision_digest != "synthetic-configuration-revision"
     assert lifecycle_event.previous_state is CaptureState.OFF
     assert lifecycle_event.current_state is CaptureState.STARTING
     assert len(sink.events) == 2
