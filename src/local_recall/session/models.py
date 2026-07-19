@@ -111,7 +111,9 @@ class SessionResolution:
             raise ValueError("capture backend identifier is invalid")
         if len(set(self.selected_metadata_sources)) != len(self.selected_metadata_sources):
             raise ValueError("selected metadata source identifiers must be unique")
-        if any(not _IDENTIFIER.fullmatch(source_id) for source_id in self.selected_metadata_sources):
+        if any(
+            not _IDENTIFIER.fullmatch(source_id) for source_id in self.selected_metadata_sources
+        ):
             raise ValueError("selected metadata source identifier is invalid")
         if self.recording_supported:
             if self.capture_backend_id is None:
