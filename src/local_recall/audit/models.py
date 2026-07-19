@@ -175,4 +175,6 @@ def _safe_identifier(value: str) -> bool:
 
 
 def _digest(value: str) -> bool:
-    return len(value) == 32 and all(character in "0123456789abcdef" for character in value)
+    return len(value) == 32 and all(
+        character in "0123456789abcdef" for character in value
+    )
