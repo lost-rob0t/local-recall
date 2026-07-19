@@ -132,7 +132,7 @@ def _encode_event(event: AuditEvent) -> bytes:
         payload["provider_id"] = event.provider_id
     if event.key_version is not None:
         payload["key_version"] = event.key_version
-    if event.previous_state is not None:
+    if event.previous_state is not None and event.current_state is not None:
         payload["previous_state"] = event.previous_state.value
         payload["current_state"] = event.current_state.value
     if event.configuration_revision_digest is not None:
