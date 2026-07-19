@@ -222,9 +222,8 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
         if type(remote) is not bool or type(authorized) is not bool:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
-    if (
-        event.action is AuditAction.KEY_OPERATION
-        and (event.provider_id is None or event.key_version is None or event.key_id_digest is None)
+    if event.action is AuditAction.KEY_OPERATION and (
+        event.provider_id is None or event.key_version is None or event.key_id_digest is None
     ):
         raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
