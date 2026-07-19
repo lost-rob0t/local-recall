@@ -51,11 +51,14 @@ def test_insecure_storage_file_fails_closed(tmp_path: Path) -> None:
     assert captured.value.code is AuditFailureCode.INSECURE_PERMISSIONS
 
 
-def test_runtime_hardener_checks_storage_before_enabling_runtime(tmp_path: Path) -> None:
+def test_runtime_hardener_disables_crash_outputs_before_storage_check(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "storage"
     root.mkdir(mode=0o755)
     root.chmod(0o755)
     limits = (1, 1)
+    disabled: list[bool] = []
 
     def set_limits(resource_id: int, value: tuple[int, int]) -> None:
         nonlocal limits
@@ -68,8 +71,9 @@ def test_runtime_hardener_checks_storage_before_enabling_runtime(tmp_path: Path)
             set_limits=set_limits,
             get_limits=lambda resource_id: limits,
             set_umask=lambda value: 0,
-            disable_fault_handler=lambda: None,
+            disable_fault_handler=lambda: disabled.append(True),
         ).apply(storage_roots=(root,))
 
     assert captured.value.code is AuditFailureCode.INSECURE_PERMISSIONS
-    assert limits == (1, 1)
+    assert limits == (0, 0)
+    assert disabled == [True]
