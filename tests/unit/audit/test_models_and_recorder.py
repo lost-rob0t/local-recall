@@ -15,6 +15,7 @@ from local_recall.audit import (
     AuditReasonCode,
     AuditRecorder,
 )
+from local_recall.domain.lifecycle import CaptureState
 
 
 class MemorySink:
@@ -50,7 +51,7 @@ def test_event_rejects_unapproved_attribute_keys() -> None:
         )
 
 
-def test_recorder_hashes_key_and_configuration_references() -> None:
+def test_recorder_hashes_references_and_records_lifecycle_states() -> None:
     sink = MemorySink()
     recorder = AuditRecorder(sink, clock=lambda: datetime(2026, 7, 18, tzinfo=UTC))
 
@@ -65,6 +66,8 @@ def test_recorder_hashes_key_and_configuration_references() -> None:
         reason=AuditReasonCode.STARTUP_OPT_IN,
         generation=4,
         correlation_id=uuid4(),
+        previous_state=CaptureState.OFF,
+        current_state=CaptureState.STARTING,
         configuration_revision="synthetic-configuration-revision",
         faulted=False,
     )
@@ -76,6 +79,8 @@ def test_recorder_hashes_key_and_configuration_references() -> None:
         lifecycle_event.configuration_revision_digest
         != "synthetic-configuration-revision"
     )
+    assert lifecycle_event.previous_state is CaptureState.OFF
+    assert lifecycle_event.current_state is CaptureState.STARTING
     assert len(sink.events) == 2
 
 
