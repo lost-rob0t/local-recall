@@ -56,9 +56,7 @@ def test_qtile_probe_rejects_non_qtile_session_without_health_call() -> None:
     health = FixedHealth(True)
     probe = QtileMetadataProbe(health)
 
-    result = asyncio.run(
-        probe.probe(session(desktop=DesktopEnvironment.GNOME))
-    )
+    result = asyncio.run(probe.probe(session(desktop=DesktopEnvironment.GNOME)))
 
     assert result.outcome is ProbeOutcome.INCOMPATIBLE
     assert result.reason_code is ProbeReasonCode.INCOMPATIBLE_SESSION
