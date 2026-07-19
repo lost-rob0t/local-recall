@@ -5,6 +5,7 @@ from local_recall.lifecycle.messages import LifecycleAuditEvent
 from local_recall.pipeline.models import (
     PipelineFaultCode,
     PipelineFaultEvent,
+    PipelineStage,
     SubmissionResult,
     SubmissionStatus,
 )
@@ -30,13 +31,6 @@ _REASON_MAP: dict[TransitionReason, AuditReasonCode] = {
     TransitionReason.SHUTDOWN: AuditReasonCode.SHUTDOWN,
 }
 
-_PIPELINE_FAULT_REASONS: dict[PipelineFaultCode, AuditReasonCode] = {
-    PipelineFaultCode.PROCESSOR_FAILURE: AuditReasonCode.REDACTION_FAILED,
-    PipelineFaultCode.PROTOCOL_FAILURE: AuditReasonCode.INVALID_RECORD,
-    PipelineFaultCode.TRANSPORT_FAILURE: AuditReasonCode.PERSISTENCE_FAILED,
-    PipelineFaultCode.PERSISTENCE_FAILURE: AuditReasonCode.PERSISTENCE_FAILED,
-}
-
 
 class LifecycleAuditAdapter:
     def __init__(self, recorder: AuditRecorder) -> None:
@@ -47,6 +41,8 @@ class LifecycleAuditAdapter:
             reason=_REASON_MAP[event.reason],
             generation=event.generation,
             correlation_id=event.event_id,
+            previous_state=event.previous,
+            current_state=event.current,
             configuration_revision=event.configuration_revision,
             faulted=event.fault_code is not None,
         )
@@ -80,5 +76,18 @@ class PipelineAuditAdapter:
         self._recorder.record_rejected(
             record_id=event.record_id,
             generation=generation.value,
-            reason=_PIPELINE_FAULT_REASONS[event.fault_code],
+            reason=_pipeline_fault_reason(event),
         )
+
+
+def _pipeline_fault_reason(event: PipelineFaultEvent) -> AuditReasonCode:
+    if event.fault_code is PipelineFaultCode.PROTOCOL_FAILURE:
+        return AuditReasonCode.INVALID_RECORD
+    if event.fault_code in {
+        PipelineFaultCode.TRANSPORT_FAILURE,
+        PipelineFaultCode.PERSISTENCE_FAILURE,
+    }:
+        return AuditReasonCode.PERSISTENCE_FAILED
+    if event.stage is PipelineStage.REDACTED:
+        return AuditReasonCode.ENCRYPTION_UNAVAILABLE
+    return AuditReasonCode.REDACTION_FAILED
