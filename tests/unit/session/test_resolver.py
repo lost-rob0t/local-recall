@@ -80,21 +80,15 @@ def test_composes_healthy_sources_in_configured_order() -> None:
     )
     activitywatch = probe(
         "activitywatch",
-        capabilities=frozenset(
-            {MetadataCapability.APPLICATION, MetadataCapability.ACTIVITY}
-        ),
+        capabilities=frozenset({MetadataCapability.APPLICATION, MetadataCapability.ACTIVITY}),
     )
     generic = probe(
         "xorg-generic",
-        capabilities=frozenset(
-            {MetadataCapability.APPLICATION, MetadataCapability.WINDOW_TITLE}
-        ),
+        capabilities=frozenset({MetadataCapability.APPLICATION, MetadataCapability.WINDOW_TITLE}),
     )
     resolver = SessionResolver((qtile, activitywatch), generic_xorg_probe=generic)
 
-    resolution = asyncio.run(
-        resolver.resolve(qtile_xorg(), ("qtile", "activitywatch"))
-    )
+    resolution = asyncio.run(resolver.resolve(qtile_xorg(), ("qtile", "activitywatch")))
 
     assert resolution.recording_supported is True
     assert resolution.capture_backend_id == "xorg-generic"
@@ -110,9 +104,7 @@ def test_falls_back_to_generic_xorg_when_specialized_probe_is_unavailable() -> N
     )
     generic = probe(
         "xorg-generic",
-        capabilities=frozenset(
-            {MetadataCapability.APPLICATION, MetadataCapability.WINDOW_TITLE}
-        ),
+        capabilities=frozenset({MetadataCapability.APPLICATION, MetadataCapability.WINDOW_TITLE}),
     )
     resolver = SessionResolver((qtile,), generic_xorg_probe=generic)
 
@@ -175,9 +167,7 @@ def test_probe_timeout_is_bounded_and_sanitized() -> None:
         probe_timeout_seconds=0.01,
     )
 
-    resolution = asyncio.run(
-        resolver.resolve(qtile_xorg(), ("activitywatch",))
-    )
+    resolution = asyncio.run(resolver.resolve(qtile_xorg(), ("activitywatch",)))
 
     assert resolution.probe_results[0].outcome is ProbeOutcome.TIMED_OUT
     assert resolution.probe_results[0].reason_code is ProbeReasonCode.PROBE_TIMED_OUT
