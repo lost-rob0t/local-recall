@@ -42,13 +42,13 @@ class RuntimeHardener:
     def apply(self, *, storage_roots: tuple[Path, ...] = ()) -> RuntimeHardeningResult:
         try:
             self._set_umask(0o077)
-            for root in storage_roots:
-                validate_owner_only_storage_tree(root)
             self._set_limits(self._core_resource_id, (0, 0))
             soft, hard = self._get_limits(self._core_resource_id)
             if soft != 0 or hard != 0:
                 raise AuditFailure(AuditFailureCode.HARDENING_FAILURE)
             self._disable_fault_handler()
+            for root in storage_roots:
+                validate_owner_only_storage_tree(root)
         except AuditFailure:
             raise
         except Exception as exc:
