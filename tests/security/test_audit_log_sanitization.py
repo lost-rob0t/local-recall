@@ -15,6 +15,7 @@ from local_recall.audit import (
     AuditRecorder,
     OwnerOnlyAuditFileSink,
 )
+from local_recall.domain.lifecycle import CaptureState
 
 
 _SEEDED_VALUES = (
@@ -35,6 +36,8 @@ def test_audit_log_contains_no_seeded_content_or_secret_values(tmp_path: Path) -
         reason=AuditReasonCode.STARTUP_OPT_IN,
         generation=1,
         correlation_id=uuid4(),
+        previous_state=CaptureState.OFF,
+        current_state=CaptureState.STARTING,
         configuration_revision=_SEEDED_VALUES[0],
         faulted=False,
     )
@@ -58,6 +61,8 @@ def test_audit_log_contains_no_seeded_content_or_secret_values(tmp_path: Path) -
     assert all(value not in persisted for value in _SEEDED_VALUES)
     assert "configuration_revision_digest" in persisted
     assert "key_id_digest" in persisted
+    assert '"previous_state":"off"' in persisted
+    assert '"current_state":"starting"' in persisted
 
 
 def test_arbitrary_debug_reason_cannot_bypass_the_schema(tmp_path: Path) -> None:
