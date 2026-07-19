@@ -78,21 +78,33 @@ class OwnerOnlyAuditFileSink:
         with self._lock:
             if self._closed:
                 return
+            descriptor = self._descriptor
+            self._descriptor = -1
+            self._closed = True
             try:
-                os.fsync(self._descriptor)
+                os.fsync(descriptor)
             finally:
-                os.close(self._descriptor)
-                self._closed = True
+                os.close(descriptor)
 
     def _rotate_locked(self) -> None:
-        os.fsync(self._descriptor)
-        os.close(self._descriptor)
-        rotated = self._root / f"audit.{uuid4().hex}.jsonl"
-        os.replace(self._path, rotated)
-        os.chmod(rotated, 0o600)
-        _fsync_directory(self._root)
-        self._descriptor = _open_log(self._path)
-        self._prune_locked()
+        descriptor = self._descriptor
+        try:
+            try:
+                os.fsync(descriptor)
+            finally:
+                try:
+                    os.close(descriptor)
+                finally:
+                    self._descriptor = -1
+            rotated = self._root / f"audit.{uuid4().hex}.jsonl"
+            os.replace(self._path, rotated)
+            os.chmod(rotated, 0o600)
+            _fsync_directory(self._root)
+            self._prune_locked()
+            self._descriptor = _open_log(self._path)
+        except Exception:
+            self._closed = True
+            raise
 
     def _prune_locked(self) -> None:
         cutoff = time.time() - self._settings.max_age_days * 86_400
