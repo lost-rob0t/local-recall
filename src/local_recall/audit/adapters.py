@@ -13,7 +13,6 @@ from local_recall.pipeline.models import (
 from .models import AuditReasonCode
 from .recorder import AuditRecorder
 
-
 _REASON_MAP: dict[TransitionReason, AuditReasonCode] = {
     TransitionReason.USER_START: AuditReasonCode.USER_REQUEST,
     TransitionReason.STARTUP_OPT_IN: AuditReasonCode.STARTUP_OPT_IN,
