@@ -13,30 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ruff-lint-diagnostics:
-    name: Ruff lint diagnostics
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-      - uses: astral-sh/setup-uv@v6
-      - name: Install locked dependencies
-        run: ./scripts/bootstrap
-      - name: Generate Ruff lint patch and diagnostics
-        run: |
-          uv run --no-sync ruff check --fix . > ruff-lint.txt 2>&1 || true
-          git diff --binary > ruff-lint.patch
-      - name: Upload Ruff lint diagnostics
-        uses: actions/upload-artifact@v4
-        with:
-          name: ruff-lint-diagnostics
-          path: |
-            ruff-lint.patch
-            ruff-lint.txt
-          if-no-files-found: error
-
   checks:
     name: Checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
