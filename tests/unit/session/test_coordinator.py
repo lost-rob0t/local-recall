@@ -55,9 +55,7 @@ def test_higher_confidence_value_wins_and_all_provenance_is_retained() -> None:
 
 def test_equal_confidence_uses_configured_source_order() -> None:
     qtile = metadata(field("workspace", "one", "qtile", 0.8))
-    activitywatch = metadata(
-        field("workspace", "two", "activitywatch", 0.8)
-    )
+    activitywatch = metadata(field("workspace", "two", "activitywatch", 0.8))
 
     combined = compose_context_metadata(
         (activitywatch, qtile),
@@ -72,9 +70,7 @@ def test_non_conflicting_fields_are_composed_in_stable_name_order() -> None:
         field("workspace", "two", "qtile", 0.9),
         field("window.title", "synthetic title", "qtile", 0.9),
     )
-    activitywatch = metadata(
-        field("application", "synthetic-app", "activitywatch", 0.7)
-    )
+    activitywatch = metadata(field("application", "synthetic-app", "activitywatch", 0.7))
 
     combined = compose_context_metadata(
         (qtile, activitywatch),
