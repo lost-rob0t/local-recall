@@ -50,19 +50,29 @@ def test_pipeline_adapter_records_accepted_and_overloaded_submissions() -> None:
     assert sink.events[1].attributes["queue_depth"] == 32
 
 
-def test_pipeline_adapter_records_fixed_rejection_reason() -> None:
+def test_pipeline_adapter_records_stage_specific_rejection_reasons() -> None:
     sink = MemorySink()
     adapter = PipelineAuditAdapter(AuditRecorder(sink))
-    record_id = uuid4()
+    generation = CaptureGeneration(4)
 
     adapter.record_rejection(
         PipelineFaultEvent(
-            record_id,
+            uuid4(),
+            PipelineStage.ANALYZED,
+            PipelineFaultCode.PROCESSOR_FAILURE,
+        ),
+        generation,
+    )
+    adapter.record_rejection(
+        PipelineFaultEvent(
+            uuid4(),
             PipelineStage.REDACTED,
             PipelineFaultCode.PROCESSOR_FAILURE,
         ),
-        CaptureGeneration(4),
+        generation,
     )
 
-    assert sink.events[-1].record_id == record_id
-    assert sink.events[-1].reason is AuditReasonCode.REDACTION_FAILED
+    assert [event.reason for event in sink.events] == [
+        AuditReasonCode.REDACTION_FAILED,
+        AuditReasonCode.ENCRYPTION_UNAVAILABLE,
+    ]
