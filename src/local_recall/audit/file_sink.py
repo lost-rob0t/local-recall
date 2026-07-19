@@ -97,6 +97,8 @@ class OwnerOnlyAuditFileSink:
         for path in self._root.glob("audit.*.jsonl"):
             info = path.lstat()
             _require_owner_regular_file(info)
+            if stat.S_IMODE(info.st_mode) != 0o600:
+                raise AuditFailure(AuditFailureCode.INSECURE_PERMISSIONS)
             candidates.append((info.st_mtime, path))
         candidates.sort(reverse=True)
         changed = False
@@ -134,9 +136,7 @@ def _encode_event(event: AuditEvent) -> bytes:
     if event.attributes:
         payload["attributes"] = dict(event.attributes)
     return (
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
-            "ascii"
-        )
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
         + b"\n"
     )
 
