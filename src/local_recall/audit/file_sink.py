@@ -58,10 +58,7 @@ class OwnerOnlyAuditFileSink:
                 raise AuditFailure(AuditFailureCode.IO_FAILURE)
             try:
                 current_size = os.fstat(self._descriptor).st_size
-                if (
-                    current_size
-                    and current_size + len(encoded) > self._settings.max_file_bytes
-                ):
+                if current_size and current_size + len(encoded) > self._settings.max_file_bytes:
                     self._rotate_locked()
                 _write_all(self._descriptor, encoded)
                 if self._settings.fsync_each_event:
@@ -154,9 +151,9 @@ def _encode_event(event: AuditEvent) -> bytes:
     if event.attributes:
         payload["attributes"] = dict(event.attributes)
     return (
-        json.dumps(
-            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-        ).encode("ascii")
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
+            "ascii"
+        )
         + b"\n"
     )
 
