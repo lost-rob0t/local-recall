@@ -1,4 +1,4 @@
-from .adapters import LifecycleAuditAdapter
+from .adapters import LifecycleAuditAdapter, PipelineAuditAdapter
 from .decorators import (
     AuditedCapturePolicy,
     AuditedKeyProvider,
@@ -37,6 +37,7 @@ __all__ = [
     "LifecycleAuditAdapter",
     "OwnerOnlyAuditFileSink",
     "PermissionValidationReport",
+    "PipelineAuditAdapter",
     "RuntimeHardener",
     "RuntimeHardeningResult",
     "validate_owner_only_storage_tree",
