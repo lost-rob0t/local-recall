@@ -154,9 +154,15 @@ class AuditEvent:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
         if self.key_version is not None and self.key_version <= 0:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
-        if self.previous_state is not None and type(self.previous_state) is not CaptureState:
+        if (
+            self.previous_state is not None
+            and type(self.previous_state) is not CaptureState
+        ):
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
-        if self.current_state is not None and type(self.current_state) is not CaptureState:
+        if (
+            self.current_state is not None
+            and type(self.current_state) is not CaptureState
+        ):
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
         if (self.previous_state is None) != (self.current_state is None):
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
@@ -215,7 +221,9 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
     if event.action is AuditAction.PROVIDER_SELECTION:
         if set(attributes) != {"remote", "authorized"}:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
-        if type(attributes["remote"]) is not bool or type(attributes["authorized"]) is not bool:
+        remote = attributes["remote"]
+        authorized = attributes["authorized"]
+        if type(remote) is not bool or type(authorized) is not bool:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.KEY_OPERATION:
