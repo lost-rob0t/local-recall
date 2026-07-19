@@ -47,7 +47,7 @@ class AuditRecorder:
     def capture_decision(
         self,
         *,
-        record_id: UUID,
+        record_id: UUID | None,
         generation: int,
         accepted: bool,
         reason: AuditReasonCode,
@@ -68,7 +68,7 @@ class AuditRecorder:
     def policy_decision(
         self,
         *,
-        record_id: UUID,
+        record_id: UUID | None,
         generation: int,
         allowed: bool,
         reason: AuditReasonCode,
