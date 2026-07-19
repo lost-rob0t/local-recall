@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from local_recall.domain.capture import (
     CaptureDecision,
     CaptureDecisionKind,
     CapturePolicyInput,
 )
-from local_recall.domain.crypto import KeyHandle, KeyRequest, SecretKeyMaterial, StoredRecordRef
+from local_recall.domain.crypto import (
+    EncryptedRecordEnvelope,
+    KeyHandle,
+    KeyRequest,
+    SecretKeyMaterial,
+    StoredRecordRef,
+)
 from local_recall.domain.privacy import ProviderLocation
 from local_recall.domain.providers import (
     ProviderCapabilities,
@@ -24,8 +32,6 @@ from local_recall.ports.keys import (
 from local_recall.ports.policy import CapturePolicy
 from local_recall.ports.routing import ModelRoutingPolicy
 from local_recall.ports.storage import DeleteRequest, DeleteResult, StorageBackend
-from local_recall.domain.crypto import EncryptedRecordEnvelope
-from uuid import UUID
 
 from .models import AuditReasonCode
 from .recorder import AuditRecorder
@@ -56,7 +62,9 @@ class AuditedCapturePolicy:
             record_id=None,
             generation=request.intent.generation.value,
             allowed=allowed,
-            reason=(AuditReasonCode.POLICY_ALLOW if allowed else AuditReasonCode.POLICY_DENY),
+            reason=(
+                AuditReasonCode.POLICY_ALLOW if allowed else AuditReasonCode.POLICY_DENY
+            ),
             correlation_id=decision.decision_id,
         )
         return decision
