@@ -8,7 +8,6 @@ from local_recall.domain.metadata import (
 )
 from local_recall.session import compose_context_metadata
 
-
 NOW = datetime(2026, 7, 19, 6, 0, tzinfo=UTC)
 
 
