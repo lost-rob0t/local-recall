@@ -39,9 +39,9 @@ class OwnerOnlyAuditFileSink:
         self._lock = threading.RLock()
         self._root = _prepare_root(settings.root)
         self._path = self._root / "audit.jsonl"
+        self._prune_locked()
         self._descriptor = _open_log(self._path)
         self._closed = False
-        self._prune_locked()
 
     @property
     def path(self) -> Path:
