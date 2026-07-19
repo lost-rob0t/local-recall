@@ -5,6 +5,8 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from local_recall.domain.lifecycle import CaptureState
+
 from .models import (
     AuditAction,
     AuditCategory,
@@ -31,6 +33,8 @@ class AuditRecorder:
         reason: AuditReasonCode,
         generation: int,
         correlation_id: UUID,
+        previous_state: CaptureState,
+        current_state: CaptureState,
         configuration_revision: str | None,
         faulted: bool,
     ) -> AuditEvent:
@@ -41,6 +45,8 @@ class AuditRecorder:
             reason=reason,
             generation=generation,
             correlation_id=correlation_id,
+            previous_state=previous_state,
+            current_state=current_state,
             configuration_revision=configuration_revision,
         )
 
@@ -131,13 +137,12 @@ class AuditRecorder:
         failed: bool = False,
         correlation_id: UUID | None = None,
     ) -> AuditEvent:
-        outcome = (
-            AuditOutcome.FAILED
-            if failed
-            else AuditOutcome.SUCCEEDED
-            if deleted
-            else AuditOutcome.SKIPPED
-        )
+        if failed:
+            outcome = AuditOutcome.FAILED
+        elif deleted:
+            outcome = AuditOutcome.SUCCEEDED
+        else:
+            outcome = AuditOutcome.SKIPPED
         return self._emit(
             category=AuditCategory.RECORD,
             action=AuditAction.RECORD_DELETED,
@@ -232,6 +237,8 @@ class AuditRecorder:
         generation: int | None = None,
         provider_id: str | None = None,
         key_version: int | None = None,
+        previous_state: CaptureState | None = None,
+        current_state: CaptureState | None = None,
         configuration_revision: str | None = None,
         key_id: str | None = None,
         attributes: Mapping[str, int | bool] | None = None,
@@ -247,6 +254,8 @@ class AuditRecorder:
             generation=generation,
             provider_id=provider_id,
             key_version=key_version,
+            previous_state=previous_state,
+            current_state=current_state,
             configuration_revision_digest=_digest(configuration_revision),
             key_id_digest=_digest(key_id),
             attributes=attributes or {},
