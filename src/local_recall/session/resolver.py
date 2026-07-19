@@ -155,8 +155,10 @@ class SessionResolver:
 
 def _safe_source_id(source_id: str) -> str:
     normalized = source_id.strip().lower()
-    if normalized and normalized[0].isalpha() and all(
-        character.isalnum() or character in "_.-" for character in normalized
+    if (
+        normalized
+        and normalized[0].isalpha()
+        and all(character.isalnum() or character in "_.-" for character in normalized)
     ):
         return normalized[:128]
     return "invalid-source"
