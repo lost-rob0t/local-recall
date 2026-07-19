@@ -47,7 +47,35 @@ def test_event_rejects_unapproved_attribute_keys() -> None:
             reason=AuditReasonCode.POLICY_DENY,
             correlation_id=uuid4(),
             occurred_at=datetime.now(UTC),
+            generation=1,
             attributes={"window_title": 1},
+        )
+
+
+def test_event_rejects_action_category_mismatch() -> None:
+    with pytest.raises(AuditFailure):
+        AuditEvent(
+            category=AuditCategory.SYSTEM,
+            action=AuditAction.CAPTURE_DECISION,
+            outcome=AuditOutcome.SKIPPED,
+            reason=AuditReasonCode.CAPTURE_DISABLED,
+            correlation_id=uuid4(),
+            occurred_at=datetime.now(UTC),
+            generation=1,
+        )
+
+
+def test_lifecycle_event_requires_both_transition_states() -> None:
+    with pytest.raises(AuditFailure):
+        AuditEvent(
+            category=AuditCategory.LIFECYCLE,
+            action=AuditAction.LIFECYCLE_TRANSITION,
+            outcome=AuditOutcome.SUCCEEDED,
+            reason=AuditReasonCode.STARTUP_OPT_IN,
+            correlation_id=uuid4(),
+            occurred_at=datetime.now(UTC),
+            generation=1,
+            previous_state=CaptureState.OFF,
         )
 
 
