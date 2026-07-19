@@ -87,7 +87,7 @@ class AuditRecorder:
     def provider_selection(
         self,
         *,
-        provider_id: str,
+        provider_id: str | None,
         remote: bool,
         authorized: bool,
         reason: AuditReasonCode,
@@ -121,6 +121,36 @@ class AuditRecorder:
             correlation_id=correlation_id,
         )
 
+    def record_deletion(
+        self,
+        *,
+        record_id: UUID,
+        deleted: bool,
+        reason: AuditReasonCode,
+        cryptographic_material_destroyed: bool = False,
+        failed: bool = False,
+        correlation_id: UUID | None = None,
+    ) -> AuditEvent:
+        outcome = (
+            AuditOutcome.FAILED
+            if failed
+            else AuditOutcome.SUCCEEDED
+            if deleted
+            else AuditOutcome.SKIPPED
+        )
+        return self._emit(
+            category=AuditCategory.RECORD,
+            action=AuditAction.RECORD_DELETED,
+            outcome=outcome,
+            reason=reason,
+            record_id=record_id,
+            correlation_id=correlation_id,
+            attributes={
+                "deleted": deleted,
+                "cryptographic_material_destroyed": cryptographic_material_destroyed,
+            },
+        )
+
     def record_deleted(
         self,
         *,
@@ -129,17 +159,12 @@ class AuditRecorder:
         cryptographic_material_destroyed: bool = False,
         correlation_id: UUID | None = None,
     ) -> AuditEvent:
-        return self._emit(
-            category=AuditCategory.RECORD,
-            action=AuditAction.RECORD_DELETED,
-            outcome=AuditOutcome.SUCCEEDED,
-            reason=reason,
+        return self.record_deletion(
             record_id=record_id,
+            deleted=True,
+            reason=reason,
+            cryptographic_material_destroyed=cryptographic_material_destroyed,
             correlation_id=correlation_id,
-            attributes={
-                "deleted": True,
-                "cryptographic_material_destroyed": cryptographic_material_destroyed,
-            },
         )
 
     def export_decision(
