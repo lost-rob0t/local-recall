@@ -62,9 +62,7 @@ class AuditedCapturePolicy:
             record_id=None,
             generation=request.intent.generation.value,
             allowed=allowed,
-            reason=(
-                AuditReasonCode.POLICY_ALLOW if allowed else AuditReasonCode.POLICY_DENY
-            ),
+            reason=(AuditReasonCode.POLICY_ALLOW if allowed else AuditReasonCode.POLICY_DENY),
             correlation_id=decision.decision_id,
         )
         return decision
