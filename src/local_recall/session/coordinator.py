@@ -29,8 +29,7 @@ def compose_context_metadata(
             fields_by_name[field.name].append(field)
 
     combined_fields = tuple(
-        _combine_field(name, tuple(fields_by_name[name]), rank)
-        for name in sorted(fields_by_name)
+        _combine_field(name, tuple(fields_by_name[name]), rank) for name in sorted(fields_by_name)
     )
     return ContextMetadata(
         observed_at=max(item.observed_at for item in items),
