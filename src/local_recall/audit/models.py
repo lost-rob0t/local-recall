@@ -114,6 +114,10 @@ _ALLOWED_ATTRIBUTE_KEYS = frozenset(
 )
 
 
+def _empty_attributes() -> dict[str, int | bool]:
+    return {}
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class AuditEvent:
     category: AuditCategory
@@ -131,7 +135,7 @@ class AuditEvent:
     current_state: CaptureState | None = None
     configuration_revision_digest: str | None = None
     key_id_digest: str | None = None
-    attributes: Mapping[str, int | bool] = field(default_factory=dict)
+    attributes: Mapping[str, int | bool] = field(default_factory=_empty_attributes)
 
     def __post_init__(self) -> None:
         if type(self.category) is not AuditCategory:
