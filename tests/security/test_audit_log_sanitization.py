@@ -17,7 +17,6 @@ from local_recall.audit import (
 )
 from local_recall.domain.lifecycle import CaptureState
 
-
 _SEEDED_VALUES = (
     "synthetic-window-title-seed",
     "synthetic-ocr-text-seed",
