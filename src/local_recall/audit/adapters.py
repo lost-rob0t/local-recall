@@ -60,11 +60,12 @@ class PipelineAuditAdapter:
         queue_depth: int,
     ) -> None:
         accepted = result.status is SubmissionStatus.ACCEPTED
+        reason = AuditReasonCode.POLICY_ALLOW if accepted else AuditReasonCode.OVERLOAD
         self._recorder.capture_decision(
             record_id=result.record_id,
             generation=generation.value,
             accepted=accepted,
-            reason=(AuditReasonCode.POLICY_ALLOW if accepted else AuditReasonCode.OVERLOAD),
+            reason=reason,
             attributes={"queue_depth": queue_depth},
         )
 
