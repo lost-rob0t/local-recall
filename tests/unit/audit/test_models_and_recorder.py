@@ -72,7 +72,10 @@ def test_recorder_hashes_key_and_configuration_references() -> None:
     assert key_event.key_id_digest is not None
     assert key_event.key_id_digest != "synthetic-sensitive-key-reference"
     assert lifecycle_event.configuration_revision_digest is not None
-    assert lifecycle_event.configuration_revision_digest != "synthetic-configuration-revision"
+    assert (
+        lifecycle_event.configuration_revision_digest
+        != "synthetic-configuration-revision"
+    )
     assert len(sink.events) == 2
 
 
