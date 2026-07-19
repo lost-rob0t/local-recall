@@ -7,6 +7,8 @@ from enum import StrEnum
 from types import MappingProxyType
 from uuid import UUID, uuid4
 
+from local_recall.domain.lifecycle import CaptureState
+
 from .errors import AuditFailure, AuditFailureCode
 
 
@@ -111,6 +113,8 @@ class AuditEvent:
     generation: int | None = None
     provider_id: str | None = None
     key_version: int | None = None
+    previous_state: CaptureState | None = None
+    current_state: CaptureState | None = None
     configuration_revision_digest: str | None = None
     key_id_digest: str | None = None
     attributes: Mapping[str, int | bool] = field(default_factory=dict)
@@ -133,6 +137,12 @@ class AuditEvent:
         if self.generation is not None and self.generation <= 0:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
         if self.key_version is not None and self.key_version <= 0:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if self.previous_state is not None and type(self.previous_state) is not CaptureState:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if self.current_state is not None and type(self.current_state) is not CaptureState:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if (self.previous_state is None) != (self.current_state is None):
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
         if self.provider_id is not None and not _safe_identifier(self.provider_id):
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
@@ -158,7 +168,8 @@ class AuditEvent:
             f"AuditEvent(event_id={self.event_id!r}, category={self.category.value!r}, "
             f"action={self.action.value!r}, outcome={self.outcome.value!r}, "
             f"reason={self.reason.value!r}, correlation_id={self.correlation_id!r}, "
-            f"record_id={self.record_id!r}, generation={self.generation!r})"
+            f"record_id={self.record_id!r}, generation={self.generation!r}, "
+            f"previous_state={self.previous_state!r}, current_state={self.current_state!r})"
         )
 
 
