@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-from local_recall.domain.lifecycle import TransitionReason
+from local_recall.domain.lifecycle import CaptureGeneration, TransitionReason
 from local_recall.lifecycle.messages import LifecycleAuditEvent
+from local_recall.pipeline.models import (
+    PipelineFaultCode,
+    PipelineFaultEvent,
+    SubmissionResult,
+    SubmissionStatus,
+)
 
 from .models import AuditReasonCode
 from .recorder import AuditRecorder
@@ -24,6 +30,13 @@ _REASON_MAP: dict[TransitionReason, AuditReasonCode] = {
     TransitionReason.SHUTDOWN: AuditReasonCode.SHUTDOWN,
 }
 
+_PIPELINE_FAULT_REASONS: dict[PipelineFaultCode, AuditReasonCode] = {
+    PipelineFaultCode.PROCESSOR_FAILURE: AuditReasonCode.REDACTION_FAILED,
+    PipelineFaultCode.PROTOCOL_FAILURE: AuditReasonCode.INVALID_RECORD,
+    PipelineFaultCode.TRANSPORT_FAILURE: AuditReasonCode.PERSISTENCE_FAILED,
+    PipelineFaultCode.PERSISTENCE_FAILURE: AuditReasonCode.PERSISTENCE_FAILED,
+}
+
 
 class LifecycleAuditAdapter:
     def __init__(self, recorder: AuditRecorder) -> None:
@@ -36,4 +49,36 @@ class LifecycleAuditAdapter:
             correlation_id=event.event_id,
             configuration_revision=event.configuration_revision,
             faulted=event.fault_code is not None,
+        )
+
+
+class PipelineAuditAdapter:
+    def __init__(self, recorder: AuditRecorder) -> None:
+        self._recorder = recorder
+
+    def record_submission(
+        self,
+        result: SubmissionResult,
+        generation: CaptureGeneration,
+        *,
+        queue_depth: int,
+    ) -> None:
+        accepted = result.status is SubmissionStatus.ACCEPTED
+        self._recorder.capture_decision(
+            record_id=result.record_id,
+            generation=generation.value,
+            accepted=accepted,
+            reason=(AuditReasonCode.POLICY_ALLOW if accepted else AuditReasonCode.OVERLOAD),
+            attributes={"queue_depth": queue_depth},
+        )
+
+    def record_rejection(
+        self,
+        event: PipelineFaultEvent,
+        generation: CaptureGeneration,
+    ) -> None:
+        self._recorder.record_rejected(
+            record_id=event.record_id,
+            generation=generation.value,
+            reason=_PIPELINE_FAULT_REASONS[event.fault_code],
         )
