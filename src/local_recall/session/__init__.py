@@ -21,6 +21,7 @@ from .probes import (
     QtileMetadataProbe,
 )
 from .resolver import MetadataStrategyProbe, SessionResolver
+from .status import render_session_resolution_status, session_resolution_status
 
 __all__ = [
     "ActivityWatchMetadataProbe",
@@ -42,4 +43,6 @@ __all__ = [
     "SessionResolver",
     "compose_context_metadata",
     "detect_desktop_session",
+    "render_session_resolution_status",
+    "session_resolution_status",
 ]
