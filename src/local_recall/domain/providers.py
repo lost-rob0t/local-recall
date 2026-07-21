@@ -13,6 +13,12 @@ class ModelCapability(StrEnum):
     VISION = "vision"
 
 
+class GenerationRole(StrEnum):
+    EXTRACTION = "extraction"
+    SUMMARIZATION = "summarization"
+    ANSWERING = "answering"
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderCapabilities:
     provider_id: str
@@ -21,6 +27,9 @@ class ProviderCapabilities:
     accepted_privacy_classes: frozenset[PrivacyClass]
     max_input_bytes: int
     supports_vision: bool
+    max_context_tokens: int | None = None
+    supports_structured_output: bool = False
+    available: bool = True
 
     def __post_init__(self) -> None:
         require_nonempty(self.provider_id, "provider_id")
@@ -32,6 +41,8 @@ class ProviderCapabilities:
             raise ValueError("max_input_bytes must be positive")
         if self.supports_vision and ModelCapability.VISION not in self.capabilities:
             raise ValueError("vision support requires the vision capability")
+        if self.max_context_tokens is not None and self.max_context_tokens <= 0:
+            raise ValueError("max_context_tokens must be positive")
 
     def accepts(self, privacy_class: PrivacyClass) -> bool:
         return privacy_class in self.accepted_privacy_classes
@@ -71,6 +82,7 @@ class GenerationRequest:
     privacy_class: PrivacyClass
     max_output_tokens: int
     model_hint: str | None = None
+    role: GenerationRole = GenerationRole.ANSWERING
 
     def __post_init__(self) -> None:
         require_nonempty(self.prompt, "prompt")
@@ -87,6 +99,7 @@ class GenerationResponse:
     output_tokens: int | None = None
 
     def __post_init__(self) -> None:
+        require_nonempty(self.text, "text")
         require_nonempty(self.provider_id, "provider_id")
         require_nonempty(self.model_id, "model_id")
         if self.input_tokens is not None and self.input_tokens < 0:
