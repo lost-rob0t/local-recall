@@ -509,7 +509,12 @@ def test_unicode_title_pattern_remains_bounded_and_functional() -> None:
 
 def test_temporary_window_and_workspace_sensitivity_expire_and_clear() -> None:
     policy = _engine()
-    context = _context({"application": "Terminal", "workspace": "ops", "window.id": 42})
+    values: dict[str, str | int | float | bool | None] = {
+        "application": "Terminal",
+        "workspace": "ops",
+        "window.id": 42,
+    }
+    context = _context(values)
 
     policy.mark_current_sensitive(SensitiveScope.WINDOW, context, ttl_seconds=30)
     assert not policy.evaluate(
@@ -518,11 +523,7 @@ def test_temporary_window_and_workspace_sensitivity_expire_and_clear() -> None:
         context,
     ).allowed
 
-    expired = PolicyEvaluationContext(
-        metadata=context.metadata,
-        evaluated_at=NOW + timedelta(seconds=31),
-        capture_generation=context.capture_generation,
-    )
+    expired = _context(values, evaluated_at=NOW + timedelta(seconds=31))
     assert policy.evaluate(
         PolicyOperation.SCREENSHOT,
         PolicyPhase.PRE_CAPTURE,
