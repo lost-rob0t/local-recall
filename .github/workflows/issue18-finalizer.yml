@@ -35,7 +35,9 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python /tmp/issue18_bundle.py
+          cp /tmp/issue18_bundle.py scripts/issue18_bundle_apply.py
+          python scripts/issue18_bundle_apply.py
+          rm -f scripts/issue18_bundle_apply.py
           rm -rf scripts/.issue18 scripts/issue18_bundle.py
           rm -f .github/workflows/issue18-finalizer.yml
       - name: Install locked dependencies
