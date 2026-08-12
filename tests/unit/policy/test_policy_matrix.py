@@ -584,7 +584,7 @@ def test_privacy_lock_and_policy_reload_invalidate_authorization() -> None:
 
 
 def test_policy_status_is_sanitized() -> None:
-    secret = "sensitive-title-fake-bearer-token"
+    secret = "sensitive-title-fake-bearer-token"  # pragma: allowlist secret
     policy = _engine(_rule("secret-title", RuleEffect.DENY, title_pattern=secret))
 
     status = policy.status()
