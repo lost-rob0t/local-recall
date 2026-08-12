@@ -28,6 +28,7 @@ def test_pre_capture_deny_blocks_screenshot_authorization() -> None:
         ),
     )
     configuration = config_models.LocalRecallConfig(
+        profile=config_models.PrivacyProfile.LOCAL_FIRST,
         rules=config_models.RuleSettings(
             default_effect=config_models.RuleEffect.ALLOW,
             rules=(
@@ -38,7 +39,7 @@ def test_pre_capture_deny_blocks_screenshot_authorization() -> None:
                     application="SecretApp",
                 ),
             ),
-        )
+        ),
     )
     policy = capture_policy.PolicyEngine(configuration, revision="policy-red-1")
     context = capture_policy.PolicyEvaluationContext(
