@@ -349,16 +349,12 @@ def test_ipv4_and_ipv6_domains_match_exactly() -> None:
     ipv4 = _engine(_rule("ipv4", RuleEffect.DENY, domain="127.0.0.1")).evaluate(
         PolicyOperation.SCREENSHOT,
         PolicyPhase.PRE_CAPTURE,
-        _context(
-            {"application": "Browser", "workspace": "web", "url.domain": "127.0.0.1"}
-        ),
+        _context({"application": "Browser", "workspace": "web", "url.domain": "127.0.0.1"}),
     )
     ipv6 = _engine(_rule("ipv6", RuleEffect.DENY, domain="2001:db8::1")).evaluate(
         PolicyOperation.SCREENSHOT,
         PolicyPhase.PRE_CAPTURE,
-        _context(
-            {"application": "Browser", "workspace": "web", "url.domain": "2001:db8::1"}
-        ),
+        _context({"application": "Browser", "workspace": "web", "url.domain": "2001:db8::1"}),
     )
 
     assert not ipv4.allowed
