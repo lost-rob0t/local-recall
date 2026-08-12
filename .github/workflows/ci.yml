@@ -31,7 +31,7 @@ jobs:
       - name: Install locked dependencies
         run: ./scripts/bootstrap
       - name: Check formatting
-        run: uv run --no-sync ruff format --check .
+        run: uv run --no-sync ruff format --check --diff .
       - name: Check Python lint
         run: uv run --no-sync ruff check .
       - name: Check shell scripts
@@ -48,6 +48,22 @@ jobs:
         run: ./scripts/run-pytest tests/security
       - name: Run security checks
         run: ./scripts/security-scan
+
+  canonical-gate:
+    name: Canonical repository gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install locked dependencies
+        run: ./scripts/bootstrap
+      - name: Run canonical gate
+        run: ./scripts/check
 
   failure-propagation:
     name: Failure propagation

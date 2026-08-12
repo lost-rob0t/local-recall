@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import ipaddress
 import re
+from datetime import time
 from enum import StrEnum
 from pathlib import PurePath
 from typing import Literal
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from local_recall.domain.policy import PolicyOperation
+
 CURRENT_SCHEMA_VERSION = 1
+MAX_POLICY_RULES = 256
+MAX_POLICY_PATTERN_LENGTH = 256
 
 _BUILTIN_REDACTION_PATTERN_IDS = frozenset(
     {
@@ -29,6 +36,7 @@ _BUILTIN_REDACTION_PATTERN_IDS = frozenset(
         "high-entropy",
     }
 )
+_DEFAULT_POLICY_OPERATIONS = tuple(PolicyOperation)
 
 
 class PrivacyProfile(StrEnum):
@@ -61,22 +69,101 @@ class CredentialReference(FrozenModel):
     reference: str = Field(min_length=1, max_length=512, repr=False)
 
 
+class PolicyTimeWindow(FrozenModel):
+    start: time
+    end: time
+
+    @model_validator(mode="after")
+    def reject_empty_window(self) -> PolicyTimeWindow:
+        if self.start == self.end:
+            raise ValueError("policy time window start and end must differ")
+        if self.start.tzinfo is not None or self.end.tzinfo is not None:
+            raise ValueError("policy time window values must be local wall-clock times")
+        return self
+
+
 class CaptureRule(FrozenModel):
     effect: RuleEffect
+    rule_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+    )
+    enabled: bool = True
+    priority: int = Field(default=0, ge=-1000, le=1000)
+    operations: tuple[PolicyOperation, ...] = _DEFAULT_POLICY_OPERATIONS
     application: str | None = Field(default=None, min_length=1, max_length=256)
-    title_pattern: str | None = Field(default=None, min_length=1, max_length=512)
+    title_pattern: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_POLICY_PATTERN_LENGTH,
+        repr=False,
+    )
     workspace: str | None = Field(default=None, min_length=1, max_length=256)
+    domain: str | None = Field(default=None, min_length=1, max_length=253, repr=False)
+    include_subdomains: bool = False
+    full_screen: bool | None = None
     metadata_source: str | None = Field(default=None, min_length=1, max_length=128)
+    time_window: PolicyTimeWindow | None = None
     reason_code: str = Field(default="configured-rule", min_length=1, max_length=128)
+
+    @field_validator("operations")
+    @classmethod
+    def validate_operations(
+        cls,
+        value: tuple[PolicyOperation, ...],
+    ) -> tuple[PolicyOperation, ...]:
+        if not value:
+            raise ValueError("capture rule requires at least one operation")
+        if len(set(value)) != len(value):
+            raise ValueError("capture rule operations must be unique")
+        return value
 
     @field_validator("title_pattern")
     @classmethod
     def validate_title_pattern(cls, value: str | None) -> str | None:
-        if value is not None:
-            try:
-                re.compile(value)
-            except re.error as exc:
-                raise ValueError("title_pattern must be a valid regular expression") from exc
+        if value is None:
+            return None
+        try:
+            re.compile(value)
+        except re.error as exc:
+            raise ValueError("title_pattern must be a valid regular expression") from exc
+        body = value[4:] if value.startswith("(?i)") else value
+        if "(?" in body or "|" in body or "{" in body:
+            raise ValueError("title_pattern uses an unsupported high-risk construct")
+        if re.search(r"\\(?:[1-9]|g<)", body):
+            raise ValueError("title_pattern backreferences are not supported")
+        if re.search(r"\([^)]*[*+][^)]*\)[*+]", body):
+            raise ValueError("title_pattern nested repetition is not supported")
+        if body.count("*") + body.count("+") > 4:
+            raise ValueError("title_pattern contains too many unbounded repetitions")
+        return value
+
+    @field_validator("domain")
+    @classmethod
+    def validate_domain(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().casefold().removesuffix(".")
+        if not normalized:
+            raise ValueError("policy domain is invalid")
+        try:
+            ipaddress.ip_address(normalized)
+        except ValueError:
+            labels = normalized.split(".")
+            if len(labels) < 2:
+                raise ValueError("policy domain is invalid") from None
+            for label in labels:
+                if not 1 <= len(label) <= 63:
+                    raise ValueError("policy domain is invalid") from None
+                if label[0] == "-" or label[-1] == "-":
+                    raise ValueError("policy domain is invalid") from None
+                if not all(
+                    character.isascii() and (character.isalnum() or character == "-")
+                    for character in label
+                ):
+                    raise ValueError("policy domain is invalid") from None
         return value
 
     @model_validator(mode="after")
@@ -85,16 +172,51 @@ class CaptureRule(FrozenModel):
             self.application,
             self.title_pattern,
             self.workspace,
+            self.domain,
+            self.full_screen,
             self.metadata_source,
+            self.time_window,
         )
         if all(selector is None for selector in selectors):
             raise ValueError("capture rule requires at least one selector")
+        if self.include_subdomains and self.domain is None:
+            raise ValueError("include_subdomains requires a domain selector")
         return self
 
 
 class RuleSettings(FrozenModel):
     default_effect: RuleEffect = RuleEffect.DENY
-    rules: tuple[CaptureRule, ...] = ()
+    timezone: str = Field(default="UTC", min_length=1, max_length=128)
+    max_metadata_age_seconds: float = Field(default=5.0, gt=0.0, le=300.0)
+    rules: tuple[CaptureRule, ...] = Field(default=(), max_length=MAX_POLICY_RULES)
+    sensitive_applications: tuple[str, ...] = Field(default=(), max_length=64, repr=False)
+    sensitive_workspaces: tuple[str, ...] = Field(default=(), max_length=64, repr=False)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("policy timezone is unknown") from exc
+        return value
+
+    @field_validator("sensitive_applications", "sensitive_workspaces")
+    @classmethod
+    def validate_sensitive_values(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(item.strip() for item in value)
+        if any(not item or len(item) > 256 for item in normalized):
+            raise ValueError("sensitive-context values must be 1 to 256 characters")
+        if len({item.casefold() for item in normalized}) != len(normalized):
+            raise ValueError("sensitive-context values must be unique")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_rule_ids(self) -> RuleSettings:
+        identifiers = tuple(rule.rule_id for rule in self.rules if rule.rule_id is not None)
+        if len(set(identifiers)) != len(identifiers):
+            raise ValueError("capture rule identifiers must be unique")
+        return self
 
 
 class CaptureSettings(FrozenModel):

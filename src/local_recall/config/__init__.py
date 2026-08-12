@@ -17,6 +17,8 @@ from .manager import ConfigurationManager, ConfigurationSnapshot, ReloadOutcome
 from .migrations import migrate_configuration
 from .models import (
     CURRENT_SCHEMA_VERSION,
+    MAX_POLICY_PATTERN_LENGTH,
+    MAX_POLICY_RULES,
     ActivityWatchSettings,
     ActivityWatchURLMode,
     CaptureOverloadPolicy,
@@ -30,6 +32,7 @@ from .models import (
     MetadataSettings,
     ModelSettings,
     OCRSettings,
+    PolicyTimeWindow,
     PrivacyProfile,
     RedactionAllowlist,
     RedactionSettings,
@@ -42,6 +45,8 @@ from .models import (
 
 __all__ = [
     "CURRENT_SCHEMA_VERSION",
+    "MAX_POLICY_PATTERN_LENGTH",
+    "MAX_POLICY_RULES",
     "ActivityWatchSettings",
     "ActivityWatchURLMode",
     "CaptureOverloadPolicy",
@@ -61,6 +66,7 @@ __all__ = [
     "MetadataSettings",
     "ModelSettings",
     "OCRSettings",
+    "PolicyTimeWindow",
     "PrivacyProfile",
     "RedactionAllowlist",
     "RedactionSettings",
