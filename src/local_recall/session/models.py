@@ -39,6 +39,7 @@ class MetadataCapability(StrEnum):
     WORKSPACE = "workspace"
     ACTIVITY = "activity"
     IDLE = "idle"
+    DOMAIN = "domain"
 
 
 class ProbeOutcome(StrEnum):

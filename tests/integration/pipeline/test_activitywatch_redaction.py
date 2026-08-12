@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
-import pytest
-
 from local_recall.config import (
     ActivityWatchSettings,
     ActivityWatchURLMode,
@@ -22,12 +20,18 @@ from local_recall.metadata import (
     ActivityWatchBucket,
     ActivityWatchEvent,
     ActivityWatchEventType,
-    ActivityWatchMetadataFailure,
     ActivityWatchMetadataSource,
     ActivityWatchServerInfo,
 )
 from local_recall.ports.redaction import RedactionRequest
 from local_recall.redaction import DeterministicRedactionPolicy
+from local_recall.session import (
+    ActivityWatchMetadataProbe,
+    EnvironmentSnapshot,
+    GenericXorgMetadataProbe,
+    ProbeOutcome,
+    SessionResolver,
+)
 
 from .support import gray_frame
 
@@ -191,24 +195,26 @@ def test_disabled_sensitive_fields_never_reach_downstream_context() -> None:
     assert context.get("url.domain") is None
 
 
-def test_activitywatch_unavailability_does_not_destroy_fallback_context() -> None:
-    source = ActivityWatchMetadataSource(
-        MetadataSettings(),
-        client=SyntheticActivityWatchClient(available=False),
-        now=lambda: NOW,
+def test_activitywatch_unavailable_preserves_generic_xorg_fallback() -> None:
+    async def unavailable() -> bool:
+        return False
+
+    resolver = SessionResolver(
+        [ActivityWatchMetadataProbe(unavailable)],
+        generic_xorg_probe=GenericXorgMetadataProbe(),
+    )
+    environment = EnvironmentSnapshot.from_mapping(
+        {
+            "XDG_SESSION_TYPE": "x11",
+            "DISPLAY": ":0",
+        }
     )
 
-    with pytest.raises(ActivityWatchMetadataFailure):
-        asyncio.run(source.collect(request()))
+    result = asyncio.run(resolver.resolve(environment, ("activitywatch",)))
 
-    fallback = ActivityWatchMetadataSource(
-        MetadataSettings(),
-        client=SyntheticActivityWatchClient(),
-        now=lambda: NOW,
+    assert result.recording_supported is True
+    assert result.selected_metadata_sources == ("xorg-generic",)
+    assert tuple(item.outcome for item in result.probe_results) == (
+        ProbeOutcome.UNAVAILABLE,
+        ProbeOutcome.HEALTHY,
     )
-    fallback_context = asyncio.run(
-        fallback.collect(request())
-    )
-
-    assert fallback_context.get("application") is not None
-    assert fallback_context.get("idle") is False

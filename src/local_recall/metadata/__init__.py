@@ -1,5 +1,17 @@
 """Bounded metadata source implementations."""
 
+from .activitywatch import ActivityWatchMetadataSource
+from .activitywatch_client import LocalActivityWatchClient
+from .activitywatch_http import LoopbackActivityWatchTransport
+from .activitywatch_types import (
+    ActivityWatchAdapterFailure,
+    ActivityWatchBucket,
+    ActivityWatchEvent,
+    ActivityWatchEventType,
+    ActivityWatchMetadataFailure,
+    ActivityWatchMetadataFailureCode,
+    ActivityWatchServerInfo,
+)
 from .qtile import (
     FixedQtileCommandRunner,
     QtileAdapterFailure,
@@ -30,9 +42,19 @@ from .xorg import (
 )
 
 __all__ = [
+    "ActivityWatchAdapterFailure",
+    "ActivityWatchBucket",
+    "ActivityWatchEvent",
+    "ActivityWatchEventType",
+    "ActivityWatchMetadataFailure",
+    "ActivityWatchMetadataFailureCode",
+    "ActivityWatchMetadataSource",
+    "ActivityWatchServerInfo",
     "FixedQtileCommandRunner",
     "FixedXorgCommandRunner",
     "GenericXorgMetadataSource",
+    "LocalActivityWatchClient",
+    "LoopbackActivityWatchTransport",
     "QtileAdapterFailure",
     "QtileCommand",
     "QtileCommandReader",

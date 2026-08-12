@@ -17,6 +17,8 @@ from .manager import ConfigurationManager, ConfigurationSnapshot, ReloadOutcome
 from .migrations import migrate_configuration
 from .models import (
     CURRENT_SCHEMA_VERSION,
+    ActivityWatchSettings,
+    ActivityWatchURLMode,
     CaptureOverloadPolicy,
     CaptureRule,
     CaptureSettings,
@@ -40,6 +42,8 @@ from .models import (
 
 __all__ = [
     "CURRENT_SCHEMA_VERSION",
+    "ActivityWatchSettings",
+    "ActivityWatchURLMode",
     "CaptureOverloadPolicy",
     "CaptureRule",
     "CaptureSettings",
