@@ -125,9 +125,7 @@ class ActivityWatchSettings(FrozenModel):
             parsed = urlsplit(value)
             port = parsed.port
         except ValueError as exc:
-            raise ValueError(
-                "ActivityWatch endpoint must be an HTTP loopback origin"
-            ) from exc
+            raise ValueError("ActivityWatch endpoint must be an HTTP loopback origin") from exc
         if (
             parsed.scheme != "http"
             or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
@@ -138,18 +136,14 @@ class ActivityWatchSettings(FrozenModel):
             or parsed.fragment
             or (port is not None and not 1 <= port <= 65535)
         ):
-            raise ValueError(
-                "ActivityWatch endpoint must be an HTTP loopback origin"
-            )
+            raise ValueError("ActivityWatch endpoint must be an HTTP loopback origin")
         return value
 
 
 class MetadataSettings(FrozenModel):
     enabled_sources: tuple[str, ...] = ()
     window_titles_enabled: bool = False
-    activitywatch: ActivityWatchSettings = Field(
-        default_factory=ActivityWatchSettings
-    )
+    activitywatch: ActivityWatchSettings = Field(default_factory=ActivityWatchSettings)
 
     @field_validator("enabled_sources")
     @classmethod
@@ -188,10 +182,7 @@ class OCRSettings(FrozenModel):
         if not value:
             raise ValueError("at least one OCR language is required")
         normalized = tuple(language.strip() for language in value)
-        if any(
-            not re.fullmatch(r"[A-Za-z0-9_+-]{1,32}", language)
-            for language in normalized
-        ):
+        if any(not re.fullmatch(r"[A-Za-z0-9_+-]{1,32}", language) for language in normalized):
             raise ValueError("OCR language identifiers are invalid")
         if len(set(normalized)) != len(normalized):
             raise ValueError("OCR language identifiers must be unique")
@@ -228,9 +219,7 @@ class CustomRedactionPattern(FrozenModel):
         try:
             re.compile(value)
         except re.error as exc:
-            raise ValueError(
-                "custom redaction pattern must be a valid regular expression"
-            ) from exc
+            raise ValueError("custom redaction pattern must be a valid regular expression") from exc
         return value
 
 
@@ -255,9 +244,7 @@ class RedactionAllowlist(FrozenModel):
     @classmethod
     def validate_exact_values(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         if any(not item or len(item) > 256 for item in value):
-            raise ValueError(
-                "allowlist values must be non-empty and at most 256 characters"
-            )
+            raise ValueError("allowlist values must be non-empty and at most 256 characters")
         if len(set(value)) != len(value):
             raise ValueError("allowlist values must be unique")
         return value
@@ -291,17 +278,11 @@ class RedactionSettings(FrozenModel):
         known_patterns = _BUILTIN_REDACTION_PATTERN_IDS | {
             f"custom:{pattern_id}" for pattern_id in pattern_ids
         }
-        unknown_patterns = sorted(
-            {item.pattern_id for item in self.allowlists} - known_patterns
-        )
+        unknown_patterns = sorted({item.pattern_id for item in self.allowlists} - known_patterns)
         if unknown_patterns:
-            raise ValueError(
-                "redaction allowlist references an unknown pattern"
-            )
+            raise ValueError("redaction allowlist references an unknown pattern")
         if self.model_assistance_enabled and not self.deterministic_required:
-            raise ValueError(
-                "model-assisted redaction requires deterministic filters"
-            )
+            raise ValueError("model-assisted redaction requires deterministic filters")
         return self
 
 
@@ -319,9 +300,7 @@ class RemoteProviderSettings(FrozenModel):
     @model_validator(mode="after")
     def require_credential_reference(self) -> RemoteProviderSettings:
         if self.enabled and self.credential_reference is None:
-            raise ValueError(
-                "enabled remote provider requires credential_reference"
-            )
+            raise ValueError("enabled remote provider requires credential_reference")
         return self
 
 
@@ -341,20 +320,12 @@ class ModelSettings(FrozenModel):
 
     @model_validator(mode="after")
     def validate_remote_provider_set(self) -> ModelSettings:
-        identifiers = tuple(
-            provider.provider_id for provider in self.remote_providers
-        )
+        identifiers = tuple(provider.provider_id for provider in self.remote_providers)
         if len(set(identifiers)) != len(identifiers):
             raise ValueError("remote provider identifiers must be unique")
-        if self.remote_enabled and not any(
-            provider.enabled for provider in self.remote_providers
-        ):
-            raise ValueError(
-                "remote_enabled requires at least one enabled remote provider"
-            )
-        if not self.remote_enabled and any(
-            provider.enabled for provider in self.remote_providers
-        ):
+        if self.remote_enabled and not any(provider.enabled for provider in self.remote_providers):
+            raise ValueError("remote_enabled requires at least one enabled remote provider")
+        if not self.remote_enabled and any(provider.enabled for provider in self.remote_providers):
             raise ValueError("enabled remote providers require remote_enabled")
         return self
 
@@ -362,9 +333,7 @@ class ModelSettings(FrozenModel):
 class EncryptionSettings(FrozenModel):
     provider_id: str | None = Field(default=None, min_length=1, max_length=128)
     key_reference: CredentialReference | None = None
-    algorithm: Literal["xchacha20-poly1305-ietf"] = (
-        "xchacha20-poly1305-ietf"
-    )
+    algorithm: Literal["xchacha20-poly1305-ietf"] = "xchacha20-poly1305-ietf"
     fallback_provider_id: Literal["gpg"] | None = None
     gpg_recipient: str | None = Field(
         default=None,
@@ -396,14 +365,10 @@ class EncryptionSettings(FrozenModel):
     def validate_fallback(self) -> EncryptionSettings:
         if self.fallback_provider_id is None:
             if self.gpg_recipient is not None:
-                raise ValueError(
-                    "gpg_recipient requires fallback_provider_id = gpg"
-                )
+                raise ValueError("gpg_recipient requires fallback_provider_id = gpg")
             return self
         if self.provider_id == self.fallback_provider_id:
-            raise ValueError(
-                "encryption fallback provider must differ from primary provider"
-            )
+            raise ValueError("encryption fallback provider must differ from primary provider")
         if self.gpg_recipient is None:
             raise ValueError("GPG fallback requires gpg_recipient")
         return self
@@ -441,31 +406,20 @@ class LocalRecallConfig(FrozenModel):
     @model_validator(mode="after")
     def validate_security_invariants(self) -> LocalRecallConfig:
         if self.schema_version != CURRENT_SCHEMA_VERSION:
-            raise ValueError(
-                f"schema_version must be {CURRENT_SCHEMA_VERSION}"
-            )
+            raise ValueError(f"schema_version must be {CURRENT_SCHEMA_VERSION}")
 
         local_profiles = {
             PrivacyProfile.PRIVACY_STRICT,
             PrivacyProfile.LOCAL_ONLY,
         }
-        if (
-            self.profile in local_profiles
-            and self.models.remote_enabled
-        ):
-            raise ValueError(
-                f"profile {self.profile.value} forbids remote providers"
-            )
+        if self.profile in local_profiles and self.models.remote_enabled:
+            raise ValueError(f"profile {self.profile.value} forbids remote providers")
 
         if self.profile is PrivacyProfile.PRIVACY_STRICT:
             if self.rules.default_effect is not RuleEffect.DENY:
-                raise ValueError(
-                    "privacy-strict requires default deny capture rules"
-                )
+                raise ValueError("privacy-strict requires default deny capture rules")
             if self.redaction.model_assistance_enabled:
-                raise ValueError(
-                    "privacy-strict forbids model-assisted redaction"
-                )
+                raise ValueError("privacy-strict forbids model-assisted redaction")
 
         if self.capture.enabled:
             missing: list[str] = []
@@ -487,10 +441,7 @@ class LocalRecallConfig(FrozenModel):
                 missing.append("storage.root_directory")
             if missing:
                 joined = ", ".join(missing)
-                raise ValueError(
-                    "capture cannot start; missing security configuration: "
-                    f"{joined}"
-                )
+                raise ValueError(f"capture cannot start; missing security configuration: {joined}")
         return self
 
     @property

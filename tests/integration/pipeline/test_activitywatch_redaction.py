@@ -137,9 +137,7 @@ def test_activitywatch_metadata_crosses_authoritative_redaction_boundary() -> No
     source = ActivityWatchMetadataSource(
         MetadataSettings(
             window_titles_enabled=True,
-            activitywatch=ActivityWatchSettings(
-                url_mode=ActivityWatchURLMode.DOMAIN_ONLY
-            ),
+            activitywatch=ActivityWatchSettings(url_mode=ActivityWatchURLMode.DOMAIN_ONLY),
         ),
         client=SyntheticActivityWatchClient(),
         now=lambda: NOW,

@@ -121,9 +121,7 @@ class LocalActivityWatchClient:
         )
         value = _decode_object(payload)
         if len(value) > MAX_BUCKETS:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.TOO_MANY_BUCKETS
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.TOO_MANY_BUCKETS)
 
         parsed: list[ActivityWatchBucket] = []
         bucket_types: dict[str, ActivityWatchEventType] = {}
@@ -185,15 +183,11 @@ class LocalActivityWatchClient:
         require_aware(start)
         require_aware(end)
         if end <= start or not 1 <= limit <= MAX_EVENTS_PER_BUCKET:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.INVALID_REQUEST
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.INVALID_REQUEST)
 
         event_type = self._bucket_types.get(bucket_id)
         if event_type is None:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.INVALID_REQUEST
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.INVALID_REQUEST)
 
         query = urlencode(
             {
@@ -209,9 +203,7 @@ class LocalActivityWatchClient:
         )
         values = _decode_list(payload)
         if len(values) > limit or len(values) > MAX_EVENTS_PER_BUCKET:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.MALFORMED_RESPONSE
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.MALFORMED_RESPONSE)
 
         parsed: list[ActivityWatchEvent] = []
         for raw_event in values:
@@ -280,10 +272,7 @@ class LocalActivityWatchClient:
                 idle=idle,
             )
 
-        if (
-            self._settings.activitywatch.url_mode
-            is not ActivityWatchURLMode.DOMAIN_ONLY
-        ):
+        if self._settings.activitywatch.url_mode is not ActivityWatchURLMode.DOMAIN_ONLY:
             return None
         raw_url = _required_text(
             data.get("url"),
@@ -319,27 +308,21 @@ def _decode_json(payload: bytes) -> object:
                 object_pairs_hook=reject_duplicates,
             ),
         )
-    except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
-        raise ActivityWatchAdapterFailure(
-            ActivityWatchMetadataFailureCode.INVALID_JSON
-        ) from None
+    except UnicodeDecodeError, ValueError, json.JSONDecodeError:
+        raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.INVALID_JSON) from None
 
 
 def _decode_object(payload: bytes) -> dict[str, object]:
     value = _decode_json(payload)
     if not isinstance(value, dict):
-        raise ActivityWatchAdapterFailure(
-            ActivityWatchMetadataFailureCode.MALFORMED_RESPONSE
-        )
+        raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.MALFORMED_RESPONSE)
     return cast(dict[str, object], value)
 
 
 def _decode_list(payload: bytes) -> list[object]:
     value = _decode_json(payload)
     if not isinstance(value, list):
-        raise ActivityWatchAdapterFailure(
-            ActivityWatchMetadataFailureCode.MALFORMED_RESPONSE
-        )
+        raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.MALFORMED_RESPONSE)
     return cast(list[object], value)
 
 
@@ -371,42 +354,26 @@ def _optional_text(
 
 
 def _duration(value: object) -> float:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-    ):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("ActivityWatch duration is invalid")
     normalized = float(value)
-    if (
-        not math.isfinite(normalized)
-        or normalized < 0.0
-        or normalized > MAX_EVENT_DURATION_SECONDS
-    ):
+    if not math.isfinite(normalized) or normalized < 0.0 or normalized > MAX_EVENT_DURATION_SECONDS:
         raise ValueError("ActivityWatch duration is invalid")
     return normalized
 
 
 def _parse_timestamp(value: str) -> datetime:
-    normalized = (
-        value[:-1] + "+00:00"
-        if value.endswith("Z")
-        else value
-    )
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
     try:
         parsed = datetime.fromisoformat(normalized)
     except ValueError:
-        raise ValueError(
-            "ActivityWatch timestamp is invalid"
-        ) from None
+        raise ValueError("ActivityWatch timestamp is invalid") from None
     require_aware(parsed)
     return parsed.astimezone(UTC)
 
 
 def _domain_from_url(raw_url: str) -> str | None:
-    if (
-        len(raw_url) > MAX_URL_CHARS
-        or contains_control(raw_url)
-    ):
+    if len(raw_url) > MAX_URL_CHARS or contains_control(raw_url):
         return None
 
     try:
@@ -432,12 +399,7 @@ def _domain_from_url(raw_url: str) -> str | None:
         return None
 
     try:
-        domain = (
-            hostname.rstrip(".")
-            .encode("idna")
-            .decode("ascii")
-            .lower()
-        )
+        domain = hostname.rstrip(".").encode("idna").decode("ascii").lower()
     except UnicodeError:
         return None
 

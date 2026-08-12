@@ -40,10 +40,7 @@ class LoopbackActivityWatchTransport:
         self._max_header_bytes = max_header_bytes
 
     def __repr__(self) -> str:
-        return (
-            "LoopbackActivityWatchTransport("
-            "endpoint=<loopback>, proxy_support=False)"
-        )
+        return "LoopbackActivityWatchTransport(endpoint=<loopback>, proxy_support=False)"
 
     async def get(
         self,
@@ -54,16 +51,12 @@ class LoopbackActivityWatchTransport:
     ) -> bytes:
         _validate_target(target)
         if not 1 <= max_response_bytes <= MAX_BUCKET_BODY_BYTES:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.INVALID_REQUEST
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.INVALID_REQUEST)
 
         request_timeout = self._request_timeout_seconds
         if timeout_seconds is not None:
             if timeout_seconds <= 0.0:
-                raise ActivityWatchAdapterFailure(
-                    ActivityWatchMetadataFailureCode.TIMEOUT
-                )
+                raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.TIMEOUT)
             request_timeout = min(request_timeout, timeout_seconds)
         connect_timeout = min(self._connect_timeout_seconds, request_timeout)
 
@@ -85,12 +78,10 @@ class LoopbackActivityWatchTransport:
         except asyncio.CancelledError:
             raise
         except TimeoutError:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.TIMEOUT
-            ) from None
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.TIMEOUT) from None
         except ActivityWatchAdapterFailure:
             raise
-        except (OSError, ConnectionError):
+        except OSError, ConnectionError:
             raise ActivityWatchAdapterFailure(
                 ActivityWatchMetadataFailureCode.UNAVAILABLE
             ) from None
@@ -99,7 +90,7 @@ class LoopbackActivityWatchTransport:
                 writer.close()
                 try:
                     await writer.wait_closed()
-                except (OSError, ConnectionError):
+                except OSError, ConnectionError:
                     pass
 
     def _request_bytes(self, target: str) -> bytes:
@@ -133,23 +124,15 @@ class LoopbackActivityWatchTransport:
             ) from None
 
         if len(header_block) > self._max_header_bytes:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.HEADERS_TOO_LARGE
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.HEADERS_TOO_LARGE)
 
         status, headers = _parse_http_headers(header_block)
         if 300 <= status <= 399:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.REDIRECT
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.REDIRECT)
         if status != 200:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.HTTP_STATUS
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.HTTP_STATUS)
         if "transfer-encoding" in headers:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.MALFORMED_HTTP
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.MALFORMED_HTTP)
 
         content_lengths = headers.get("content-length", ())
         if len(content_lengths) != 1:
@@ -163,9 +146,7 @@ class LoopbackActivityWatchTransport:
             )
         length = int(raw_length)
         if length > max_response_bytes:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.RESPONSE_TOO_LARGE
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.RESPONSE_TOO_LARGE)
 
         try:
             return await reader.readexactly(length)
@@ -180,9 +161,7 @@ def parse_loopback_origin(endpoint: str) -> tuple[str, int]:
         parsed = urlsplit(endpoint)
         port = parsed.port
     except ValueError as exc:
-        raise ValueError(
-            "ActivityWatch endpoint must be an HTTP loopback origin"
-        ) from exc
+        raise ValueError("ActivityWatch endpoint must be an HTTP loopback origin") from exc
 
     hostname = parsed.hostname
     if (
@@ -194,13 +173,9 @@ def parse_loopback_origin(endpoint: str) -> tuple[str, int]:
         or parsed.query
         or parsed.fragment
     ):
-        raise ValueError(
-            "ActivityWatch endpoint must be an HTTP loopback origin"
-        )
+        raise ValueError("ActivityWatch endpoint must be an HTTP loopback origin")
     if port is not None and not 1 <= port <= 65535:
-        raise ValueError(
-            "ActivityWatch endpoint must be an HTTP loopback origin"
-        )
+        raise ValueError("ActivityWatch endpoint must be an HTTP loopback origin")
     return hostname, port or 80
 
 
@@ -221,12 +196,7 @@ def _validate_target(target: str) -> None:
         _invalid_request()
 
     bucket_id = unquote(components[4])
-    if (
-        not bucket_id
-        or len(bucket_id) > 256
-        or "/" in bucket_id
-        or contains_control(bucket_id)
-    ):
+    if not bucket_id or len(bucket_id) > 256 or "/" in bucket_id or contains_control(bucket_id):
         _invalid_request()
 
     try:
@@ -245,7 +215,7 @@ def _validate_target(target: str) -> None:
         end = datetime.fromisoformat(query["end"][0])
         require_aware(start)
         require_aware(end)
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         _invalid_request()
 
     if (
@@ -257,9 +227,7 @@ def _validate_target(target: str) -> None:
 
 
 def _invalid_request() -> Never:
-    raise ActivityWatchAdapterFailure(
-        ActivityWatchMetadataFailureCode.INVALID_REQUEST
-    )
+    raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.INVALID_REQUEST)
 
 
 def _parse_http_headers(
@@ -268,9 +236,7 @@ def _parse_http_headers(
     text = payload.decode("latin-1")
     lines = text.split("\r\n")
     if not lines or lines[-2:] != ["", ""]:
-        raise ActivityWatchAdapterFailure(
-            ActivityWatchMetadataFailureCode.MALFORMED_HTTP
-        )
+        raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.MALFORMED_HTTP)
 
     parts = lines[0].split(" ")
     if (
@@ -279,29 +245,17 @@ def _parse_http_headers(
         or len(parts[1]) != 3
         or not parts[1].isdigit()
     ):
-        raise ActivityWatchAdapterFailure(
-            ActivityWatchMetadataFailureCode.MALFORMED_HTTP
-        )
+        raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.MALFORMED_HTTP)
 
     headers: dict[str, list[str]] = {}
     for line in lines[1:-2]:
         if not line or line[0] in " \t" or ":" not in line:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.MALFORMED_HTTP
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.MALFORMED_HTTP)
         name, value = line.split(":", 1)
         name = name.strip().lower()
         value = value.strip()
-        if (
-            not name
-            or contains_control(name)
-            or contains_control(value)
-        ):
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.MALFORMED_HTTP
-            )
+        if not name or contains_control(name) or contains_control(value):
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.MALFORMED_HTTP)
         headers.setdefault(name, []).append(value)
 
-    return int(parts[1]), {
-        name: tuple(values) for name, values in headers.items()
-    }
+    return int(parts[1]), {name: tuple(values) for name, values in headers.items()}

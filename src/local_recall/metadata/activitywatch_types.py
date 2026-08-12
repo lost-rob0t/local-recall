@@ -139,11 +139,7 @@ class ActivityWatchEvent:
 
 
 def require_bounded_text(value: str, max_length: int) -> None:
-    if (
-        not value.strip()
-        or len(value) > max_length
-        or _CONTROL.search(value) is not None
-    ):
+    if not value.strip() or len(value) > max_length or _CONTROL.search(value) is not None:
         raise ValueError("ActivityWatch text field is invalid")
 
 
@@ -157,11 +153,7 @@ def contains_control(value: str) -> bool:
 
 
 def validate_domain(value: str) -> None:
-    if (
-        not value
-        or len(value) > MAX_DOMAIN_CHARS
-        or contains_control(value)
-    ):
+    if not value or len(value) > MAX_DOMAIN_CHARS or contains_control(value):
         raise ValueError("ActivityWatch domain is invalid")
     labels = value.split(".")
     if any(

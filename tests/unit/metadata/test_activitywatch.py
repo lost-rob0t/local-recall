@@ -168,9 +168,7 @@ def test_collects_canonical_window_afk_domain_fields() -> None:
                     title="Synthetic title",
                 ),
             ),
-            "afk": (
-                event(ActivityWatchEventType.AFK_STATUS, idle=False),
-            ),
+            "afk": (event(ActivityWatchEventType.AFK_STATUS, idle=False),),
             "web": (
                 event(
                     ActivityWatchEventType.WEB_TAB_CURRENT,
@@ -240,12 +238,8 @@ def test_requested_fields_query_only_needed_bucket_type() -> None:
             bucket("web", ActivityWatchEventType.WEB_TAB_CURRENT),
         ),
         {
-            "window": (
-                event(ActivityWatchEventType.CURRENT_WINDOW, application="app"),
-            ),
-            "afk": (
-                event(ActivityWatchEventType.AFK_STATUS, idle=True),
-            ),
+            "window": (event(ActivityWatchEventType.CURRENT_WINDOW, application="app"),),
+            "afk": (event(ActivityWatchEventType.AFK_STATUS, idle=True),),
             "web": (
                 event(
                     ActivityWatchEventType.WEB_TAB_CURRENT,
@@ -291,9 +285,7 @@ def test_every_field_has_stable_content_free_provenance() -> None:
         },
     )
 
-    metadata = asyncio.run(
-        source(client, titles=True).collect(request())
-    )
+    metadata = asyncio.run(source(client, titles=True).collect(request()))
 
     for item in metadata.fields:
         assert len(item.provenance) == 1
@@ -365,10 +357,7 @@ def test_several_unknown_hosts_fail_closed_without_event_queries() -> None:
     with pytest.raises(ActivityWatchMetadataFailure) as captured:
         asyncio.run(source(client).collect(request()))
 
-    assert (
-        captured.value.code
-        is ActivityWatchMetadataFailureCode.AMBIGUOUS_BUCKETS
-    )
+    assert captured.value.code is ActivityWatchMetadataFailureCode.AMBIGUOUS_BUCKETS
     assert client.event_calls == []
 
 
@@ -460,10 +449,7 @@ def test_stale_event_is_rejected() -> None:
     with pytest.raises(ActivityWatchMetadataFailure) as captured:
         asyncio.run(source(client).collect(request()))
 
-    assert (
-        captured.value.code
-        is ActivityWatchMetadataFailureCode.NO_CORRELATED_EVENT
-    )
+    assert captured.value.code is ActivityWatchMetadataFailureCode.NO_CORRELATED_EVENT
 
 
 def test_out_of_order_overlap_chooses_latest_start() -> None:
@@ -511,10 +497,7 @@ def test_no_compatible_buckets_uses_fixed_failure_code() -> None:
     with pytest.raises(ActivityWatchMetadataFailure) as captured:
         asyncio.run(source(SyntheticClient((), {})).collect(request()))
 
-    assert (
-        captured.value.code
-        is ActivityWatchMetadataFailureCode.NO_COMPATIBLE_BUCKETS
-    )
+    assert captured.value.code is ActivityWatchMetadataFailureCode.NO_COMPATIBLE_BUCKETS
 
 
 def test_is_available_reads_only_server_and_bucket_metadata() -> None:
@@ -537,10 +520,7 @@ def test_unavailability_is_sanitized() -> None:
     with pytest.raises(ActivityWatchMetadataFailure) as captured:
         asyncio.run(adapter.collect(request()))
 
-    assert (
-        captured.value.code
-        is ActivityWatchMetadataFailureCode.UNAVAILABLE
-    )
+    assert captured.value.code is ActivityWatchMetadataFailureCode.UNAVAILABLE
     assert "synthetic unavailable detail" not in str(captured.value)
     assert "synthetic unavailable detail" not in repr(captured.value)
 
@@ -554,9 +534,7 @@ def test_capture_deadline_fails_before_network_work() -> None:
     )
 
     with pytest.raises(ActivityWatchMetadataFailure) as captured:
-        asyncio.run(
-            source(client, monotonic_ns=lambda: 10).collect(expired)
-        )
+        asyncio.run(source(client, monotonic_ns=lambda: 10).collect(expired))
 
     assert captured.value.code is ActivityWatchMetadataFailureCode.TIMEOUT
     assert client.info_calls == 0

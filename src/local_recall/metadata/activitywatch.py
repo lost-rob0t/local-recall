@@ -95,18 +95,14 @@ class ActivityWatchMetadataSource:
             buckets = await self._client.buckets(
                 timeout_seconds=self._remaining_timeout(request),
             )
-            relevant = tuple(
-                item for item in buckets if item.event_type in wanted
-            )
+            relevant = tuple(item for item in buckets if item.event_type in wanted)
             scoped = _scope_buckets(relevant, info.hostname)
             if not any(scoped.get(event_type) for event_type in wanted):
                 raise ActivityWatchMetadataFailure(
                     ActivityWatchMetadataFailureCode.NO_COMPATIBLE_BUCKETS
                 )
 
-            tolerance = (
-                self._settings.activitywatch.correlation_window_seconds
-            )
+            tolerance = self._settings.activitywatch.correlation_window_seconds
             start = observed_at - timedelta(seconds=tolerance)
             end = observed_at + timedelta(seconds=tolerance)
             selected: dict[
@@ -141,9 +137,7 @@ class ActivityWatchMetadataSource:
                 )
             return ContextMetadata(
                 observed_at=observed_at,
-                fields=tuple(
-                    sorted(fields, key=lambda item: item.name)
-                ),
+                fields=tuple(sorted(fields, key=lambda item: item.name)),
             )
         except asyncio.CancelledError:
             raise
@@ -152,9 +146,7 @@ class ActivityWatchMetadataSource:
         except ActivityWatchAdapterFailure as exc:
             raise ActivityWatchMetadataFailure(exc.code) from None
         except TimeoutError:
-            raise ActivityWatchMetadataFailure(
-                ActivityWatchMetadataFailureCode.TIMEOUT
-            ) from None
+            raise ActivityWatchMetadataFailure(ActivityWatchMetadataFailureCode.TIMEOUT) from None
         except Exception:
             raise ActivityWatchMetadataFailure(
                 ActivityWatchMetadataFailureCode.UNAVAILABLE
@@ -164,13 +156,9 @@ class ActivityWatchMetadataSource:
         self,
         request: MetadataRequest,
     ) -> float:
-        remaining_ns = (
-            request.deadline_monotonic_ns - self._monotonic_ns()
-        )
+        remaining_ns = request.deadline_monotonic_ns - self._monotonic_ns()
         if remaining_ns <= 0:
-            raise ActivityWatchMetadataFailure(
-                ActivityWatchMetadataFailureCode.TIMEOUT
-            )
+            raise ActivityWatchMetadataFailure(ActivityWatchMetadataFailureCode.TIMEOUT)
         return min(
             remaining_ns / 1_000_000_000,
             self._settings.activitywatch.request_timeout_seconds,
@@ -187,20 +175,15 @@ class ActivityWatchMetadataSource:
         if (
             all_fields
             or "application" in requested
-            or (
-                self._settings.window_titles_enabled
-                and "window.title" in requested
-            )
+            or (self._settings.window_titles_enabled and "window.title" in requested)
         ):
             wanted.add(ActivityWatchEventType.CURRENT_WINDOW)
 
         if all_fields or "idle" in requested:
             wanted.add(ActivityWatchEventType.AFK_STATUS)
 
-        if (
-            self._settings.activitywatch.url_mode
-            is ActivityWatchURLMode.DOMAIN_ONLY
-            and (all_fields or "url.domain" in requested)
+        if self._settings.activitywatch.url_mode is ActivityWatchURLMode.DOMAIN_ONLY and (
+            all_fields or "url.domain" in requested
         ):
             wanted.add(ActivityWatchEventType.WEB_TAB_CURRENT)
 
@@ -268,16 +251,11 @@ class ActivityWatchMetadataSource:
     ) -> list[ContextField]:
         requested = request.requested_fields
         all_fields = not requested
-        values: list[
-            tuple[str, str | bool, float]
-        ] = []
+        values: list[tuple[str, str | bool, float]] = []
 
         window = events.get(ActivityWatchEventType.CURRENT_WINDOW)
         if window is not None:
-            if (
-                (all_fields or "application" in requested)
-                and window.application is not None
-            ):
+            if (all_fields or "application" in requested) and window.application is not None:
                 values.append(
                     (
                         "application",
@@ -290,23 +268,16 @@ class ActivityWatchMetadataSource:
                 and (all_fields or "window.title" in requested)
                 and window.title is not None
             ):
-                values.append(
-                    ("window.title", window.title, 0.90)
-                )
+                values.append(("window.title", window.title, 0.90))
 
         afk = events.get(ActivityWatchEventType.AFK_STATUS)
-        if (
-            afk is not None
-            and (all_fields or "idle" in requested)
-            and afk.idle is not None
-        ):
+        if afk is not None and (all_fields or "idle" in requested) and afk.idle is not None:
             values.append(("idle", afk.idle, 0.98))
 
         web = events.get(ActivityWatchEventType.WEB_TAB_CURRENT)
         if (
             web is not None
-            and self._settings.activitywatch.url_mode
-            is ActivityWatchURLMode.DOMAIN_ONLY
+            and self._settings.activitywatch.url_mode is ActivityWatchURLMode.DOMAIN_ONLY
             and (all_fields or "url.domain" in requested)
             and web.domain is not None
         ):
@@ -338,9 +309,7 @@ def _normalize_hostname(value: str) -> str:
 def _normalize_application(value: str) -> str:
     normalized = " ".join(value.split()).casefold()
     if not normalized:
-        raise ActivityWatchMetadataFailure(
-            ActivityWatchMetadataFailureCode.MALFORMED_RESPONSE
-        )
+        raise ActivityWatchMetadataFailure(ActivityWatchMetadataFailureCode.MALFORMED_RESPONSE)
     return normalized
 
 
@@ -352,9 +321,7 @@ def _scope_buckets(
     tuple[ActivityWatchBucket, ...],
 ]:
     if len(buckets) > MAX_BUCKETS:
-        raise ActivityWatchAdapterFailure(
-            ActivityWatchMetadataFailureCode.TOO_MANY_BUCKETS
-        )
+        raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.TOO_MANY_BUCKETS)
 
     grouped: dict[
         ActivityWatchEventType,
@@ -371,9 +338,7 @@ def _scope_buckets(
 
     for event_type, candidates in grouped.items():
         local_candidates = [
-            item
-            for item in candidates
-            if _normalize_hostname(item.hostname) == local
+            item for item in candidates if _normalize_hostname(item.hostname) == local
         ]
         if local_candidates:
             selected = local_candidates
@@ -391,9 +356,7 @@ def _scope_buckets(
             selected = next(iter(by_host.values()), [])
 
         if len(selected) > MAX_CANDIDATES_PER_TYPE:
-            raise ActivityWatchAdapterFailure(
-                ActivityWatchMetadataFailureCode.AMBIGUOUS_BUCKETS
-            )
+            raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.AMBIGUOUS_BUCKETS)
 
         scoped[event_type] = tuple(
             sorted(
@@ -444,8 +407,7 @@ def _correlate_event(
     candidates = [
         event
         for event in unique.values()
-        if _event_distance_seconds(event, observed_at)
-        <= tolerance_seconds
+        if _event_distance_seconds(event, observed_at) <= tolerance_seconds
     ]
     if not candidates:
         return None

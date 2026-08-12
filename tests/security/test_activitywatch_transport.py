@@ -91,10 +91,7 @@ def test_proxy_environment_is_ignored(
         "ALL_PROXY",
         "http://192.0.2.9:8080",
     )
-    response = (
-        b"HTTP/1.1 200 OK\r\n"
-        b"Content-Length: 2\r\n\r\n{}"
-    )
+    response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"
 
     assert asyncio.run(request_fixed_response(response)) == b"{}"
 
@@ -111,39 +108,23 @@ def test_proxy_environment_is_ignored(
             ActivityWatchMetadataFailureCode.REDIRECT,
         ),
         (
-            (
-                b"HTTP/1.1 500 Internal Server Error\r\n"
-                b"Content-Length: 0\r\n\r\n"
-            ),
+            (b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n"),
             ActivityWatchMetadataFailureCode.HTTP_STATUS,
         ),
         (
-            (
-                b"not-http\r\n"
-                b"Content-Length: 0\r\n\r\n"
-            ),
+            (b"not-http\r\nContent-Length: 0\r\n\r\n"),
             ActivityWatchMetadataFailureCode.MALFORMED_HTTP,
         ),
         (
-            (
-                b"HTTP/1.1 200 OK\r\n"
-                b"Content-Length: nope\r\n\r\n"
-            ),
+            (b"HTTP/1.1 200 OK\r\nContent-Length: nope\r\n\r\n"),
             ActivityWatchMetadataFailureCode.INVALID_CONTENT_LENGTH,
         ),
         (
-            (
-                b"HTTP/1.1 200 OK\r\n"
-                b"Content-Length: 1\r\n"
-                b"Content-Length: 1\r\n\r\nx"
-            ),
+            (b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 1\r\n\r\nx"),
             ActivityWatchMetadataFailureCode.INVALID_CONTENT_LENGTH,
         ),
         (
-            (
-                b"HTTP/1.1 200 OK\r\n"
-                b"Transfer-Encoding: chunked\r\n\r\n"
-            ),
+            (b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"),
             ActivityWatchMetadataFailureCode.MALFORMED_HTTP,
         ),
     ],
@@ -162,25 +143,17 @@ def test_malformed_or_redirecting_http_uses_fixed_code(
 
 def test_oversized_headers_fail_before_body_processing() -> None:
     response = (
-        b"HTTP/1.1 200 OK\r\nX-Fill: "
-        + b"a" * (17 * 1024)
-        + b"\r\nContent-Length: 0\r\n\r\n"
+        b"HTTP/1.1 200 OK\r\nX-Fill: " + b"a" * (17 * 1024) + b"\r\nContent-Length: 0\r\n\r\n"
     )
 
     with pytest.raises(ActivityWatchAdapterFailure) as captured:
         asyncio.run(request_fixed_response(response))
 
-    assert (
-        captured.value.code
-        is ActivityWatchMetadataFailureCode.HEADERS_TOO_LARGE
-    )
+    assert captured.value.code is ActivityWatchMetadataFailureCode.HEADERS_TOO_LARGE
 
 
 def test_oversized_body_is_rejected_from_content_length() -> None:
-    response = (
-        b"HTTP/1.1 200 OK\r\n"
-        b"Content-Length: 4097\r\n\r\n"
-    )
+    response = b"HTTP/1.1 200 OK\r\nContent-Length: 4097\r\n\r\n"
 
     with pytest.raises(ActivityWatchAdapterFailure) as captured:
         asyncio.run(
@@ -190,25 +163,16 @@ def test_oversized_body_is_rejected_from_content_length() -> None:
             )
         )
 
-    assert (
-        captured.value.code
-        is ActivityWatchMetadataFailureCode.RESPONSE_TOO_LARGE
-    )
+    assert captured.value.code is ActivityWatchMetadataFailureCode.RESPONSE_TOO_LARGE
 
 
 def test_truncated_body_fails_safely() -> None:
-    response = (
-        b"HTTP/1.1 200 OK\r\n"
-        b"Content-Length: 10\r\n\r\nshort"
-    )
+    response = b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nshort"
 
     with pytest.raises(ActivityWatchAdapterFailure) as captured:
         asyncio.run(request_fixed_response(response))
 
-    assert (
-        captured.value.code
-        is ActivityWatchMetadataFailureCode.INCOMPLETE_RESPONSE
-    )
+    assert captured.value.code is ActivityWatchMetadataFailureCode.INCOMPLETE_RESPONSE
 
 
 @pytest.mark.parametrize(
@@ -232,9 +196,7 @@ def test_truncated_body_fails_safely() -> None:
 def test_unapproved_or_unbounded_event_target_is_rejected(
     target: str,
 ) -> None:
-    transport = LoopbackActivityWatchTransport(
-        "http://127.0.0.1:5600"
-    )
+    transport = LoopbackActivityWatchTransport("http://127.0.0.1:5600")
 
     with pytest.raises(ActivityWatchAdapterFailure) as captured:
         asyncio.run(
@@ -244,10 +206,7 @@ def test_unapproved_or_unbounded_event_target_is_rejected(
             )
         )
 
-    assert (
-        captured.value.code
-        is ActivityWatchMetadataFailureCode.INVALID_REQUEST
-    )
+    assert captured.value.code is ActivityWatchMetadataFailureCode.INVALID_REQUEST
 
 
 @pytest.mark.parametrize(

@@ -150,11 +150,7 @@ def test_server_info_and_bucket_discovery_use_stable_metadata() -> None:
 
 def test_duplicate_json_keys_fail_closed_without_value_leak() -> None:
     marker = "synthetic-secret-marker"
-    payload = (
-        b'{"hostname":"local-host","hostname":"'
-        + marker.encode()
-        + b'"}'
-    )
+    payload = b'{"hostname":"local-host","hostname":"' + marker.encode() + b'"}'
     adapter, _ = client([payload])
 
     with pytest.raises(ActivityWatchAdapterFailure) as captured:
@@ -171,10 +167,7 @@ def test_wrong_top_level_json_type_fails_closed() -> None:
     with pytest.raises(ActivityWatchAdapterFailure) as captured:
         asyncio.run(adapter.server_info(timeout_seconds=0.5))
 
-    assert (
-        captured.value.code
-        is ActivityWatchMetadataFailureCode.MALFORMED_RESPONSE
-    )
+    assert captured.value.code is ActivityWatchMetadataFailureCode.MALFORMED_RESPONSE
 
 
 def test_bucket_count_is_bounded() -> None:
@@ -191,10 +184,7 @@ def test_bucket_count_is_bounded() -> None:
     with pytest.raises(ActivityWatchAdapterFailure) as captured:
         asyncio.run(adapter.buckets(timeout_seconds=0.5))
 
-    assert (
-        captured.value.code
-        is ActivityWatchMetadataFailureCode.TOO_MANY_BUCKETS
-    )
+    assert captured.value.code is ActivityWatchMetadataFailureCode.TOO_MANY_BUCKETS
 
 
 def test_window_event_parses_app_and_requested_title() -> None:
@@ -313,12 +303,7 @@ def test_domain_only_strips_path_query_and_fragment() -> None:
             encoded(
                 [
                     event_payload(
-                        {
-                            "url": (
-                                "https://Example.Test/private/path?"
-                                f"token={marker}#fragment"
-                            )
-                        }
+                        {"url": (f"https://Example.Test/private/path?token={marker}#fragment")}
                     )
                 ]
             ),
@@ -362,13 +347,7 @@ def test_url_disabled_does_not_materialize_domain() -> None:
     adapter, _ = client(
         [
             encoded(bucket_payload("web.tab.current")),
-            encoded(
-                [
-                    event_payload(
-                        {"url": "https://example.test/private"}
-                    )
-                ]
-            ),
+            encoded([event_payload({"url": "https://example.test/private"})]),
         ]
     )
 
