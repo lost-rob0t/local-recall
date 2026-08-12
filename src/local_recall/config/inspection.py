@@ -30,6 +30,39 @@ def inspect_effective_configuration(configuration: LocalRecallConfig) -> dict[st
             }
         )
     result["redaction"]["allowlists"] = rendered_allowlists
+
+    rendered_rules: list[dict[str, Any]] = []
+    for rule in configuration.rules.rules:
+        rendered_rules.append(
+            {
+                "rule_id": rule.rule_id,
+                "enabled": rule.enabled,
+                "priority": rule.priority,
+                "effect": rule.effect.value,
+                "operations": [operation.value for operation in rule.operations],
+                "application": "<configured>" if rule.application is not None else None,
+                "title_pattern": "<configured>" if rule.title_pattern is not None else None,
+                "workspace": "<configured>" if rule.workspace is not None else None,
+                "domain": "<configured>" if rule.domain is not None else None,
+                "include_subdomains": rule.include_subdomains,
+                "full_screen": rule.full_screen,
+                "metadata_source": (
+                    "<configured>" if rule.metadata_source is not None else None
+                ),
+                "time_window": "<configured>" if rule.time_window is not None else None,
+                "reason_code": rule.reason_code,
+            }
+        )
+    result["rules"] = {
+        "default_effect": configuration.rules.default_effect.value,
+        "timezone": configuration.rules.timezone,
+        "max_metadata_age_seconds": configuration.rules.max_metadata_age_seconds,
+        "rules": rendered_rules,
+        "sensitive_applications": (
+            f"<configured:{len(configuration.rules.sensitive_applications)}>"
+        ),
+        "sensitive_workspaces": f"<configured:{len(configuration.rules.sensitive_workspaces)}>",
+    }
     return result
 
 
