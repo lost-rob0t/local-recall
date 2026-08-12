@@ -5,7 +5,7 @@ profile = "privacy-strict"
 enabled = false
 
 [metadata]
-enabled_sources = ["xorg-generic"]
+enabled_sources = ["qtile", "xorg-generic"]
 window_titles_enabled = false
 
 [ocr]

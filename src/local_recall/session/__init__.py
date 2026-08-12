@@ -16,6 +16,7 @@ from .models import (
 )
 from .probes import (
     ActivityWatchMetadataProbe,
+    AsyncAvailabilityCheck,
     AsyncHealthCheck,
     GenericXorgMetadataProbe,
     QtileMetadataProbe,
@@ -25,6 +26,7 @@ from .status import render_session_resolution_status, session_resolution_status
 
 __all__ = [
     "ActivityWatchMetadataProbe",
+    "AsyncAvailabilityCheck",
     "AsyncHealthCheck",
     "DesktopEnvironment",
     "DesktopSession",

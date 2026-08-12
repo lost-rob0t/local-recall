@@ -6,10 +6,11 @@ import os
 import typer
 
 from local_recall import __version__
-from local_recall.metadata import GenericXorgMetadataSource
+from local_recall.metadata import GenericXorgMetadataSource, QtileMetadataSource
 from local_recall.session import (
     EnvironmentSnapshot,
     GenericXorgMetadataProbe,
+    QtileMetadataProbe,
     SessionResolver,
     render_session_resolution_status,
 )
@@ -35,13 +36,15 @@ def version() -> None:
 @app.command()
 def status() -> None:
     """Print the sanitized desktop-session strategy status."""
+    qtile_source = QtileMetadataSource()
+    qtile_probe = QtileMetadataProbe(qtile_source)
     generic_xorg_source = GenericXorgMetadataSource()
     generic_xorg_probe = GenericXorgMetadataProbe(generic_xorg_source.is_available)
-    resolver = SessionResolver((), generic_xorg_probe=generic_xorg_probe)
+    resolver = SessionResolver((qtile_probe,), generic_xorg_probe=generic_xorg_probe)
     resolution = asyncio.run(
         resolver.resolve(
             EnvironmentSnapshot.from_mapping(os.environ),
-            (generic_xorg_probe.source_id,),
+            (qtile_probe.source_id, generic_xorg_probe.source_id),
         )
     )
     typer.echo(render_session_resolution_status(resolution))

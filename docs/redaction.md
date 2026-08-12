@@ -57,11 +57,11 @@ For every deterministic OCR match, the policy:
 
 For metadata, sensitive field names or detected values cause the complete field to be dropped. Low-confidence OCR blocks are conservatively replaced and masked in full. Every OCR region is validated against frame bounds before detection, so malformed or malicious OCR output rejects the entire record even when no secret pattern matches.
 
-Metadata collected by built-in sources, including generic Xorg `application` and
-`window.title`, enters this same analyzed-stage policy. Sources have no persistence port and
-cannot mark a value as already redacted. Tests construct generic-Xorg metadata synthetically,
-carry it through the bounded pipeline, and verify that sensitive application/title values are
-dropped before the encryption processor or persistence sink can receive the record.
+Metadata collected by built-in sources, including generic Xorg and Qtile `application`,
+`workspace`, and `window.title`, enters this same analyzed-stage policy. Sources have no
+persistence port and cannot mark a value as already redacted. Tests construct desktop metadata
+synthetically, carry it through the bounded pipeline, and verify that sensitive values from both
+adapters are dropped before the encryption processor or persistence sink can receive the record.
 
 The policy fails closed when redaction is disabled, deterministic filters are disabled, reject-on-uncertainty is disabled, the policy revision is stale, frame identity changes, a region is invalid, a codec fails, or a detector/policy operation fails.
 

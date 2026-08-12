@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from local_recall import __version__
 from local_recall.cli import app
-from local_recall.metadata import GenericXorgMetadataSource
+from local_recall.metadata import GenericXorgMetadataSource, QtileMetadataSource
 
 
 def test_runtime_targets_python_314() -> None:
@@ -39,8 +39,16 @@ def test_status_reports_selected_strategies_without_environment_values(
     async def available(_: GenericXorgMetadataSource) -> bool:
         return True
 
+    async def qtile_available(_: QtileMetadataSource) -> bool:
+        return True
+
+    async def must_not_collect(*_: object, **__: object) -> object:
+        raise AssertionError("status must not collect Qtile content")
+
     marker = "secret-display-marker"
     monkeypatch.setattr(GenericXorgMetadataSource, "is_available", available)
+    monkeypatch.setattr(QtileMetadataSource, "is_available", qtile_available)
+    monkeypatch.setattr(QtileMetadataSource, "collect", must_not_collect)
     monkeypatch.setenv("XDG_SESSION_TYPE", "x11")
     monkeypatch.setenv("DISPLAY", marker)
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "Qtile")
@@ -54,9 +62,33 @@ def test_status_reports_selected_strategies_without_environment_values(
     assert payload["protocol"] == "xorg"
     assert payload["desktop"] == "qtile"
     assert payload["capture_backend"] == "xorg-generic"
-    assert payload["metadata_sources"] == ["xorg-generic"]
+    assert payload["metadata_sources"] == ["qtile", "xorg-generic"]
     assert payload["recording_supported"] is True
     assert marker not in result.stdout
+
+
+def test_status_falls_back_to_generic_xorg_when_qtile_health_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def generic_available(_: GenericXorgMetadataSource) -> bool:
+        return True
+
+    async def qtile_unavailable(_: QtileMetadataSource) -> bool:
+        return False
+
+    monkeypatch.setattr(GenericXorgMetadataSource, "is_available", generic_available)
+    monkeypatch.setattr(QtileMetadataSource, "is_available", qtile_unavailable)
+    monkeypatch.setenv("XDG_SESSION_TYPE", "x11")
+    monkeypatch.setenv("DISPLAY", ":synthetic")
+    monkeypatch.setenv("XDG_CURRENT_DESKTOP", "Qtile")
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+
+    result = CliRunner().invoke(app, ["status"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["metadata_sources"] == ["xorg-generic"]
+    assert payload["recording_supported"] is True
 
 
 def test_status_fails_closed_for_wayland(monkeypatch: pytest.MonkeyPatch) -> None:

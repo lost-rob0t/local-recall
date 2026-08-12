@@ -24,6 +24,21 @@ class FixedHealth:
         return self._healthy
 
 
+class FixedQtileSource:
+    def __init__(self, healthy: bool) -> None:
+        self._healthy = healthy
+        self.availability_calls = 0
+        self.collection_calls = 0
+
+    async def is_available(self) -> bool:
+        self.availability_calls += 1
+        return self._healthy
+
+    async def collect(self, *_: object, **__: object) -> None:
+        self.collection_calls += 1
+        raise AssertionError("probe must not collect Qtile content")
+
+
 def session(
     protocol: DisplayProtocol = DisplayProtocol.XORG,
     desktop: DesktopEnvironment = DesktopEnvironment.QTILE,
@@ -37,8 +52,8 @@ def session(
 
 
 def test_qtile_probe_checks_health_only_for_compatible_qtile_xorg() -> None:
-    health = FixedHealth(True)
-    probe = QtileMetadataProbe(health)
+    source = FixedQtileSource(True)
+    probe = QtileMetadataProbe(source)
 
     result = asyncio.run(probe.probe(session()))
 
@@ -46,22 +61,25 @@ def test_qtile_probe_checks_health_only_for_compatible_qtile_xorg() -> None:
     assert result.capabilities == frozenset(
         {
             MetadataCapability.APPLICATION,
+            MetadataCapability.LAYOUT,
+            MetadataCapability.SCREEN,
             MetadataCapability.WINDOW_TITLE,
             MetadataCapability.WORKSPACE,
         }
     )
-    assert health.calls == 1
+    assert source.availability_calls == 1
+    assert source.collection_calls == 0
 
 
 def test_qtile_probe_rejects_non_qtile_session_without_health_call() -> None:
-    health = FixedHealth(True)
-    probe = QtileMetadataProbe(health)
+    source = FixedQtileSource(True)
+    probe = QtileMetadataProbe(source)
 
     result = asyncio.run(probe.probe(session(desktop=DesktopEnvironment.GNOME)))
 
     assert result.outcome is ProbeOutcome.INCOMPATIBLE
     assert result.reason_code is ProbeReasonCode.INCOMPATIBLE_SESSION
-    assert health.calls == 0
+    assert source.availability_calls == 0
 
 
 def test_activitywatch_probe_reports_unavailable_health() -> None:
