@@ -71,3 +71,7 @@ Synthetic tests verify:
 - seeded titles, OCR, URLs, command lines, usernames, tokens, and prompts never appear in audit files;
 - policy, routing, pipeline, deletion, and key wrappers emit only fixed operational facts;
 - core dumps, permissive umasks, and the fault handler are disabled through a verifiable hardening adapter.
+
+## Session safety
+
+Lock/idle lifecycle transitions use fixed audit reason codes. Session-safety status/events contain normalized state/source identifiers only; raw D-Bus, ActivityWatch, window, user, command, OCR, and pixel content is excluded. See [session-safety.md](session-safety.md).

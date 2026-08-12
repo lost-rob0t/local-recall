@@ -48,16 +48,29 @@ class LifecyclePreflightRequest:
 class LifecyclePreflightResult:
     ready: bool
     fault_code: LifecycleFaultCode | None = None
+    start_paused_reason: TransitionReason | None = None
 
     def __post_init__(self) -> None:
         if self.ready and self.fault_code is not None:
             raise ValueError("successful preflight cannot include a fault code")
         if not self.ready and self.fault_code is None:
             raise ValueError("failed preflight requires a fault code")
+        if not self.ready and self.start_paused_reason is not None:
+            raise ValueError("failed preflight cannot request a paused start")
+        if self.start_paused_reason not in {
+            None,
+            TransitionReason.SESSION_LOCKED,
+            TransitionReason.IDLE,
+        }:
+            raise ValueError("preflight paused start requires a session-safety reason")
 
     @classmethod
-    def success(cls) -> LifecyclePreflightResult:
-        return cls(ready=True)
+    def success(
+        cls,
+        *,
+        start_paused_reason: TransitionReason | None = None,
+    ) -> LifecyclePreflightResult:
+        return cls(ready=True, start_paused_reason=start_paused_reason)
 
     @classmethod
     def failure(cls, fault_code: LifecycleFaultCode) -> LifecyclePreflightResult:
@@ -77,6 +90,21 @@ class PauseCapture:
 @dataclass(frozen=True, slots=True)
 class ResumeCapture:
     reason: TransitionReason = TransitionReason.USER_RESUME
+
+
+@dataclass(frozen=True, slots=True)
+class SetAutomaticCaptureBlock:
+    blocked: bool
+    reason: TransitionReason
+
+    def __post_init__(self) -> None:
+        allowed = (
+            {TransitionReason.SESSION_LOCKED, TransitionReason.IDLE}
+            if self.blocked
+            else {TransitionReason.SESSION_UNLOCKED, TransitionReason.ACTIVE}
+        )
+        if self.reason not in allowed:
+            raise ValueError("automatic capture block reason does not match requested state")
 
 
 @dataclass(frozen=True, slots=True)

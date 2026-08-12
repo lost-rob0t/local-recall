@@ -109,3 +109,7 @@ The default branch and release gate require zero skipped and zero expected-failu
 - piped-output status preservation.
 
 The fixtures use a non-Python extension so normal pytest discovery can never execute them directly.
+
+## Session-safety tests
+
+Lock/idle coverage uses synthetic logind, ActivityWatch, Xorg-idle, lifecycle, and clocks only. Tests never inspect or manipulate the developer/CI desktop session. Lock races are validated through generation invalidation and policy authorization rather than real screenshots.

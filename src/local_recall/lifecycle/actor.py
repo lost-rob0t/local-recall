@@ -28,6 +28,7 @@ from .messages import (
     PauseCapture,
     ResumeCapture,
     RunLifecyclePreflight,
+    SetAutomaticCaptureBlock,
     StartCapture,
     StopCapture,
 )
@@ -128,6 +129,8 @@ class LifecycleActor(pykka.ThreadingActor):
         self._preflight_timeout_seconds = preflight_timeout_seconds
         self._stop_timeout_seconds = stop_timeout_seconds
         self._preflight_ref: pykka.ActorRef[_LifecyclePreflightActor] | None = None
+        self._manual_pause = False
+        self._automatic_pause_reason: TransitionReason | None = None
 
     def on_start(self) -> None:
         self._gate.bind_owner()
@@ -154,6 +157,8 @@ class LifecycleActor(pykka.ThreadingActor):
             return self._handle_pause(message)
         if isinstance(message, ResumeCapture):
             return self._handle_resume(message)
+        if isinstance(message, SetAutomaticCaptureBlock):
+            return self._handle_automatic_block(message)
         if isinstance(message, StopCapture):
             return self._handle_stop(message)
         if isinstance(message, FaultCapture):
@@ -233,6 +238,22 @@ class LifecycleActor(pykka.ThreadingActor):
             fault_code = message.result.fault_code or LifecycleFaultCode.PREFLIGHT_FAILURE
             return self._enter_fault(fault_code)
 
+        pause_reason = message.result.start_paused_reason or self._automatic_pause_reason
+        if pause_reason is not None:
+            generation, transition = self._gate.invalidate_and_pause(pause_reason)
+            self._automatic_pause_reason = pause_reason
+            if not self._emit_transition(transition):
+                return self._result(
+                    False,
+                    True,
+                    "audit_failure",
+                    LifecycleFaultCode.AUDIT_FAILURE,
+                )
+            fault_code = self._drain_generation(generation)
+            if fault_code is not None:
+                return self._enter_fault(fault_code, drain_generation=False)
+            return self._result(True, True, "session_safety_paused")
+
         transition = self._gate.mark_recording(message.generation, message.reason)
         if not self._emit_transition(transition):
             return self._result(
@@ -246,9 +267,11 @@ class LifecycleActor(pykka.ThreadingActor):
     def _handle_pause(self, command: PauseCapture) -> LifecycleCommandResult:
         current = self._gate.snapshot()
         if current.state is CaptureState.PAUSED:
+            self._manual_pause = True
             return self._result(True, False, "already_paused")
         if current.state is not CaptureState.RECORDING:
             return self._result(False, False, "invalid_pause_state")
+        self._manual_pause = True
         transition = self._gate.pause(command.reason)
         if not self._emit_transition(transition):
             return self._result(
@@ -261,10 +284,67 @@ class LifecycleActor(pykka.ThreadingActor):
 
     def _handle_resume(self, command: ResumeCapture) -> LifecycleCommandResult:
         current = self._gate.snapshot()
+        if self._automatic_pause_reason is not None:
+            return self._result(False, False, "session_safety_blocked")
         if current.state is CaptureState.RECORDING:
+            self._manual_pause = False
             return self._result(True, False, "already_recording")
         if current.state is not CaptureState.PAUSED:
             return self._result(False, False, "invalid_resume_state")
+        transition = self._gate.resume(command.reason)
+        self._manual_pause = False
+        if not self._emit_transition(transition):
+            return self._result(
+                False,
+                True,
+                "audit_failure",
+                LifecycleFaultCode.AUDIT_FAILURE,
+            )
+        return self._result(True, True, "recording")
+
+    def _handle_automatic_block(self, command: SetAutomaticCaptureBlock) -> LifecycleCommandResult:
+        current = self._gate.snapshot()
+        if command.blocked:
+            if (
+                self._automatic_pause_reason is TransitionReason.SESSION_LOCKED
+                and command.reason is TransitionReason.IDLE
+            ):
+                return self._result(True, False, "stronger_safety_block_active")
+            if (
+                self._automatic_pause_reason is command.reason
+                and current.state is CaptureState.PAUSED
+            ):
+                return self._result(True, False, "session_safety_already_blocked")
+
+            self._automatic_pause_reason = command.reason
+            if current.state in {CaptureState.OFF, CaptureState.STOPPING, CaptureState.FAULTED}:
+                return self._result(True, False, "session_safety_latched")
+            generation, transition = self._gate.invalidate_and_pause(command.reason)
+            if not self._emit_transition(transition):
+                return self._result(
+                    False,
+                    True,
+                    "audit_failure",
+                    LifecycleFaultCode.AUDIT_FAILURE,
+                )
+            fault_code = self._drain_generation(generation)
+            if fault_code is not None:
+                return self._enter_fault(fault_code, drain_generation=False)
+            return self._result(True, True, "session_safety_paused")
+
+        expected_release = (
+            TransitionReason.SESSION_UNLOCKED
+            if self._automatic_pause_reason is TransitionReason.SESSION_LOCKED
+            else TransitionReason.ACTIVE
+        )
+        if self._automatic_pause_reason is None:
+            return self._result(True, False, "session_safety_already_clear")
+        if command.reason is not expected_release:
+            return self._result(False, False, "session_safety_release_mismatch")
+
+        self._automatic_pause_reason = None
+        if current.state is not CaptureState.PAUSED or self._manual_pause:
+            return self._result(True, False, "manual_pause_retained")
         transition = self._gate.resume(command.reason)
         if not self._emit_transition(transition):
             return self._result(
@@ -276,6 +356,7 @@ class LifecycleActor(pykka.ThreadingActor):
         return self._result(True, True, "recording")
 
     def _handle_stop(self, command: StopCapture) -> LifecycleCommandResult:
+        self._manual_pause = False
         current = self._gate.snapshot()
         if current.state is CaptureState.OFF:
             return self._result(True, False, "already_off")

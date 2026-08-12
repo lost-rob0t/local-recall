@@ -49,6 +49,7 @@ _ALLOWED_TRANSITIONS: dict[CaptureState, frozenset[CaptureState]] = {
     CaptureState.STARTING: frozenset(
         {
             CaptureState.RECORDING,
+            CaptureState.PAUSED,
             CaptureState.STOPPING,
             CaptureState.OFF,
             CaptureState.FAULTED,
@@ -65,6 +66,7 @@ _ALLOWED_TRANSITIONS: dict[CaptureState, frozenset[CaptureState]] = {
     CaptureState.PAUSED: frozenset(
         {
             CaptureState.RECORDING,
+            CaptureState.PAUSED,
             CaptureState.PRIVACY,
             CaptureState.STOPPING,
             CaptureState.FAULTED,

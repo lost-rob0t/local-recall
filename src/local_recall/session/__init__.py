@@ -2,6 +2,20 @@
 
 from .coordinator import compose_context_metadata
 from .detection import EnvironmentSnapshot, detect_desktop_session
+from .idle import (
+    ActivityWatchIdleStateSource,
+    FixedXprintidleRunner,
+    IdleCommandResult,
+    XorgIdleStateSource,
+)
+from .logind import (
+    BusctlLogindSignalMonitor,
+    BusctlResult,
+    FixedBusctlRunner,
+    LogindLockStateSource,
+    LogindSignal,
+    parse_busctl_signal,
+)
 from .models import (
     DesktopEnvironment,
     DesktopSession,
@@ -22,17 +36,46 @@ from .probes import (
     QtileMetadataProbe,
 )
 from .resolver import MetadataStrategyProbe, SessionResolver
+from .safety import (
+    IdleObservation,
+    IdleState,
+    LifecycleAutomaticCaptureBlockSink,
+    LockObservation,
+    LockState,
+    SafetyObservationRequest,
+    SessionSafetyAuditEvent,
+    SessionSafetyController,
+    SessionSafetyFailureCode,
+    SessionSafetyHealth,
+    SessionSafetyPreflight,
+    SessionSafetyState,
+    SessionSafetyStatus,
+    resolve_idle_observations,
+)
 from .status import render_session_resolution_status, session_resolution_status
 
 __all__ = [
+    "ActivityWatchIdleStateSource",
     "ActivityWatchMetadataProbe",
     "AsyncAvailabilityCheck",
     "AsyncHealthCheck",
+    "BusctlLogindSignalMonitor",
+    "BusctlResult",
     "DesktopEnvironment",
     "DesktopSession",
     "DisplayProtocol",
     "EnvironmentSnapshot",
+    "FixedBusctlRunner",
+    "FixedXprintidleRunner",
     "GenericXorgMetadataProbe",
+    "IdleCommandResult",
+    "IdleObservation",
+    "IdleState",
+    "LifecycleAutomaticCaptureBlockSink",
+    "LockObservation",
+    "LockState",
+    "LogindLockStateSource",
+    "LogindSignal",
     "MetadataCapability",
     "MetadataProbeResult",
     "MetadataStrategyProbe",
@@ -40,11 +83,22 @@ __all__ = [
     "ProbeReasonCode",
     "QtileMetadataProbe",
     "ResolutionReasonCode",
+    "SafetyObservationRequest",
     "SessionReasonCode",
     "SessionResolution",
     "SessionResolver",
+    "SessionSafetyAuditEvent",
+    "SessionSafetyController",
+    "SessionSafetyFailureCode",
+    "SessionSafetyHealth",
+    "SessionSafetyPreflight",
+    "SessionSafetyState",
+    "SessionSafetyStatus",
+    "XorgIdleStateSource",
     "compose_context_metadata",
     "detect_desktop_session",
+    "parse_busctl_signal",
     "render_session_resolution_status",
+    "resolve_idle_observations",
     "session_resolution_status",
 ]

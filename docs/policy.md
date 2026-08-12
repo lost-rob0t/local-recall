@@ -180,3 +180,7 @@ Policy evaluation is bounded to at most 256 configured rules, 256 characters per
 Policy reduces capture risk; it cannot guarantee that every sensitive context is recognizable before pixels exist. Unknown or missing policy-relevant context therefore fails closed for capture-sensitive operations. Users should still use privacy mode or temporary sensitive markers for novel or intentionally private workflows.
 
 Again: a policy allow does not bypass redaction, encryption, lifecycle checks, retention, storage authorization, or provider-routing controls.
+
+## Session safety
+
+The policy engine's `session_locked` gate remains authoritative for screenshot, persistence, downstream, and remote-provider eligibility. Lock state changes increment policy generation, so an unlock requires a fresh authorization and cannot revive pre-lock work. See [session-safety.md](session-safety.md).
