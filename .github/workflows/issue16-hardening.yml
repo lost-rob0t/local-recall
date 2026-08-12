@@ -1,0 +1,182 @@
+name: Issue 16 hardening
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.event.pull_request.number == 68
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+      - name: Apply bounded-correlation hardening and regressions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          client = Path("src/local_recall/metadata/activitywatch_client.py")
+          text = client.read_text().replace(
+              "        if end <= start or not 1 <= limit <= MAX_EVENTS_PER_BUCKET:\n",
+              "        if (\n            end <= start\n            or (end - start).total_seconds() > 10.0\n            or not 1 <= limit <= MAX_EVENTS_PER_BUCKET\n        ):\n",
+          )
+          client.write_text(text)
+
+          source = Path("src/local_recall/metadata/activitywatch.py")
+          text = source.read_text().replace(
+              "            if event_type is ActivityWatchEventType.CURRENT_WINDOW:\n                capabilities.update({\"application\", \"window-title\"})\n            elif event_type is ActivityWatchEventType.AFK_STATUS:\n                capabilities.update({\"activity\", \"idle\"})\n            elif event_type is ActivityWatchEventType.WEB_TAB_CURRENT:\n                capabilities.add(\"domain\")\n",
+              "            if event_type is ActivityWatchEventType.CURRENT_WINDOW:\n                capabilities.add(\"application\")\n                if self._settings.window_titles_enabled:\n                    capabilities.add(\"window-title\")\n            elif event_type is ActivityWatchEventType.AFK_STATUS:\n                capabilities.update({\"activity\", \"idle\"})\n            elif (\n                event_type is ActivityWatchEventType.WEB_TAB_CURRENT\n                and self._settings.activitywatch.url_mode\n                is ActivityWatchURLMode.DOMAIN_ONLY\n            ):\n                capabilities.add(\"domain\")\n",
+          )
+          text = text.replace(
+              "        if _event_distance_seconds(event, observed_at) <= tolerance_seconds\n",
+              "        if _event_distance_seconds(event, observed_at) <= tolerance_seconds\n        and abs((observed_at - event.timestamp).total_seconds())\n        <= tolerance_seconds\n",
+          )
+          source.write_text(text)
+
+          unit = Path("tests/unit/metadata/test_activitywatch.py")
+          unit.write_text(unit.read_text() + r'''
+
+
+def test_old_long_running_event_is_not_treated_as_current() -> None:
+    client = SyntheticClient(
+        (bucket("window", ActivityWatchEventType.CURRENT_WINDOW),),
+        {
+            "window": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    timestamp=NOW - timedelta(hours=1),
+                    duration_seconds=7200,
+                    application="old-long-event",
+                ),
+            )
+        },
+    )
+
+    with pytest.raises(ActivityWatchMetadataFailure) as captured:
+        asyncio.run(source(client).collect(request()))
+
+    assert captured.value.code is ActivityWatchMetadataFailureCode.NO_CORRELATED_EVENT
+
+
+def test_far_future_event_is_rejected() -> None:
+    client = SyntheticClient(
+        (bucket("window", ActivityWatchEventType.CURRENT_WINDOW),),
+        {
+            "window": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    timestamp=NOW + timedelta(seconds=30),
+                    duration_seconds=0,
+                    application="future",
+                ),
+            )
+        },
+    )
+
+    with pytest.raises(ActivityWatchMetadataFailure) as captured:
+        asyncio.run(source(client).collect(request()))
+
+    assert captured.value.code is ActivityWatchMetadataFailureCode.NO_CORRELATED_EVENT
+
+
+def test_stale_afk_event_does_not_override_fresh_window_context() -> None:
+    client = SyntheticClient(
+        (
+            bucket("window", ActivityWatchEventType.CURRENT_WINDOW),
+            bucket("afk", ActivityWatchEventType.AFK_STATUS),
+        ),
+        {
+            "window": (
+                event(ActivityWatchEventType.CURRENT_WINDOW, application="fresh-app"),
+            ),
+            "afk": (
+                event(
+                    ActivityWatchEventType.AFK_STATUS,
+                    timestamp=NOW - timedelta(seconds=30),
+                    duration_seconds=0,
+                    idle=True,
+                ),
+            ),
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request()))
+
+    assert metadata.get("application") == "fresh-app"
+    assert metadata.get("idle") is None
+
+
+def test_conflicting_afk_events_choose_latest_start_deterministically() -> None:
+    client = SyntheticClient(
+        (bucket("afk", ActivityWatchEventType.AFK_STATUS),),
+        {
+            "afk": (
+                event(
+                    ActivityWatchEventType.AFK_STATUS,
+                    timestamp=NOW - timedelta(milliseconds=500),
+                    duration_seconds=1,
+                    idle=False,
+                ),
+                event(
+                    ActivityWatchEventType.AFK_STATUS,
+                    timestamp=NOW - timedelta(seconds=1),
+                    duration_seconds=2,
+                    idle=True,
+                ),
+            )
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request("idle")))
+
+    assert metadata.get("idle") is False
+''')
+
+          client_test = Path("tests/unit/metadata/test_activitywatch_client.py")
+          client_test.write_text(client_test.read_text() + r'''
+
+
+def test_client_rejects_event_query_wider_than_transport_policy() -> None:
+    adapter, _ = client([encoded(bucket_payload("currentwindow"))])
+    asyncio.run(adapter.buckets(timeout_seconds=0.5))
+
+    with pytest.raises(ActivityWatchAdapterFailure) as captured:
+        asyncio.run(
+            adapter.events(
+                "bucket",
+                start=datetime(2026, 8, 12, 14, 0, tzinfo=UTC),
+                end=datetime(2026, 8, 12, 14, 0, 11, tzinfo=UTC),
+                limit=16,
+                timeout_seconds=0.5,
+            )
+        )
+
+    assert captured.value.code is ActivityWatchMetadataFailureCode.INVALID_REQUEST
+''')
+
+          config_doc = Path("docs/configuration.md")
+          if "## ActivityWatch metadata" not in config_doc.read_text():
+              config_doc.write_text(config_doc.read_text() + """
+
+## ActivityWatch metadata
+
+Optional ActivityWatch enrichment is configured under `[metadata.activitywatch]`. The endpoint is restricted to a loopback HTTP origin, URL capture defaults to `disabled`, and the only enabled URL mode is `domain-only`. Window-title capture remains controlled independently by `metadata.window_titles_enabled`. See [ActivityWatch metadata](activitywatch.md) for bucket discovery, correlation, transport bounds, privacy, fallback, and sanitized troubleshooting.
+""")
+          PY
+      - name: Canonical repository gate
+        run: ./scripts/check
+      - name: Commit hardened green tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit -m "test: harden ActivityWatch correlation boundaries"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
