@@ -1,0 +1,546 @@
+from __future__ import annotations
+
+import asyncio
+import time
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+import pytest
+from pydantic import ValidationError
+
+from local_recall.config import ActivityWatchSettings, ActivityWatchURLMode, MetadataSettings
+from local_recall.domain.capture import MetadataRequest
+from local_recall.domain.lifecycle import CaptureGeneration
+from local_recall.metadata import (
+    ActivityWatchBucket,
+    ActivityWatchEvent,
+    ActivityWatchEventType,
+    ActivityWatchMetadataFailure,
+    ActivityWatchMetadataFailureCode,
+    ActivityWatchMetadataSource,
+    ActivityWatchServerInfo,
+)
+from local_recall.ports.metadata import MetadataSource
+
+NOW = datetime(2026, 8, 12, 14, 30, 0, tzinfo=UTC)
+
+
+def request(*requested_fields: str) -> MetadataRequest:
+    return MetadataRequest(
+        job_id=uuid4(),
+        generation=CaptureGeneration(1),
+        deadline_monotonic_ns=time.monotonic_ns() + 10_000_000_000,
+        requested_fields=frozenset(requested_fields),
+    )
+
+
+def bucket(
+    bucket_id: str,
+    event_type: ActivityWatchEventType,
+    *,
+    hostname: str = "local-host",
+    created_at: datetime = NOW - timedelta(days=1),
+) -> ActivityWatchBucket:
+    return ActivityWatchBucket(
+        bucket_id=bucket_id,
+        event_type=event_type,
+        client="synthetic-watcher",
+        hostname=hostname,
+        created_at=created_at,
+    )
+
+
+def event(
+    event_type: ActivityWatchEventType,
+    *,
+    timestamp: datetime = NOW - timedelta(seconds=1),
+    duration_seconds: float = 2.0,
+    application: str | None = None,
+    title: str | None = None,
+    idle: bool | None = None,
+    domain: str | None = None,
+) -> ActivityWatchEvent:
+    return ActivityWatchEvent(
+        event_type=event_type,
+        timestamp=timestamp,
+        duration_seconds=duration_seconds,
+        application=application,
+        title=title,
+        idle=idle,
+        domain=domain,
+    )
+
+
+@dataclass
+class SyntheticClient:
+    bucket_values: tuple[ActivityWatchBucket, ...]
+    events_by_bucket: dict[str, tuple[ActivityWatchEvent, ...]]
+    hostname: str = "local-host"
+    available: bool = True
+    event_calls: list[str] = field(default_factory=lambda: list[str]())
+    info_calls: int = 0
+    bucket_calls: int = 0
+
+    async def server_info(self, *, timeout_seconds: float) -> ActivityWatchServerInfo:
+        assert timeout_seconds > 0
+        self.info_calls += 1
+        if not self.available:
+            raise OSError("synthetic unavailable detail")
+        return ActivityWatchServerInfo(hostname=self.hostname)
+
+    async def buckets(self, *, timeout_seconds: float) -> tuple[ActivityWatchBucket, ...]:
+        assert timeout_seconds > 0
+        self.bucket_calls += 1
+        return self.bucket_values
+
+    async def events(
+        self,
+        bucket_id: str,
+        *,
+        start: datetime,
+        end: datetime,
+        limit: int,
+        timeout_seconds: float,
+    ) -> tuple[ActivityWatchEvent, ...]:
+        assert timeout_seconds > 0
+        assert end > start
+        assert 0 < limit <= 16
+        self.event_calls.append(bucket_id)
+        return self.events_by_bucket.get(bucket_id, ())
+
+
+def source(
+    client: SyntheticClient,
+    *,
+    titles: bool = False,
+    url_mode: ActivityWatchURLMode = ActivityWatchURLMode.DISABLED,
+    correlation_window_seconds: float = 2.0,
+    monotonic_ns=None,
+) -> ActivityWatchMetadataSource:
+    settings = MetadataSettings(
+        window_titles_enabled=titles,
+        activitywatch=ActivityWatchSettings(
+            url_mode=url_mode,
+            correlation_window_seconds=correlation_window_seconds,
+        ),
+    )
+    return ActivityWatchMetadataSource(
+        settings,
+        client=client,
+        now=lambda: NOW,
+        monotonic_ns=monotonic_ns or time.monotonic_ns,
+    )
+
+
+def test_source_id_and_metadata_source_conformance() -> None:
+    client = SyntheticClient((), {})
+    adapter = source(client)
+
+    assert adapter.source_id == "activitywatch"
+    assert isinstance(adapter, MetadataSource)
+
+
+def test_collects_window_afk_and_domain_in_canonical_order() -> None:
+    window = bucket("window-a", ActivityWatchEventType.CURRENT_WINDOW)
+    afk = bucket("afk-a", ActivityWatchEventType.AFK_STATUS)
+    web = bucket("web-a", ActivityWatchEventType.WEB_TAB_CURRENT)
+    client = SyntheticClient(
+        (window, afk, web),
+        {
+            "window-a": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    application="synthetic-app",
+                    title="Synthetic title",
+                ),
+            ),
+            "afk-a": (event(ActivityWatchEventType.AFK_STATUS, idle=False),),
+            "web-a": (event(ActivityWatchEventType.WEB_TAB_CURRENT, domain="example.test"),),
+        },
+    )
+
+    metadata = asyncio.run(
+        source(client, titles=True, url_mode=ActivityWatchURLMode.DOMAIN_ONLY).collect(request())
+    )
+
+    assert tuple(item.name for item in metadata.fields) == (
+        "application",
+        "idle",
+        "url.domain",
+        "window.title",
+    )
+    assert metadata.get("application") == "synthetic-app"
+    assert metadata.get("idle") is False
+    assert metadata.get("url.domain") == "example.test"
+    assert metadata.get("window.title") == "Synthetic title"
+    assert metadata.observed_at == NOW
+
+
+def test_title_and_url_are_disabled_by_default_and_web_bucket_is_not_queried() -> None:
+    window = bucket("window-a", ActivityWatchEventType.CURRENT_WINDOW)
+    web = bucket("web-a", ActivityWatchEventType.WEB_TAB_CURRENT)
+    client = SyntheticClient(
+        (window, web),
+        {
+            "window-a": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    application="synthetic-app",
+                    title="must-not-escape",
+                ),
+            ),
+            "web-a": (event(ActivityWatchEventType.WEB_TAB_CURRENT, domain="secret.test"),),
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request()))
+
+    assert metadata.get("application") == "synthetic-app"
+    assert metadata.get("window.title") is None
+    assert metadata.get("url.domain") is None
+    assert client.event_calls == ["window-a"]
+
+
+def test_requested_fields_minimize_collection() -> None:
+    window = bucket("window-a", ActivityWatchEventType.CURRENT_WINDOW)
+    afk = bucket("afk-a", ActivityWatchEventType.AFK_STATUS)
+    web = bucket("web-a", ActivityWatchEventType.WEB_TAB_CURRENT)
+    client = SyntheticClient(
+        (window, afk, web),
+        {
+            "window-a": (
+                event(ActivityWatchEventType.CURRENT_WINDOW, application="app", title="title"),
+            ),
+            "afk-a": (event(ActivityWatchEventType.AFK_STATUS, idle=True),),
+            "web-a": (event(ActivityWatchEventType.WEB_TAB_CURRENT, domain="example.test"),),
+        },
+    )
+
+    metadata = asyncio.run(
+        source(client, titles=True, url_mode=ActivityWatchURLMode.DOMAIN_ONLY).collect(
+            request("idle")
+        )
+    )
+
+    assert tuple(item.name for item in metadata.fields) == ("idle",)
+    assert client.event_calls == ["afk-a"]
+
+
+def test_every_field_has_sanitized_stable_provenance() -> None:
+    window = bucket("window-a", ActivityWatchEventType.CURRENT_WINDOW)
+    client = SyntheticClient(
+        (window,),
+        {
+            "window-a": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    application="synthetic-app",
+                    title="Synthetic title",
+                ),
+            )
+        },
+    )
+
+    metadata = asyncio.run(source(client, titles=True).collect(request()))
+
+    for item in metadata.fields:
+        assert len(item.provenance) == 1
+        provenance = item.provenance[0]
+        assert provenance.source_id == "activitywatch"
+        assert provenance.observed_at == NOW
+        assert provenance.adapter_revision == "activitywatch-api0-v1"
+        assert 0.0 < provenance.confidence.value <= 1.0
+    assert "synthetic-app" not in repr(metadata)
+    assert "Synthetic title" not in repr(metadata)
+
+
+def test_local_hostname_bucket_wins_without_combining_other_host() -> None:
+    foreign = bucket(
+        "foreign-window",
+        ActivityWatchEventType.CURRENT_WINDOW,
+        hostname="other-host",
+        created_at=NOW,
+    )
+    local = bucket(
+        "local-window",
+        ActivityWatchEventType.CURRENT_WINDOW,
+        hostname="local-host",
+        created_at=NOW - timedelta(days=10),
+    )
+    client = SyntheticClient(
+        (foreign, local),
+        {
+            "foreign-window": (
+                event(ActivityWatchEventType.CURRENT_WINDOW, application="foreign-app"),
+            ),
+            "local-window": (
+                event(ActivityWatchEventType.CURRENT_WINDOW, application="local-app"),
+            ),
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request()))
+
+    assert metadata.get("application") == "local-app"
+    assert client.event_calls == ["local-window"]
+
+
+def test_several_unknown_hosts_are_not_silently_combined() -> None:
+    client = SyntheticClient(
+        (
+            bucket("a", ActivityWatchEventType.CURRENT_WINDOW, hostname="host-a"),
+            bucket("b", ActivityWatchEventType.CURRENT_WINDOW, hostname="host-b"),
+        ),
+        {
+            "a": (event(ActivityWatchEventType.CURRENT_WINDOW, application="a"),),
+            "b": (event(ActivityWatchEventType.CURRENT_WINDOW, application="b"),),
+        },
+        hostname="different-local-host",
+    )
+
+    with pytest.raises(ActivityWatchMetadataFailure) as captured:
+        asyncio.run(source(client).collect(request()))
+
+    assert captured.value.code is ActivityWatchMetadataFailureCode.AMBIGUOUS_BUCKETS
+    assert client.event_calls == []
+
+
+def test_duplicate_same_host_candidates_prefer_fresh_correlated_event() -> None:
+    older = bucket(
+        "older",
+        ActivityWatchEventType.CURRENT_WINDOW,
+        created_at=NOW - timedelta(days=20),
+    )
+    newer_stale = bucket(
+        "newer-stale",
+        ActivityWatchEventType.CURRENT_WINDOW,
+        created_at=NOW - timedelta(days=1),
+    )
+    client = SyntheticClient(
+        (newer_stale, older),
+        {
+            "newer-stale": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    timestamp=NOW - timedelta(minutes=1),
+                    duration_seconds=1.0,
+                    application="stale",
+                ),
+            ),
+            "older": (event(ActivityWatchEventType.CURRENT_WINDOW, application="fresh"),),
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request()))
+
+    assert metadata.get("application") == "fresh"
+    assert set(client.event_calls) == {"newer-stale", "older"}
+
+
+def test_no_compatible_buckets_is_sanitized() -> None:
+    client = SyntheticClient((), {})
+
+    with pytest.raises(ActivityWatchMetadataFailure) as captured:
+        asyncio.run(source(client).collect(request()))
+
+    assert captured.value.code is ActivityWatchMetadataFailureCode.NO_COMPATIBLE_BUCKETS
+
+
+def test_exact_zero_duration_event_correlates() -> None:
+    window = bucket("window-a", ActivityWatchEventType.CURRENT_WINDOW)
+    client = SyntheticClient(
+        (window,),
+        {
+            "window-a": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    timestamp=NOW,
+                    duration_seconds=0.0,
+                    application="heartbeat",
+                ),
+            )
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request()))
+
+    assert metadata.get("application") == "heartbeat"
+
+
+def test_event_immediately_before_is_within_correlation_tolerance() -> None:
+    window = bucket("window-a", ActivityWatchEventType.CURRENT_WINDOW)
+    client = SyntheticClient(
+        (window,),
+        {
+            "window-a": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    timestamp=NOW - timedelta(seconds=2),
+                    duration_seconds=1.5,
+                    application="nearby",
+                ),
+            )
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request()))
+
+    assert metadata.get("application") == "nearby"
+
+
+def test_event_immediately_after_is_within_correlation_tolerance() -> None:
+    window = bucket("window-a", ActivityWatchEventType.CURRENT_WINDOW)
+    client = SyntheticClient(
+        (window,),
+        {
+            "window-a": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    timestamp=NOW + timedelta(milliseconds=500),
+                    duration_seconds=0.0,
+                    application="nearby-future",
+                ),
+            )
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request()))
+
+    assert metadata.get("application") == "nearby-future"
+
+
+def test_stale_event_is_rejected() -> None:
+    window = bucket("window-a", ActivityWatchEventType.CURRENT_WINDOW)
+    client = SyntheticClient(
+        (window,),
+        {
+            "window-a": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    timestamp=NOW - timedelta(seconds=30),
+                    duration_seconds=1.0,
+                    application="stale",
+                ),
+            )
+        },
+    )
+
+    with pytest.raises(ActivityWatchMetadataFailure) as captured:
+        asyncio.run(source(client).collect(request()))
+
+    assert captured.value.code is ActivityWatchMetadataFailureCode.NO_CORRELATED_EVENT
+
+
+def test_out_of_order_overlapping_events_choose_latest_start_deterministically() -> None:
+    window = bucket("window-a", ActivityWatchEventType.CURRENT_WINDOW)
+    client = SyntheticClient(
+        (window,),
+        {
+            "window-a": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    timestamp=NOW - timedelta(seconds=1),
+                    duration_seconds=2.0,
+                    application="newer",
+                ),
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    timestamp=NOW - timedelta(seconds=5),
+                    duration_seconds=10.0,
+                    application="older",
+                ),
+            )
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request()))
+
+    assert metadata.get("application") == "newer"
+
+
+def test_semantically_duplicate_events_do_not_change_result() -> None:
+    window = bucket("window-a", ActivityWatchEventType.CURRENT_WINDOW)
+    duplicate = event(ActivityWatchEventType.CURRENT_WINDOW, application="same")
+    client = SyntheticClient((window,), {"window-a": (duplicate, duplicate)})
+
+    metadata = asyncio.run(source(client).collect(request()))
+
+    assert metadata.get("application") == "same"
+
+
+def test_is_available_checks_capability_metadata_without_collecting_events() -> None:
+    window = bucket("window-a", ActivityWatchEventType.CURRENT_WINDOW)
+    client = SyntheticClient((window,), {"window-a": ()})
+    adapter = source(client)
+
+    assert asyncio.run(adapter.is_available()) is True
+    assert client.info_calls == 1
+    assert client.bucket_calls == 1
+    assert client.event_calls == []
+
+
+def test_unavailable_source_returns_false_and_hides_exception_content() -> None:
+    client = SyntheticClient((), {}, available=False)
+    adapter = source(client)
+
+    assert asyncio.run(adapter.is_available()) is False
+
+    with pytest.raises(ActivityWatchMetadataFailure) as captured:
+        asyncio.run(adapter.collect(request()))
+
+    assert captured.value.code is ActivityWatchMetadataFailureCode.UNAVAILABLE
+    assert "synthetic unavailable detail" not in str(captured.value)
+    assert "synthetic unavailable detail" not in repr(captured.value)
+
+
+def test_capture_deadline_is_enforced_before_network_work() -> None:
+    client = SyntheticClient((), {})
+    expired = MetadataRequest(
+        job_id=uuid4(),
+        generation=CaptureGeneration(1),
+        deadline_monotonic_ns=10,
+    )
+    adapter = source(client, monotonic_ns=lambda: 10)
+
+    with pytest.raises(ActivityWatchMetadataFailure) as captured:
+        asyncio.run(adapter.collect(expired))
+
+    assert captured.value.code is ActivityWatchMetadataFailureCode.TIMEOUT
+    assert client.info_calls == 0
+
+
+def test_activitywatch_configuration_defaults_are_conservative() -> None:
+    settings = ActivityWatchSettings()
+
+    assert settings.endpoint == "http://127.0.0.1:5600"
+    assert settings.url_mode is ActivityWatchURLMode.DISABLED
+    assert 0 < settings.correlation_window_seconds <= 5
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://192.0.2.1:5600",
+        "https://127.0.0.1:5600",
+        "http://user:pass@127.0.0.1:5600",
+        "http://127.0.0.1:5600/api/0",
+        "http://127.0.0.1:5600/?query=1",
+        "http://127.0.0.1:5600/#fragment",
+    ],
+)
+def test_configuration_rejects_non_loopback_or_non_origin_endpoint(endpoint: str) -> None:
+    with pytest.raises(ValidationError, match="loopback"):
+        ActivityWatchSettings(endpoint=endpoint)
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://127.0.0.1:5600",
+        "http://localhost:5600",
+        "http://[::1]:5600",
+    ],
+)
+def test_configuration_accepts_explicit_loopback_http_origins(endpoint: str) -> None:
+    assert ActivityWatchSettings(endpoint=endpoint).endpoint == endpoint
