@@ -98,7 +98,7 @@ class PolicyAuthorization:
             f"operation={self.operation.value!r}, phase={self.phase.value!r}, "
             f"policy_revision={self.policy_revision!r}, "
             f"policy_generation={self.policy_generation!r}, "
-            f"capture_generation={int(self.capture_generation)!r})"
+            f"capture_generation={self.capture_generation.value!r})"
         )
 
 
