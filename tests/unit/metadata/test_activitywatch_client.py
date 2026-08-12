@@ -209,8 +209,8 @@ def test_window_event_parses_app_and_requested_title() -> None:
 
     assert len(events) == 1
     item = events[0]
-    assert getattr(item, "application") == "Synthetic-App"
-    assert getattr(item, "title") == "Synthetic title"
+    assert item.application == "Synthetic-App"
+    assert item.title == "Synthetic title"
 
 
 def test_disabled_title_is_discarded_at_parse_boundary() -> None:
@@ -234,7 +234,7 @@ def test_disabled_title_is_discarded_at_parse_boundary() -> None:
     events = discover_and_events(adapter)
 
     assert len(events) == 1
-    assert getattr(events[0], "title") is None
+    assert events[0].title is None
     assert marker not in repr(events[0])
 
 
@@ -281,7 +281,7 @@ def test_afk_status_is_closed_typed_boolean(
     events = discover_and_events(adapter)
 
     assert len(events) == 1
-    assert getattr(events[0], "idle") is expected
+    assert events[0].idle is expected
 
 
 def test_unknown_afk_status_is_not_forwarded() -> None:
@@ -314,7 +314,7 @@ def test_domain_only_strips_path_query_and_fragment() -> None:
     events = discover_and_events(adapter)
 
     assert len(events) == 1
-    assert getattr(events[0], "domain") == "example.test"
+    assert events[0].domain == "example.test"
     assert marker not in repr(events[0])
     assert "/private/path" not in repr(events[0])
 

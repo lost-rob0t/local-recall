@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from datetime import datetime
 from typing import Never
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -88,10 +89,8 @@ class LoopbackActivityWatchTransport:
         finally:
             if writer is not None:
                 writer.close()
-                try:
+                with suppress(OSError, ConnectionError):
                     await writer.wait_closed()
-                except OSError, ConnectionError:
-                    pass
 
     def _request_bytes(self, target: str) -> bytes:
         host_header = f"[{self._host}]" if ":" in self._host else self._host

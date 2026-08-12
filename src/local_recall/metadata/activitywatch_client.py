@@ -378,8 +378,7 @@ def _domain_from_url(raw_url: str) -> str | None:
 
     try:
         parsed = urlsplit(raw_url)
-        hostname = parsed.hostname
-        parsed.port
+        hostname, _port = parsed.hostname, parsed.port
     except ValueError:
         return None
 
