@@ -109,7 +109,7 @@ def test_privacy_mode_and_lock_never_invoke_screenshot() -> None:
             engine.set_session_locked(True)
 
         with pytest.raises(PermissionError):
-            boundary.capture(_context(), lambda: calls.append("screenshot"))
+            boundary.capture(_context(), lambda calls=calls: calls.append("screenshot"))
 
         assert calls == []
 
