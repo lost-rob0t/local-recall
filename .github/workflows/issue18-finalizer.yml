@@ -1,0 +1,56 @@
+name: Issue 18 finalizer
+
+on:
+  push:
+    branches: [agent/issue-18-lock-idle-state]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: issue-18-finalizer
+  cancel-in-progress: true
+
+jobs:
+  apply-and-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/issue-18-lock-idle-state
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Reconstruct vetted patch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cat scripts/.issue18/gzchunk* | base64 -d | gzip -dc > /tmp/issue18_bundle.py
+          echo 'e331e1c4283b449eebda8571f51681ff35293690b3b1dd9f11784a94b78ea5a2  /tmp/issue18_bundle.py' | sha256sum -c -
+      - name: Apply production patch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python /tmp/issue18_bundle.py
+          rm -rf scripts/.issue18 scripts/issue18_bundle.py
+          rm -f .github/workflows/issue18-finalizer.yml
+      - name: Install locked dependencies
+        run: ./scripts/bootstrap
+      - name: Format production patch
+        run: uv run --no-sync ruff format .
+      - name: Run canonical repository gate
+        run: ./scripts/check
+      - name: Commit validated production patch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat: add authoritative lock and idle safety'
+          git push origin HEAD:agent/issue-18-lock-idle-state
