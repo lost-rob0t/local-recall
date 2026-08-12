@@ -189,7 +189,10 @@ class PolicyEngine:
                 return False
             if authorization.policy_generation != self._generation:
                 return False
-            if capture_generation is not None and authorization.capture_generation != capture_generation:
+            if (
+                capture_generation is not None
+                and authorization.capture_generation != capture_generation
+            ):
                 return False
             return True
 
@@ -372,7 +375,13 @@ class PolicyEngine:
 
         builtin_reason = self._builtin_sensitive_reason(snapshot, context)
         if builtin_reason is not None:
-            return self._deny(snapshot, operation, phase, builtin_reason[0], rule_id=builtin_reason[1])
+            return self._deny(
+                snapshot,
+                operation,
+                phase,
+                builtin_reason[0],
+                rule_id=builtin_reason[1],
+            )
 
         if matched_allows:
             strongest = min(
@@ -399,7 +408,10 @@ class PolicyEngine:
         if not context.metadata.fields:
             return PolicyReasonCode.SOURCE_UNAVAILABLE
         age = context.evaluated_at - context.metadata.observed_at
-        if age < timedelta(0) or age.total_seconds() > snapshot.configuration.rules.max_metadata_age_seconds:
+        if (
+            age < timedelta(0)
+            or age.total_seconds() > snapshot.configuration.rules.max_metadata_age_seconds
+        ):
             return PolicyReasonCode.STALE_CONTEXT
         for field in context.metadata.fields:
             if not field.provenance:
@@ -427,7 +439,9 @@ class PolicyEngine:
                 matches.append(_Match.MALFORMED)
             else:
                 matches.append(
-                    _Match.MATCH if compiled.title_pattern.search(title) is not None else _Match.NO_MATCH
+                    _Match.MATCH
+                    if compiled.title_pattern.search(title) is not None
+                    else _Match.NO_MATCH
                 )
         if rule.workspace is not None:
             matches.append(self._match_text(context.metadata, "workspace", rule.workspace))
@@ -452,7 +466,9 @@ class PolicyEngine:
             if context.full_screen is None:
                 matches.append(_Match.UNKNOWN)
             else:
-                matches.append(_Match.MATCH if context.full_screen is rule.full_screen else _Match.NO_MATCH)
+                matches.append(
+                    _Match.MATCH if context.full_screen is rule.full_screen else _Match.NO_MATCH
+                )
         if rule.metadata_source is not None:
             source_ids = {
                 provenance.source_id
@@ -466,7 +482,9 @@ class PolicyEngine:
                     _Match.MATCH if rule.metadata_source in source_ids else _Match.NO_MATCH
                 )
         if rule.time_window is not None:
-            local_time = context.evaluated_at.astimezone(snapshot.timezone).timetz().replace(tzinfo=None)
+            local_time = (
+                context.evaluated_at.astimezone(snapshot.timezone).timetz().replace(tzinfo=None)
+            )
             start = rule.time_window.start
             end = rule.time_window.end
             if start < end:
@@ -659,7 +677,10 @@ def _normalize_domain(value: str) -> str:
                 raise ValueError("policy domain is invalid")
             if label[0] == "-" or label[-1] == "-":
                 raise ValueError("policy domain is invalid")
-            if not all(character.isascii() and (character.isalnum() or character == "-") for character in label):
+            if not all(
+                character.isascii() and (character.isalnum() or character == "-")
+                for character in label
+            ):
                 raise ValueError("policy domain is invalid")
         return normalized
     return address.compressed.casefold()
