@@ -20,7 +20,9 @@ jobs:
           python-version: "3.14"
       - uses: astral-sh/setup-uv@v6
       - name: Apply final issue changes
-        run: python scripts/issue16-finalize.py
+        run: |
+          touch tests/security/test_activitywatch_architecture.py
+          python scripts/issue16-finalize.py
       - name: Format final tree
         run: |
           ./scripts/bootstrap
