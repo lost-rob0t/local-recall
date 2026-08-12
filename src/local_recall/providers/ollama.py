@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 from urllib.parse import urlsplit
 
 from local_recall.domain import (
+    EmbeddingRequest,
+    EmbeddingResponse,
     GenerationRequest,
     GenerationResponse,
     GenerationRole,
@@ -45,6 +48,8 @@ class OllamaSettings:
     extraction_model: str
     summarization_model: str
     answering_model: str
+    embedding_model: str = "nomic-embed-text"
+    embedding_batch_size: int = 16
     base_url: str = "http://127.0.0.1:11434"
     timeout_seconds: float = 30.0
     max_concurrency: int = 1
@@ -52,13 +57,20 @@ class OllamaSettings:
     max_response_bytes: int = 1024 * 1024
 
     def __post_init__(self) -> None:
-        models = (self.extraction_model, self.summarization_model, self.answering_model)
+        models = (
+            self.extraction_model,
+            self.summarization_model,
+            self.answering_model,
+            self.embedding_model,
+        )
         if any(not model.strip() for model in models):
             raise ValueError("Ollama model identifiers must not be empty")
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         if self.max_concurrency <= 0:
             raise ValueError("max_concurrency must be positive")
+        if self.embedding_batch_size <= 0:
+            raise ValueError("embedding_batch_size must be positive")
         if self.max_input_bytes <= 0 or self.max_response_bytes <= 0:
             raise ValueError("Ollama byte limits must be positive")
         _parse_local_endpoint(self.base_url)
@@ -144,6 +156,80 @@ class OllamaGenerationProvider:
     async def _request(self, path: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         if self._capture_active():
             raise OllamaProviderError("Ollama requests are disabled while capture is active")
+        try:
+            async with self._capacity:
+                async with asyncio.timeout(self._settings.timeout_seconds):
+                    return await self._transport.request_json(
+                        path, payload, self._settings.max_response_bytes
+                    )
+        except TimeoutError as exc:
+            raise OllamaProviderError("Ollama request timed out") from exc
+        except asyncio.CancelledError:
+            raise
+        except OllamaProviderError:
+            raise
+        except Exception as exc:
+            raise OllamaProviderError("Ollama request failed") from exc
+
+
+class OllamaEmbeddingProvider:
+    def __init__(
+        self,
+        settings: OllamaSettings,
+        *,
+        transport: OllamaTransport | None = None,
+    ) -> None:
+        self._settings = settings
+        self._transport = transport or LocalOllamaTransport(settings.base_url)
+        self._capacity = asyncio.Semaphore(settings.max_concurrency)
+
+    async def capabilities(self) -> ProviderCapabilities:
+        response = await self._request(
+            "/api/show",
+            {"model": self._settings.embedding_model, "verbose": False},
+        )
+        return ProviderCapabilities(
+            provider_id="ollama",
+            location=ProviderLocation.LOCAL,
+            capabilities=frozenset({ModelCapability.EMBEDDING}),
+            accepted_privacy_classes=frozenset({PrivacyClass.REDACTED_CONTENT}),
+            max_input_bytes=self._settings.max_input_bytes,
+            supports_vision=False,
+            max_context_tokens=_context_length(response.get("model_info")),
+            available=True,
+        )
+
+    async def embed(self, request: EmbeddingRequest) -> EmbeddingResponse:
+        if request.privacy_class is not PrivacyClass.REDACTED_CONTENT:
+            raise OllamaProviderError("Ollama rejects this privacy class")
+        model = request.model_hint or self._settings.embedding_model
+        if not model.strip():
+            raise OllamaProviderError("model hint must not be empty")
+        if sum(len(item.encode()) for item in request.inputs) > self._settings.max_input_bytes:
+            raise OllamaProviderError("Ollama input exceeds configured byte limit")
+
+        vectors: list[tuple[float, ...]] = []
+        response_model: str | None = None
+        for offset in range(0, len(request.inputs), self._settings.embedding_batch_size):
+            batch = request.inputs[offset : offset + self._settings.embedding_batch_size]
+            response = await self._request(
+                "/api/embed",
+                {"model": model, "input": list(batch), "truncate": False},
+            )
+            current_model = response.get("model")
+            current_vectors = _embedding_vectors(response.get("embeddings"), len(batch))
+            if not isinstance(current_model, str) or not current_model.strip():
+                raise OllamaProviderError("Ollama returned an invalid embedding response")
+            if response_model is not None and response_model != current_model:
+                raise OllamaProviderError("Ollama returned an invalid embedding response")
+            response_model = current_model
+            vectors.extend(current_vectors)
+
+        if response_model is None:
+            raise OllamaProviderError("Ollama returned an invalid embedding response")
+        return EmbeddingResponse("ollama", response_model, tuple(vectors))
+
+    async def _request(self, path: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         try:
             async with self._capacity:
                 async with asyncio.timeout(self._settings.timeout_seconds):
@@ -271,6 +357,28 @@ def _optional_count(value: object) -> int | None:
     if not isinstance(value, int) or value < 0:
         raise OllamaProviderError("Ollama returned an invalid token count")
     return value
+
+
+def _embedding_vectors(value: object, expected_count: int) -> tuple[tuple[float, ...], ...]:
+    if not isinstance(value, list):
+        raise OllamaProviderError("Ollama returned an invalid embedding response")
+    raw_vectors = cast(list[object], value)
+    if len(raw_vectors) != expected_count:
+        raise OllamaProviderError("Ollama returned an invalid embedding response")
+    vectors: list[tuple[float, ...]] = []
+    for raw_vector in raw_vectors:
+        if not isinstance(raw_vector, list) or not raw_vector:
+            raise OllamaProviderError("Ollama returned an invalid embedding response")
+        raw_values = cast(list[object], raw_vector)
+        if any(type(item) not in {int, float} for item in raw_values):
+            raise OllamaProviderError("Ollama returned an invalid embedding response")
+        vector = tuple(float(item) for item in raw_values if isinstance(item, int | float))
+        if not vector or any(not math.isfinite(item) for item in vector):
+            raise OllamaProviderError("Ollama returned an invalid embedding response")
+        vectors.append(vector)
+    if len({len(vector) for vector in vectors}) != 1:
+        raise OllamaProviderError("Ollama returned an invalid embedding response")
+    return tuple(vectors)
 
 
 def _parse_headers(value: bytes) -> tuple[int, dict[str, str]]:

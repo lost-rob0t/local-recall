@@ -16,6 +16,7 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [Authenticated encryption and key providers](docs/encryption.md)
 - [Encrypted storage, catalog, and migrations](docs/storage.md)
 - [Sanitized audit logging and operational hardening](docs/audit.md)
+- [Local embeddings and encrypted semantic index](docs/semantic-index.md)
 - [Testing policy](docs/testing.md)
 
 ## Development
