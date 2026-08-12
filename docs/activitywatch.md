@@ -98,3 +98,7 @@ Troubleshooting output should be limited to facts such as:
 - a fixed reason code.
 
 Do not print actual application names, titles, URLs, domains, AFK history, raw bucket payloads, or event bodies while diagnosing ActivityWatch support.
+
+## Idle safety integration
+
+The ActivityWatch adapter is the only component that parses AFK payloads. Session safety requests normalized `idle` and opt-in `idle.seconds` fields, then applies Local Recall's idle threshold. If ActivityWatch is unavailable, the Xorg fallback may provide idle duration; this never changes lock-screen protection. See [session-safety.md](session-safety.md).

@@ -133,3 +133,7 @@ Commands are serialized by `LifecycleActor` and return `LifecycleCommandResult`.
 ## Required integration rule
 
 Capture, OCR-triggering dispatch, redaction pipeline ingress, and persistence code must not inspect lifecycle state and then act separately. They must execute through the corresponding gate method so the authorization check and operation registration are atomic.
+
+## Automatic session-safety pause
+
+Lock and configured idle pauses reuse the lifecycle capture generation. Entering an automatic safety pause cancels the prior generation and allocates a fresh paused generation; unlock/activity can resume only that fresh generation. Manual pause remains independent. See [session-safety.md](session-safety.md).

@@ -2,6 +2,8 @@
 
 Issue #5 establishes the stable, backend-neutral contracts used by later capture, redaction, encryption, storage, retrieval, and model-provider implementations.
 
+Session lock/idle sources report bounded normalized control observations only. Capture, storage, and provider effects remain behind lifecycle/policy/pipeline boundaries; see [session-safety.md](session-safety.md).
+
 ## Stage-specific data flow
 
 The capture pipeline uses distinct immutable Python types:

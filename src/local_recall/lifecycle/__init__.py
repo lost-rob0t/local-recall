@@ -19,6 +19,7 @@ from .messages import (
     LifecyclePreflightResult,
     PauseCapture,
     ResumeCapture,
+    SetAutomaticCaptureBlock,
     StartCapture,
     StopCapture,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "LifecyclePreflightResult",
     "PauseCapture",
     "ResumeCapture",
+    "SetAutomaticCaptureBlock",
     "StaleCaptureGeneration",
     "StartCapture",
     "StopCapture",

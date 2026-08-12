@@ -21,6 +21,7 @@
               shellcheck
               tesseract4
               uv
+              xprintidle
               zeromq
             ];
 

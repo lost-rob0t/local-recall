@@ -184,7 +184,7 @@ class ActivityWatchMetadataSource:
         ):
             wanted.add(ActivityWatchEventType.CURRENT_WINDOW)
 
-        if all_fields or "idle" in requested:
+        if all_fields or "idle" in requested or "idle.seconds" in requested:
             wanted.add(ActivityWatchEventType.AFK_STATUS)
 
         if self._settings.activitywatch.url_mode is ActivityWatchURLMode.DOMAIN_ONLY and (
@@ -256,7 +256,7 @@ class ActivityWatchMetadataSource:
     ) -> list[ContextField]:
         requested = request.requested_fields
         all_fields = not requested
-        values: list[tuple[str, str | bool, float]] = []
+        values: list[tuple[str, str | bool | float, float]] = []
 
         window = events.get(ActivityWatchEventType.CURRENT_WINDOW)
         if window is not None:
@@ -278,6 +278,14 @@ class ActivityWatchMetadataSource:
         afk = events.get(ActivityWatchEventType.AFK_STATUS)
         if afk is not None and (all_fields or "idle" in requested) and afk.idle is not None:
             values.append(("idle", afk.idle, 0.98))
+        if afk is not None and "idle.seconds" in requested and afk.idle is not None:
+            values.append(
+                (
+                    "idle.seconds",
+                    afk.duration_seconds if afk.idle else 0.0,
+                    0.98,
+                )
+            )
 
         web = events.get(ActivityWatchEventType.WEB_TAB_CURRENT)
         if (

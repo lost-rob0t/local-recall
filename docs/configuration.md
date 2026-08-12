@@ -270,3 +270,19 @@ Versions newer than the runtime supports are rejected. Migrations never silently
 ## ActivityWatch metadata
 
 Optional ActivityWatch enrichment is configured under `[metadata.activitywatch]`. The endpoint is restricted to a loopback HTTP origin, URL capture defaults to `disabled`, and the only enabled URL mode is `domain-only`. Window-title capture remains controlled independently by `metadata.window_titles_enabled`. See [ActivityWatch metadata](activitywatch.md) for bucket discovery, correlation, transport bounds, privacy, fallback, and sanitized troubleshooting.
+
+## Session idle capture settings
+
+Idle pause is additive and disabled by default. Lock-screen protection is not configurable off. Example:
+
+```toml
+[capture.idle]
+enabled = true
+pause_capture = true
+threshold_seconds = 180.0
+resume_behavior = "immediate"
+active_grace_seconds = 0.0
+max_observation_age_seconds = 5.0
+```
+
+See [session-safety.md](session-safety.md) for reload, precedence, and fail-closed behavior.

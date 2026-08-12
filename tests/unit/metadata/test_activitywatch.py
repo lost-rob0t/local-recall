@@ -261,6 +261,26 @@ def test_requested_fields_query_only_needed_bucket_type() -> None:
     assert client.event_calls == ["afk"]
 
 
+def test_idle_duration_is_normalized_only_when_requested() -> None:
+    client = SyntheticClient(
+        (bucket("afk", ActivityWatchEventType.AFK_STATUS),),
+        {
+            "afk": (
+                event(
+                    ActivityWatchEventType.AFK_STATUS,
+                    idle=True,
+                    duration_seconds=179.5,
+                ),
+            ),
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request("idle", "idle.seconds")))
+
+    assert metadata.get("idle") is True
+    assert metadata.get("idle.seconds") == 179.5
+
+
 def test_unrelated_requested_field_avoids_activitywatch_network_work() -> None:
     client = SyntheticClient((), {})
 

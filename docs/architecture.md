@@ -6,6 +6,8 @@
 **Requirements:** [`requirements.md`](requirements.md)  
 **Threat model:** [`threat-model.md`](threat-model.md)
 
+Session lock and idle safety is an orthogonal authority over the lifecycle/policy gates; see [session-safety.md](session-safety.md). It reuses capture-generation invalidation rather than creating a competing lifecycle.
+
 ## 1. Architectural goals
 
 Local Recall is a single-user, local-first daemon that observes an explicitly enabled desktop session, converts approved observations into encrypted records, and later answers explicit questions over those records.

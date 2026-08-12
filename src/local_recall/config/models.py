@@ -55,6 +55,12 @@ class CaptureOverloadPolicy(StrEnum):
     COALESCE_LATEST = "coalesce-latest"
 
 
+class IdleResumeBehavior(StrEnum):
+    IMMEDIATE = "immediate"
+    ACTIVE_GRACE = "active-grace"
+    MANUAL = "manual"
+
+
 class ActivityWatchURLMode(StrEnum):
     DISABLED = "disabled"
     DOMAIN_ONLY = "domain-only"
@@ -219,6 +225,29 @@ class RuleSettings(FrozenModel):
         return self
 
 
+class IdleSettings(FrozenModel):
+    enabled: bool = False
+    pause_capture: bool = True
+    threshold_seconds: float = Field(default=180.0, gt=0.0, le=86_400.0)
+    resume_behavior: IdleResumeBehavior = IdleResumeBehavior.IMMEDIATE
+    active_grace_seconds: float = Field(default=0.0, ge=0.0, le=300.0)
+    max_observation_age_seconds: float = Field(default=5.0, gt=0.0, le=300.0)
+
+    @model_validator(mode="after")
+    def validate_resume_behavior(self) -> IdleSettings:
+        if (
+            self.resume_behavior is IdleResumeBehavior.ACTIVE_GRACE
+            and self.active_grace_seconds <= 0.0
+        ):
+            raise ValueError("active-grace resume requires a positive grace period")
+        if (
+            self.resume_behavior is not IdleResumeBehavior.ACTIVE_GRACE
+            and self.active_grace_seconds != 0.0
+        ):
+            raise ValueError("active grace is valid only with active-grace resume")
+        return self
+
+
 class CaptureSettings(FrozenModel):
     enabled: bool = False
     cadence_seconds: float = Field(default=15.0, ge=1.0, le=3600.0)
@@ -227,6 +256,7 @@ class CaptureSettings(FrozenModel):
     max_queue_items: int = Field(default=32, ge=1, le=256)
     overload_policy: CaptureOverloadPolicy = CaptureOverloadPolicy.DROP_NEWEST
     change_threshold: float = Field(default=0.02, ge=0.0, le=1.0)
+    idle: IdleSettings = Field(default_factory=IdleSettings)
 
 
 class ActivityWatchSettings(FrozenModel):

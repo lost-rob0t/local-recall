@@ -5,6 +5,8 @@
 **Tracking issue:** #2  
 **Requirements source:** [`docs/requirements.md`](requirements.md)
 
+Lock-source unknown/failure is a fail-closed capture boundary. Unlock signals alone are never sufficient authorization; see [session-safety.md](session-safety.md).
+
 ## 1. Security objective
 
 Local Recall intentionally handles unusually sensitive data: screenshots, window context, OCR text, activity history, model prompts, summaries, and derived indexes. The primary security objective is therefore not merely to encrypt a database. It is to prevent unapproved capture, prevent raw data from reaching persistent or remote boundaries, and make failure modes stop recording rather than silently weaken privacy.

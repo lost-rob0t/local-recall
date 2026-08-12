@@ -184,6 +184,28 @@ class CaptureGate:
             generation = self._require_generation_locked(CaptureState.PAUSED)
             return self._transition_locked(CaptureState.RECORDING, generation, reason)
 
+    def invalidate_and_pause(
+        self, reason: TransitionReason
+    ) -> tuple[CaptureGeneration | None, CaptureStateTransition]:
+        self._assert_owner()
+        with self._commit_lock, self._state_lock:
+            if self._state not in {
+                CaptureState.STARTING,
+                CaptureState.RECORDING,
+                CaptureState.PAUSED,
+            }:
+                raise ValueError("automatic pause requires an active capture state")
+            previous_generation = self._active_generation
+            self._cancel_active_locked()
+            invalidation_generation = self._next_generation_locked()
+            self._active_generation = invalidation_generation
+            self._draining_generation = previous_generation
+            self._cancel_events[invalidation_generation.value] = threading.Event()
+            transition = self._transition_locked(
+                CaptureState.PAUSED, invalidation_generation, reason
+            )
+            return previous_generation, transition
+
     def begin_stopping(
         self, reason: TransitionReason
     ) -> tuple[CaptureGeneration | None, CaptureStateTransition]:
