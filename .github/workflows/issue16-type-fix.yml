@@ -1,0 +1,75 @@
+name: Issue 16 type repair
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.pull_request.number == 68
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+      - run: ./scripts/bootstrap
+      - name: Apply strict typing repairs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("src/local_recall/metadata/activitywatch.py")
+          text = source.read_text().replace(
+              "            selected = next(iter(by_host.values()), [])\n",
+              "            selected = (\n                next(iter(by_host.values())) if by_host else []\n            )\n",
+          )
+          source.write_text(text)
+
+          unit = Path("tests/unit/metadata/test_activitywatch.py")
+          text = unit.read_text().replace(
+              "    event_calls: list[str] = field(default_factory=list)\n",
+              "    event_calls: list[str] = field(default_factory=lambda: list[str]())\n",
+          )
+          unit.write_text(text)
+
+          client = Path("tests/unit/metadata/test_activitywatch_client.py")
+          text = client.read_text()
+          text = text.replace(
+              "    ActivityWatchAdapterFailure,\n",
+              "    ActivityWatchAdapterFailure,\n    ActivityWatchEvent,\n",
+              1,
+          )
+          text = text.replace(
+              "    targets: list[str] = field(default_factory=list)\n",
+              "    targets: list[str] = field(default_factory=lambda: list[str]())\n",
+          )
+          text = text.replace(
+              "    limits: list[int] = field(default_factory=list)\n",
+              "    limits: list[int] = field(default_factory=lambda: list[int]())\n",
+          )
+          text = text.replace(
+              "def discover_and_events(\n    adapter: LocalActivityWatchClient,\n) -> tuple[object, ...]:\n",
+              "def discover_and_events(\n    adapter: LocalActivityWatchClient,\n) -> tuple[ActivityWatchEvent, ...]:\n",
+          )
+          client.write_text(text)
+          PY
+      - name: Verify style and strict types
+        run: |
+          uv run --no-sync ruff format .
+          uv run --no-sync ruff check .
+          uv run --no-sync pyright
+      - name: Commit repairs
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add --all
+            git commit -m "fix: satisfy strict ActivityWatch typing"
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          fi
