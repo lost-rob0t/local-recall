@@ -1,0 +1,61 @@
+name: Issue 16 lint repair
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.pull_request.number == 68
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+      - run: ./scripts/bootstrap
+      - name: Apply non-automatic lint repairs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          client = Path("src/local_recall/metadata/activitywatch_client.py")
+          text = client.read_text()
+          text = text.replace(
+              "        hostname = parsed.hostname\n        parsed.port\n",
+              "        hostname, _port = parsed.hostname, parsed.port\n",
+          )
+          client.write_text(text)
+
+          http = Path("src/local_recall/metadata/activitywatch_http.py")
+          text = http.read_text()
+          text = text.replace(
+              "import asyncio\n",
+              "import asyncio\nfrom contextlib import suppress\n",
+              1,
+          )
+          text = text.replace(
+              "                try:\n                    await writer.wait_closed()\n                except (OSError, ConnectionError):\n                    pass\n",
+              "                with suppress(OSError, ConnectionError):\n                    await writer.wait_closed()\n",
+          )
+          http.write_text(text)
+          PY
+      - name: Apply safe Ruff fixes and formatting
+        run: |
+          uv run --no-sync ruff check --fix .
+          uv run --no-sync ruff format .
+          uv run --no-sync ruff check .
+      - name: Commit repairs
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add --all
+            git commit -m "fix: satisfy ActivityWatch lint gate"
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          fi
