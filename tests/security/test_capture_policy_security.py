@@ -121,7 +121,7 @@ def test_effective_configuration_hides_policy_matcher_values() -> None:
 
 
 def test_invalid_policy_config_error_does_not_echo_secret_input() -> None:
-    secret = "FakePassword-DoNotLeak-47!"
+    secret = "FakePassword-DoNotLeak-47!"  # pragma: allowlist secret
     with pytest.raises(ConfigurationLoadError) as raised:
         load_configuration_mapping(
             {
