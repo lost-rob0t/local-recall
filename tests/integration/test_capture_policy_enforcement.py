@@ -19,7 +19,11 @@ from local_recall.domain.metadata import (
     SourceConfidence,
 )
 from local_recall.domain.policy import PolicyOperation, PolicyPhase
-from local_recall.policy import PolicyEnforcementBoundary, PolicyEngine, PolicyEvaluationContext
+from local_recall.policy import (
+    PolicyEnforcementBoundary,
+    PolicyEngine,
+    PolicyEvaluationContext,
+)
 
 NOW = datetime(2026, 8, 12, 17, 0, tzinfo=UTC)
 
@@ -77,7 +81,14 @@ def _rule(
 
 
 def test_denied_pre_capture_context_never_invokes_screenshot() -> None:
-    engine = _engine(_rule("deny-editor", RuleEffect.DENY, PolicyOperation.SCREENSHOT, application="Editor"))
+    engine = _engine(
+        _rule(
+            "deny-editor",
+            RuleEffect.DENY,
+            PolicyOperation.SCREENSHOT,
+            application="Editor",
+        )
+    )
     boundary = PolicyEnforcementBoundary(engine)
     calls: list[str] = []
 
@@ -170,7 +181,12 @@ def test_denied_material_cannot_reach_index_summarizer_or_remote_provider() -> N
         PolicyOperation.REMOTE_PROVIDER,
     )
     rules = tuple(
-        _rule(f"deny-{operation.value}", RuleEffect.DENY, operation, application="Editor")
+        _rule(
+            f"deny-{operation.value}",
+            RuleEffect.DENY,
+            operation,
+            application="Editor",
+        )
         for operation in operations
     )
     engine = _engine(*rules)
@@ -179,7 +195,11 @@ def test_denied_material_cannot_reach_index_summarizer_or_remote_provider() -> N
 
     for operation in operations:
         with pytest.raises(PermissionError):
-            boundary.downstream(operation, _context(), lambda operation=operation: calls.append(operation))
+            boundary.downstream(
+                operation,
+                _context(),
+                lambda operation=operation: calls.append(operation),
+            )
 
     assert calls == []
 
