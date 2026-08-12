@@ -45,59 +45,13 @@ jobs:
           rm -f .github/workflows/issue18-finalizer.yml
       - name: Install locked dependencies
         run: ./scripts/bootstrap
-      - name: Format production patch
-        run: uv run --no-sync ruff format .
-      - name: Apply deterministic corrections
+      - name: Apply verified corrections
         shell: bash
         run: |
           set -Eeuo pipefail
           mv tests/security/test_session_safety.py tests/security/test_session_safety_security.py
-          python - <<'PY'
-          from pathlib import Path
-
-          def replace_once(path: str, old: str, new: str) -> None:
-              target = Path(path)
-              text = target.read_text()
-              if text.count(old) != 1:
-                  raise SystemExit(f"expected exactly one correction target in {path}")
-              target.write_text(text.replace(old, new, 1))
-
-          replace_once(
-              "src/local_recall/lifecycle/actor.py",
-              """            if self._automatic_pause_reason is TransitionReason.SESSION_LOCKED:\n                if command.reason is TransitionReason.IDLE:\n                    return self._result(True, False, \"stronger_safety_block_active\")\n""",
-              """            if (\n                self._automatic_pause_reason is TransitionReason.SESSION_LOCKED\n                and command.reason is TransitionReason.IDLE\n            ):\n                return self._result(True, False, \"stronger_safety_block_active\")\n""",
-          )
-          replace_once(
-              "src/local_recall/session/safety.py",
-              """        if self.idle_seconds is not None:\n            if (\n                not math.isfinite(self.idle_seconds)\n                or not 0.0 <= self.idle_seconds <= _MAX_IDLE_SECONDS\n            ):\n                raise ValueError(\"idle_seconds is outside the supported range\")\n""",
-              """        if self.idle_seconds is not None and (\n            not math.isfinite(self.idle_seconds)\n            or not 0.0 <= self.idle_seconds <= _MAX_IDLE_SECONDS\n        ):\n            raise ValueError(\"idle_seconds is outside the supported range\")\n""",
-          )
-          replace_once(
-              "tests/integration/test_session_safety.py",
-              "actor_ref, gate, _source, coordinator, _audit = start_actor(enabled=True)",
-              "actor_ref, _gate, _source, coordinator, _audit = start_actor(enabled=True)",
-          )
-          replace_once(
-              "tests/integration/test_session_safety.py",
-              "boundary.downstream(operation, context, lambda: calls.append(operation.value))",
-              "boundary.downstream(operation, context, lambda: calls.append(\"downstream\"))",
-          )
-          replace_once(
-              "tests/unit/session/test_logind_lock.py",
-              '            "Path=/org/freedesktop/login1/session/_32 Interface=org.freedesktop.login1.Session Member=Lock",\n',
-              '            "Path=/org/freedesktop/login1/session/_32 "\n            "Interface=org.freedesktop.login1.Session Member=Lock",\n',
-          )
-          replace_once(
-              "tests/unit/session/test_logind_lock.py",
-              "calls: list[tuple[str, ...]] = field(default_factory=list, init=False)",
-              "calls: list[tuple[str, ...]] = field(\n        default_factory=lambda: list[tuple[str, ...]](), init=False\n    )",
-          )
-          replace_once(
-              "tests/unit/session/test_session_safety.py",
-              "calls: list[tuple[bool, TransitionReason]] = field(default_factory=list, init=False)",
-              "calls: list[tuple[bool, TransitionReason]] = field(\n        default_factory=lambda: list[tuple[bool, TransitionReason]](), init=False\n    )",
-          )
-          PY
+          python scripts/issue18_corrections.py
+          rm -f scripts/issue18_corrections.py
           uv run --no-sync ruff check --select I001,RUF022 --fix \
             src/local_recall/config/__init__.py \
             src/local_recall/session/__init__.py
