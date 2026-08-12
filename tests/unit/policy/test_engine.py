@@ -4,8 +4,12 @@ from datetime import UTC, datetime
 
 from local_recall.config.models import CaptureRule, LocalRecallConfig, RuleEffect, RuleSettings
 from local_recall.domain.lifecycle import CaptureGeneration
-from local_recall.domain.metadata import ContextField, ContextMetadata, MetadataProvenance
-from local_recall.domain.metadata import SourceConfidence
+from local_recall.domain.metadata import (
+    ContextField,
+    ContextMetadata,
+    MetadataProvenance,
+    SourceConfidence,
+)
 from local_recall.domain.policy import PolicyOperation, PolicyPhase, PolicyReasonCode
 from local_recall.policy import PolicyEngine, PolicyEvaluationContext
 
