@@ -49,6 +49,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          uv run --no-sync ruff format .
           mv tests/security/test_session_safety.py tests/security/test_session_safety_security.py
           python scripts/issue18_corrections.py
           rm -f scripts/issue18_corrections.py
