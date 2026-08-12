@@ -189,10 +189,9 @@ class PolicyEngine:
                 return False
             if authorization.policy_generation != self._generation:
                 return False
-            return (
-                capture_generation is None
-                or authorization.capture_generation == capture_generation
-            )
+            if capture_generation is None:
+                return True
+            return authorization.capture_generation == capture_generation
 
     def set_privacy_mode(self, active: bool) -> None:
         with self._lock:
@@ -414,9 +413,8 @@ class PolicyEngine:
         for field in context.metadata.fields:
             if not field.provenance:
                 return PolicyReasonCode.MALFORMED_CONTEXT
-            if isinstance(field.value, str) and (
-                "\x00" in field.value or len(field.value) > _MAX_METADATA_TEXT
-            ):
+            value = field.value
+            if isinstance(value, str) and ("\x00" in value or len(value) > _MAX_METADATA_TEXT):
                 return PolicyReasonCode.MALFORMED_CONTEXT
         return None
 
