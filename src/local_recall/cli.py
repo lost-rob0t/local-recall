@@ -6,6 +6,7 @@ import os
 import typer
 
 from local_recall import __version__
+from local_recall.metadata import GenericXorgMetadataSource
 from local_recall.session import (
     EnvironmentSnapshot,
     GenericXorgMetadataProbe,
@@ -34,7 +35,8 @@ def version() -> None:
 @app.command()
 def status() -> None:
     """Print the sanitized desktop-session strategy status."""
-    generic_xorg_probe = GenericXorgMetadataProbe()
+    generic_xorg_source = GenericXorgMetadataSource()
+    generic_xorg_probe = GenericXorgMetadataProbe(generic_xorg_source.is_available)
     resolver = SessionResolver((), generic_xorg_probe=generic_xorg_probe)
     resolution = asyncio.run(
         resolver.resolve(

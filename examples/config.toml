@@ -4,6 +4,10 @@ profile = "privacy-strict"
 [capture]
 enabled = false
 
+[metadata]
+enabled_sources = ["xorg-generic"]
+window_titles_enabled = false
+
 [ocr]
 provider_id = "tesseract-local"
 executable = "tesseract"

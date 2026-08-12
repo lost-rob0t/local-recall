@@ -103,6 +103,7 @@ class CaptureSettings(FrozenModel):
 
 class MetadataSettings(FrozenModel):
     enabled_sources: tuple[str, ...] = ()
+    window_titles_enabled: bool = False
 
     @field_validator("enabled_sources")
     @classmethod

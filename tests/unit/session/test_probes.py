@@ -5,6 +5,7 @@ from local_recall.session import (
     DesktopEnvironment,
     DesktopSession,
     DisplayProtocol,
+    GenericXorgMetadataProbe,
     MetadataCapability,
     ProbeOutcome,
     ProbeReasonCode,
@@ -89,3 +90,32 @@ def test_activitywatch_probe_supports_wayland_metadata_without_enabling_capture(
 
     assert result.outcome is ProbeOutcome.HEALTHY
     assert MetadataCapability.ACTIVITY in result.capabilities
+
+
+def test_generic_xorg_probe_requires_operational_reader_capability() -> None:
+    health = FixedHealth(False)
+    probe = GenericXorgMetadataProbe(health)
+
+    result = asyncio.run(probe.probe(session()))
+
+    assert result.outcome is ProbeOutcome.UNAVAILABLE
+    assert result.reason_code is ProbeReasonCode.UNAVAILABLE
+    assert result.capabilities == frozenset()
+    assert health.calls == 1
+
+
+def test_generic_xorg_probe_does_not_read_content() -> None:
+    health = FixedHealth(True)
+    probe = GenericXorgMetadataProbe(health)
+
+    result = asyncio.run(probe.probe(session()))
+
+    assert result.outcome is ProbeOutcome.HEALTHY
+    assert result.capabilities == frozenset(
+        {
+            MetadataCapability.APPLICATION,
+            MetadataCapability.WINDOW_TITLE,
+            MetadataCapability.WORKSPACE,
+        }
+    )
+    assert health.calls == 1

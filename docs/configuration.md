@@ -58,7 +58,8 @@ overload_policy = "drop-newest"
 change_threshold = 0.02
 
 [metadata]
-enabled_sources = ["generic-xorg"]
+enabled_sources = ["xorg-generic"]
+window_titles_enabled = false
 
 [ocr]
 provider_id = "tesseract-local"
@@ -119,6 +120,19 @@ root_directory = "~/.local/share/local-recall"
 ```
 
 The `reference` fields identify entries managed by a key provider. They are not secret values. Effective-configuration inspection replaces reference names with `<configured>`.
+
+### Generic Xorg metadata
+
+`xorg-generic` is the built-in EWMH active-window source. Window-title collection is
+independently controlled by `metadata.window_titles_enabled` and defaults to `false`.
+When disabled, the source does not request `_NET_WM_NAME` or `WM_NAME` and never emits
+`window.title`. Enabling titles can improve policy decisions, but titles frequently contain
+document names, URLs, account names, or other sensitive content. Collected titles remain
+in-memory and still pass through deterministic metadata redaction before encryption or
+persistence.
+
+This is an additive schema-version-1 setting. Existing version-1 files retain the conservative
+default without a migration.
 
 ### Explicit GPG fallback
 

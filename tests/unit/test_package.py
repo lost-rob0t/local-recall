@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from local_recall import __version__
 from local_recall.cli import app
+from local_recall.metadata import GenericXorgMetadataSource
 
 
 def test_runtime_targets_python_314() -> None:
@@ -35,7 +36,11 @@ def test_bootstrap_installs_console_entry_point() -> None:
 def test_status_reports_selected_strategies_without_environment_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    async def available(_: GenericXorgMetadataSource) -> bool:
+        return True
+
     marker = "secret-display-marker"
+    monkeypatch.setattr(GenericXorgMetadataSource, "is_available", available)
     monkeypatch.setenv("XDG_SESSION_TYPE", "x11")
     monkeypatch.setenv("DISPLAY", marker)
     monkeypatch.setenv("XDG_CURRENT_DESKTOP", "Qtile")

@@ -25,7 +25,7 @@ def enabled_capture_config(**overrides: object) -> dict[str, object]:
         "schema_version": 1,
         "profile": "local-only",
         "capture": {"enabled": True},
-        "metadata": {"enabled_sources": ["generic-xorg"]},
+        "metadata": {"enabled_sources": ["xorg-generic"]},
         "encryption": {
             "provider_id": "keyring",
             "key_reference": {"provider_id": "keyring", "reference": "record-key"},
@@ -47,6 +47,7 @@ def test_safe_default_records_nothing() -> None:
     assert not configuration.capture_permitted
     assert configuration.rules.default_effect is RuleEffect.DENY
     assert not configuration.models.remote_enabled
+    assert not configuration.metadata.window_titles_enabled
 
 
 def test_capture_requires_complete_security_configuration() -> None:
@@ -192,9 +193,13 @@ def test_models_are_frozen() -> None:
 def test_explicit_settings_are_represented() -> None:
     configuration = LocalRecallConfig(
         profile=PrivacyProfile.LOCAL_ONLY,
-        metadata=MetadataSettings(enabled_sources=("generic-xorg",)),
+        metadata=MetadataSettings(
+            enabled_sources=("xorg-generic",),
+            window_titles_enabled=True,
+        ),
         encryption=EncryptionSettings(provider_id="keyring"),
         storage=StorageSettings(backend_id="sqlite-blobs"),
     )
 
-    assert configuration.metadata.enabled_sources == ("generic-xorg",)
+    assert configuration.metadata.enabled_sources == ("xorg-generic",)
+    assert configuration.metadata.window_titles_enabled

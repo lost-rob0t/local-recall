@@ -19,6 +19,9 @@ class AsyncHealthCheck(Protocol):
 
 
 class GenericXorgMetadataProbe:
+    def __init__(self, health_check: AsyncHealthCheck | None = None) -> None:
+        self._health_check = health_check
+
     @property
     def source_id(self) -> str:
         return "xorg-generic"
@@ -26,6 +29,8 @@ class GenericXorgMetadataProbe:
     async def probe(self, session: DesktopSession) -> MetadataProbeResult:
         if session.protocol is not DisplayProtocol.XORG:
             return _incompatible(self.source_id)
+        if self._health_check is not None and not await self._health_check():
+            return _unavailable(self.source_id)
         return MetadataProbeResult(
             source_id=self.source_id,
             outcome=ProbeOutcome.HEALTHY,
@@ -34,6 +39,7 @@ class GenericXorgMetadataProbe:
                 {
                     MetadataCapability.APPLICATION,
                     MetadataCapability.WINDOW_TITLE,
+                    MetadataCapability.WORKSPACE,
                 }
             ),
         )
