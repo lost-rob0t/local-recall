@@ -31,6 +31,9 @@ jobs:
           set -Eeuo pipefail
           cat scripts/.issue18/gzchunk* | base64 -d | gzip -dc > /tmp/issue18_bundle.py
           echo 'e331e1c4283b449eebda8571f51681ff35293690b3b1dd9f11784a94b78ea5a2  /tmp/issue18_bundle.py' | sha256sum -c -
+          test "$(grep -c 'docs/capture-policy.md' /tmp/issue18_bundle.py)" -eq 1
+          sed -i 's#docs/capture-policy.md#docs/policy.md#' /tmp/issue18_bundle.py
+          echo 'ddcc1ea510f699cfa4c66751d5c259dae0cbd560d4952ac841f181907727c587  /tmp/issue18_bundle.py' | sha256sum -c -
       - name: Apply production patch
         shell: bash
         run: |
