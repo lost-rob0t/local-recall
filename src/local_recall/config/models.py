@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 from datetime import time
 from enum import StrEnum
@@ -128,14 +129,41 @@ class CaptureRule(FrozenModel):
             re.compile(value)
         except re.error as exc:
             raise ValueError("title_pattern must be a valid regular expression") from exc
-        if "(?" in value or "|" in value or "{" in value:
+        body = value[4:] if value.startswith("(?i)") else value
+        if "(?" in body or "|" in body or "{" in body:
             raise ValueError("title_pattern uses an unsupported high-risk construct")
-        if re.search(r"\\(?:[1-9]|g<)", value):
+        if re.search(r"\\(?:[1-9]|g<)", body):
             raise ValueError("title_pattern backreferences are not supported")
-        if re.search(r"\([^)]*[*+][^)]*\)[*+]", value):
+        if re.search(r"\([^)]*[*+][^)]*\)[*+]", body):
             raise ValueError("title_pattern nested repetition is not supported")
-        if value.count("*") + value.count("+") > 4:
+        if body.count("*") + body.count("+") > 4:
             raise ValueError("title_pattern contains too many unbounded repetitions")
+        return value
+
+    @field_validator("domain")
+    @classmethod
+    def validate_domain(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().casefold().removesuffix(".")
+        if not normalized:
+            raise ValueError("policy domain is invalid")
+        try:
+            ipaddress.ip_address(normalized)
+        except ValueError:
+            labels = normalized.split(".")
+            if len(labels) < 2:
+                raise ValueError("policy domain is invalid") from None
+            for label in labels:
+                if not 1 <= len(label) <= 63:
+                    raise ValueError("policy domain is invalid") from None
+                if label[0] == "-" or label[-1] == "-":
+                    raise ValueError("policy domain is invalid") from None
+                if not all(
+                    character.isascii() and (character.isalnum() or character == "-")
+                    for character in label
+                ):
+                    raise ValueError("policy domain is invalid") from None
         return value
 
     @model_validator(mode="after")
