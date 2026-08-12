@@ -189,12 +189,10 @@ class PolicyEngine:
                 return False
             if authorization.policy_generation != self._generation:
                 return False
-            if (
-                capture_generation is not None
-                and authorization.capture_generation != capture_generation
-            ):
-                return False
-            return True
+            return (
+                capture_generation is None
+                or authorization.capture_generation == capture_generation
+            )
 
     def set_privacy_mode(self, active: bool) -> None:
         with self._lock:
@@ -416,9 +414,10 @@ class PolicyEngine:
         for field in context.metadata.fields:
             if not field.provenance:
                 return PolicyReasonCode.MALFORMED_CONTEXT
-            if isinstance(field.value, str):
-                if "\x00" in field.value or len(field.value) > _MAX_METADATA_TEXT:
-                    return PolicyReasonCode.MALFORMED_CONTEXT
+            if isinstance(field.value, str) and (
+                "\x00" in field.value or len(field.value) > _MAX_METADATA_TEXT
+            ):
+                return PolicyReasonCode.MALFORMED_CONTEXT
         return None
 
     def _match_rule(
@@ -674,13 +673,13 @@ def _normalize_domain(value: str) -> str:
             raise ValueError("policy domain is invalid") from None
         for label in labels:
             if not 1 <= len(label) <= 63:
-                raise ValueError("policy domain is invalid")
+                raise ValueError("policy domain is invalid") from None
             if label[0] == "-" or label[-1] == "-":
-                raise ValueError("policy domain is invalid")
+                raise ValueError("policy domain is invalid") from None
             if not all(
                 character.isascii() and (character.isalnum() or character == "-")
                 for character in label
             ):
-                raise ValueError("policy domain is invalid")
+                raise ValueError("policy domain is invalid") from None
         return normalized
     return address.compressed.casefold()
