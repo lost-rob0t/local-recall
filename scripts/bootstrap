@@ -6,3 +6,4 @@ cd "$ROOT"
 
 uv venv --python 3.14 --allow-existing
 uv pip sync requirements.lock
+uv pip install --no-deps --editable .
