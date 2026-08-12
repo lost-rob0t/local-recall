@@ -265,3 +265,8 @@ The migration is deterministic:
 If old and new names both exist, migration rejects the file as ambiguous. Migrated configuration is then validated against the complete version 1 security rules. A migrated file that enabled capture without encryption or storage therefore fails closed.
 
 Versions newer than the runtime supports are rejected. Migrations never silently discard unknown fields; the final model forbids extras.
+
+
+## ActivityWatch metadata
+
+Optional ActivityWatch enrichment is configured under `[metadata.activitywatch]`. The endpoint is restricted to a loopback HTTP origin, URL capture defaults to `disabled`, and the only enabled URL mode is `domain-only`. Window-title capture remains controlled independently by `metadata.window_titles_enabled`. See [ActivityWatch metadata](activitywatch.md) for bucket discovery, correlation, transport bounds, privacy, fallback, and sanitized troubleshooting.

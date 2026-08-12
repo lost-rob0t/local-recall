@@ -182,7 +182,11 @@ class LocalActivityWatchClient:
     ) -> tuple[ActivityWatchEvent, ...]:
         require_aware(start)
         require_aware(end)
-        if end <= start or not 1 <= limit <= MAX_EVENTS_PER_BUCKET:
+        if (
+            end <= start
+            or (end - start).total_seconds() > 10.0
+            or not 1 <= limit <= MAX_EVENTS_PER_BUCKET
+        ):
             raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.INVALID_REQUEST)
 
         event_type = self._bucket_types.get(bucket_id)

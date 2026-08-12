@@ -553,7 +553,7 @@ def test_activitywatch_configuration_defaults_are_conservative() -> None:
     [
         "http://192.0.2.1:5600",
         "https://127.0.0.1:5600",
-        "http://user:pass@127.0.0.1:5600",
+        "http://user:pass@127.0.0.1:5600",  # pragma: allowlist secret
         "http://127.0.0.1:5600/api/0",
         "http://127.0.0.1:5600/?query=1",
         "http://127.0.0.1:5600/#fragment",
@@ -578,3 +578,119 @@ def test_configuration_accepts_loopback_http_origins(
     endpoint: str,
 ) -> None:
     assert ActivityWatchSettings(endpoint=endpoint).endpoint == endpoint
+
+
+def test_old_long_running_event_is_not_treated_as_current() -> None:
+    client = SyntheticClient(
+        (bucket("window", ActivityWatchEventType.CURRENT_WINDOW),),
+        {
+            "window": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    timestamp=NOW - timedelta(hours=1),
+                    duration_seconds=7200,
+                    application="old-long-event",
+                ),
+            )
+        },
+    )
+
+    with pytest.raises(ActivityWatchMetadataFailure) as captured:
+        asyncio.run(source(client).collect(request()))
+
+    assert captured.value.code is ActivityWatchMetadataFailureCode.NO_CORRELATED_EVENT
+
+
+def test_far_future_event_is_rejected() -> None:
+    client = SyntheticClient(
+        (bucket("window", ActivityWatchEventType.CURRENT_WINDOW),),
+        {
+            "window": (
+                event(
+                    ActivityWatchEventType.CURRENT_WINDOW,
+                    timestamp=NOW + timedelta(seconds=30),
+                    duration_seconds=0,
+                    application="future",
+                ),
+            )
+        },
+    )
+
+    with pytest.raises(ActivityWatchMetadataFailure) as captured:
+        asyncio.run(source(client).collect(request()))
+
+    assert captured.value.code is ActivityWatchMetadataFailureCode.NO_CORRELATED_EVENT
+
+
+def test_stale_afk_event_does_not_override_fresh_window_context() -> None:
+    client = SyntheticClient(
+        (
+            bucket("window", ActivityWatchEventType.CURRENT_WINDOW),
+            bucket("afk", ActivityWatchEventType.AFK_STATUS),
+        ),
+        {
+            "window": (event(ActivityWatchEventType.CURRENT_WINDOW, application="fresh-app"),),
+            "afk": (
+                event(
+                    ActivityWatchEventType.AFK_STATUS,
+                    timestamp=NOW - timedelta(seconds=30),
+                    duration_seconds=0,
+                    idle=True,
+                ),
+            ),
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request()))
+
+    assert metadata.get("application") == "fresh-app"
+    assert metadata.get("idle") is None
+
+
+def test_conflicting_afk_events_choose_latest_start_deterministically() -> None:
+    client = SyntheticClient(
+        (bucket("afk", ActivityWatchEventType.AFK_STATUS),),
+        {
+            "afk": (
+                event(
+                    ActivityWatchEventType.AFK_STATUS,
+                    timestamp=NOW - timedelta(milliseconds=500),
+                    duration_seconds=1,
+                    idle=False,
+                ),
+                event(
+                    ActivityWatchEventType.AFK_STATUS,
+                    timestamp=NOW - timedelta(seconds=1),
+                    duration_seconds=2,
+                    idle=True,
+                ),
+            )
+        },
+    )
+
+    metadata = asyncio.run(source(client).collect(request("idle")))
+
+    assert metadata.get("idle") is False
+
+
+def test_probe_capabilities_respect_sensitive_field_configuration() -> None:
+    client = SyntheticClient(
+        (
+            bucket("window", ActivityWatchEventType.CURRENT_WINDOW),
+            bucket("afk", ActivityWatchEventType.AFK_STATUS),
+            bucket("web", ActivityWatchEventType.WEB_TAB_CURRENT),
+        ),
+        {},
+    )
+
+    defaults = asyncio.run(source(client).probe_capabilities())
+    enabled = asyncio.run(
+        source(
+            client,
+            titles=True,
+            url_mode=ActivityWatchURLMode.DOMAIN_ONLY,
+        ).probe_capabilities()
+    )
+
+    assert defaults == frozenset({"application", "activity", "idle"})
+    assert enabled == frozenset({"application", "window-title", "activity", "idle", "domain"})

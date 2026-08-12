@@ -70,10 +70,15 @@ class ActivityWatchMetadataSource:
             if not candidates:
                 continue
             if event_type is ActivityWatchEventType.CURRENT_WINDOW:
-                capabilities.update({"application", "window-title"})
+                capabilities.add("application")
+                if self._settings.window_titles_enabled:
+                    capabilities.add("window-title")
             elif event_type is ActivityWatchEventType.AFK_STATUS:
                 capabilities.update({"activity", "idle"})
-            elif event_type is ActivityWatchEventType.WEB_TAB_CURRENT:
+            elif (
+                event_type is ActivityWatchEventType.WEB_TAB_CURRENT
+                and self._settings.activitywatch.url_mode is ActivityWatchURLMode.DOMAIN_ONLY
+            ):
                 capabilities.add("domain")
         return frozenset(capabilities)
 
@@ -408,6 +413,7 @@ def _correlate_event(
         event
         for event in unique.values()
         if _event_distance_seconds(event, observed_at) <= tolerance_seconds
+        and abs((observed_at - event.timestamp).total_seconds()) <= tolerance_seconds
     ]
     if not candidates:
         return None

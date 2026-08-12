@@ -323,7 +323,7 @@ def test_domain_only_strips_path_query_and_fragment() -> None:
 @pytest.mark.parametrize(
     "url",
     [
-        "https://user:pass@example.test/path",
+        "https://user:pass@example.test/path",  # pragma: allowlist secret
         "http://127.0.0.1/private",
         "http://[::1]/private",
         "not a url",
@@ -400,3 +400,21 @@ def test_event_query_is_a_tiny_bounded_range() -> None:
     assert event_target.startswith("/api/0/buckets/bucket/events?")
     assert "limit=16" in event_target
     assert "export" not in event_target
+
+
+def test_client_rejects_event_query_wider_than_transport_policy() -> None:
+    adapter, _ = client([encoded(bucket_payload("currentwindow"))])
+    asyncio.run(adapter.buckets(timeout_seconds=0.5))
+
+    with pytest.raises(ActivityWatchAdapterFailure) as captured:
+        asyncio.run(
+            adapter.events(
+                "bucket",
+                start=datetime(2026, 8, 12, 14, 0, tzinfo=UTC),
+                end=datetime(2026, 8, 12, 14, 0, 11, tzinfo=UTC),
+                limit=16,
+                timeout_seconds=0.5,
+            )
+        )
+
+    assert captured.value.code is ActivityWatchMetadataFailureCode.INVALID_REQUEST

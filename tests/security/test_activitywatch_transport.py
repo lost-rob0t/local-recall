@@ -214,7 +214,7 @@ def test_unapproved_or_unbounded_event_target_is_rejected(
     [
         "http://192.0.2.1:5600",
         "https://127.0.0.1:5600",
-        "http://user:pass@127.0.0.1:5600",
+        "http://user:pass@127.0.0.1:5600",  # pragma: allowlist secret
         "http://127.0.0.1:5600/api/0",
     ],
 )
