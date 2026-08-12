@@ -1,0 +1,36 @@
+name: Issue 16 finalizer
+
+on:
+  push:
+    branches:
+      - agent/issue-16-activitywatch-metadata
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/issue-16-activitywatch-metadata
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+      - name: Apply final issue changes
+        run: python scripts/issue16-finalize.py
+      - name: Format final tree
+        run: |
+          ./scripts/bootstrap
+          uv run --no-sync ruff format .
+      - name: Canonical repository gate
+        run: ./scripts/check
+      - name: Commit only after green gate
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit -m "test: harden ActivityWatch correlation boundaries"
+          git push origin HEAD:agent/issue-16-activitywatch-metadata
