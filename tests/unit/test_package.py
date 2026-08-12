@@ -1,5 +1,6 @@
 import json
 import sys
+from pathlib import Path
 
 import pykka
 import pytest
@@ -22,6 +23,13 @@ def test_version_command() -> None:
 
     assert result.exit_code == 0
     assert result.stdout.strip() == __version__
+
+
+def test_bootstrap_installs_console_entry_point() -> None:
+    entry_point = Path(sys.executable).with_name("local-recall")
+
+    assert entry_point.is_file()
+    assert entry_point.stat().st_mode & 0o111
 
 
 def test_status_reports_selected_strategies_without_environment_values(
