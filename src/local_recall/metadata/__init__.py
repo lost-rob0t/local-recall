@@ -1,5 +1,19 @@
 """Bounded metadata source implementations."""
 
+from .qtile import (
+    FixedQtileCommandRunner,
+    QtileAdapterFailure,
+    QtileCommand,
+    QtileCommandReader,
+    QtileCommandResult,
+    QtileCommandRunner,
+    QtileExecutablePath,
+    QtileMetadataFailure,
+    QtileMetadataFailureCode,
+    QtileMetadataSource,
+    QtileSnapshot,
+    QtileSnapshotReader,
+)
 from .xorg import (
     FixedXorgCommandRunner,
     GenericXorgMetadataSource,
@@ -16,8 +30,20 @@ from .xorg import (
 )
 
 __all__ = [
+    "FixedQtileCommandRunner",
     "FixedXorgCommandRunner",
     "GenericXorgMetadataSource",
+    "QtileAdapterFailure",
+    "QtileCommand",
+    "QtileCommandReader",
+    "QtileCommandResult",
+    "QtileCommandRunner",
+    "QtileExecutablePath",
+    "QtileMetadataFailure",
+    "QtileMetadataFailureCode",
+    "QtileMetadataSource",
+    "QtileSnapshot",
+    "QtileSnapshotReader",
     "XorgAdapterFailure",
     "XorgCommand",
     "XorgCommandResult",

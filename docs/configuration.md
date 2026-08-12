@@ -134,6 +134,24 @@ persistence.
 This is an additive schema-version-1 setting. Existing version-1 files retain the conservative
 default without a migration.
 
+### Qtile metadata
+
+`qtile` is the built-in Qtile/Xorg metadata source. Put it before `xorg-generic` when Qtile-owned
+workspace, layout, and screen values should win composition ties:
+
+```toml
+[metadata]
+enabled_sources = ["qtile", "xorg-generic"]
+window_titles_enabled = false
+```
+
+The Qtile adapter reuses `metadata.window_titles_enabled`; no command, function, expression,
+module, display, or socket path is configurable. Health requires a successful read-only Qtile IPC
+status call. If Qtile is unavailable, the resolver can select the configured generic Xorg source.
+Collected values remain in memory and enter the existing deterministic metadata-redaction stage
+before encryption or persistence. See [desktop session and metadata strategy resolution](session-resolution.md#qtile-collection)
+for fields, confidence, bounded retries, command limits, and platform constraints.
+
 ### Explicit GPG fallback
 
 GPG fallback is disabled by default and is never inferred from provider availability. To enable it, configure every fallback field explicitly:

@@ -18,6 +18,11 @@ class AsyncHealthCheck(Protocol):
     async def __call__(self) -> bool: ...
 
 
+@runtime_checkable
+class AsyncAvailabilityCheck(Protocol):
+    async def is_available(self) -> bool: ...
+
+
 class GenericXorgMetadataProbe:
     def __init__(self, health_check: AsyncHealthCheck | None = None) -> None:
         self._health_check = health_check
@@ -46,8 +51,8 @@ class GenericXorgMetadataProbe:
 
 
 class QtileMetadataProbe:
-    def __init__(self, health_check: AsyncHealthCheck) -> None:
-        self._health_check = health_check
+    def __init__(self, source: AsyncAvailabilityCheck) -> None:
+        self._source = source
 
     @property
     def source_id(self) -> str:
@@ -59,7 +64,7 @@ class QtileMetadataProbe:
             or session.desktop is not DesktopEnvironment.QTILE
         ):
             return _incompatible(self.source_id)
-        if not await self._health_check():
+        if not await self._source.is_available():
             return _unavailable(self.source_id)
         return MetadataProbeResult(
             source_id=self.source_id,
@@ -68,6 +73,8 @@ class QtileMetadataProbe:
             capabilities=frozenset(
                 {
                     MetadataCapability.APPLICATION,
+                    MetadataCapability.LAYOUT,
+                    MetadataCapability.SCREEN,
                     MetadataCapability.WINDOW_TITLE,
                     MetadataCapability.WORKSPACE,
                 }

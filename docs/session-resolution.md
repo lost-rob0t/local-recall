@@ -37,12 +37,13 @@ Every probe has a finite deadline. Timeout, exception, source-identity mismatch,
 The built-in probe seams are:
 
 - `xorg-generic`: generic EWMH active-window collection on a confirmed Xorg session;
-- `qtile`: application, window-title, and workspace capability after a Qtile-specific health check;
+- `qtile`: application, window-title, workspace, layout, and screen capability after the
+  concrete Qtile adapter completes a content-free IPC health check;
 - `activitywatch`: application, activity, and idle capability after a local ActivityWatch health check.
 
-Issue #14 implements the generic Xorg collector and its content-free executable health check.
-Issues #15 and #16 implement the Qtile and ActivityWatch collectors. Issue #13 defines
-detection, probing, selection, and composition.
+Issues #14 and #15 implement the generic Xorg and Qtile collectors and their content-free health
+checks. Issue #16 implements the ActivityWatch collector. Issue #13 defines detection, probing,
+selection, and composition.
 
 ## Generic Xorg collection
 
@@ -112,6 +113,87 @@ collection was enabled.
 Generic collection requires an EWMH-compatible Xorg window manager. Non-EWMH managers may report
 `no-active-window` or omit optional fields. Wayland collection remains unsupported; an XWayland
 `DISPLAY` never causes a Wayland session to be treated as Xorg.
+
+## Qtile collection
+
+`QtileMetadataSource` implements the same backend-neutral `MetadataSource` port with source ID
+`qtile`. Qtile command objects, JSON, process results, and failure details remain inside the
+adapter. The normalized field contract is:
+
+| Field | Value | Availability | Confidence |
+|---|---|---|---:|
+| `application` | normalized second `wm_class` component, falling back to the first | optional | 0.95 |
+| `layout` | current Qtile layout name | optional | 0.98 |
+| `screen` | current Qtile numeric screen index | optional | 0.98 |
+| `window.id` | validated nonzero 32-bit focused-window identifier | required | 1.00 |
+| `window.title` | current window name | optional and configuration-gated | 0.95 |
+| `workspace` | current Qtile group name | required | 0.98 |
+
+The canonical names are `workspace`, `layout`, and `screen`; the adapter does not emit duplicate
+`group` or screen-index aliases. Fields are emitted in lexical order. Every field has one
+provenance entry with source `qtile`, adapter revision `qtile-cmd-info-v1`, the collection's one
+timezone-aware observation timestamp, and the confidence above. Qtile-owned workspace, layout,
+and screen values outrank generic EWMH values while the existing composition policy still decides
+every conflict deterministically.
+
+### Reviewed Qtile command boundary
+
+The adapter uses Qtile's installed `qtile cmd-obj` interface rather than importing `libqtile` into
+Local Recall. This avoids coupling the Python 3.14 application environment to Qtile's package and
+socket-discovery internals. The executable identity is resolved once and only these fixed,
+read-only argument vectors are available to the runner:
+
+```text
+qtile cmd-obj -o cmd -f status
+qtile cmd-obj -o window -f info
+qtile cmd-obj -o group -f info
+```
+
+There are no configurable functions, object selectors, expressions, arguments, socket paths, or
+shells. Captured values never become command arguments. In particular, the adapter does not use
+Qtile's `eval`, `function`, or mutating command surface. Each subprocess has a 0.5-second timeout
+and a 64-KiB bound on each output stream; a timed-out or oversized process is killed. JSON is
+decoded with duplicate-key rejection, and only reviewed fields with explicit type and length
+limits are retained. A future explicit `response_version` other than `1` is rejected as
+`unsupported-response`; incompatible unversioned shapes are `malformed-response`.
+
+Qtile's `window info` response is not field-projectable and includes the window name. When title
+collection is disabled or `window.title` is not requested, Local Recall discards that member
+without normalizing or emitting it. `metadata.window_titles_enabled` remains the sole title switch
+and defaults to `false`; there is no Qtile-specific duplicate setting.
+
+### Snapshot, restart, and consistency policy
+
+One attempt reads the default current window and group, then reads the current group and window
+again. Window ID, group name, layout, and screen index must agree across the two reads, and each
+window must identify the adjacent group. A mismatch discards the complete attempt; no partial
+metadata is returned. The second group read also detects workspace, layout, or screen changes.
+
+One retry is allowed by default, for at most two complete attempts. A single Qtile restart,
+transient IPC failure, focus change, group change, or inconsistent state may therefore recover.
+Repeated failures return the last fixed reason code. A failed content call is followed only by
+the content-free `status` command: healthy status distinguishes `no-focused-window`,
+`focus-changed`, or `ipc-failure`; failed status reports `restarting`. Missing executables,
+timeouts, oversized output, malformed identifiers, malformed/unsupported schemas, and wrong
+window/group identity are not retried. Exception text and bounded process output are discarded.
+
+### Health, fallback, and privacy
+
+`QtileMetadataProbe` owns the concrete source's `is_available()` seam. Health requires both the
+fixed executable and a successful bounded Qtile `status` IPC call; recognizing a Qtile desktop or
+finding an executable is not enough. The probe never calls `collect()` or any window/group command
+and exposes only fixed identity, capabilities, outcome, and reason codes.
+
+If Qtile is configured but unhealthy, `SessionResolver` retains the existing final
+`xorg-generic` fallback. If both sources are configured and healthy, both remain selected in
+configured order and the standard confidence/source-order/timestamp/stable-ID rules compose them.
+
+Raw Qtile values exist only in the in-memory analyzed side of the pipeline. They cross the same
+deterministic metadata-redaction stage as Xorg values before encryption or persistence; the source
+has no storage, key, audit, or network capability. Automated tests inject synthetic readers and
+runners and never contact the developer's Qtile process. Qtile collection is limited to Qtile on
+Xorg. Non-Qtile desktops, incompatible command schemas, and Wayland sessions remain unsupported;
+generic EWMH fallback does not make a Wayland session recordable.
 
 ## Selection policy
 

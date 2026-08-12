@@ -33,6 +33,8 @@ class SessionReasonCode(StrEnum):
 
 class MetadataCapability(StrEnum):
     APPLICATION = "application"
+    LAYOUT = "layout"
+    SCREEN = "screen"
     WINDOW_TITLE = "window-title"
     WORKSPACE = "workspace"
     ACTIVITY = "activity"

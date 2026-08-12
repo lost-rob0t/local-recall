@@ -15,9 +15,14 @@ from local_recall.config import MetadataSettings
 from local_recall.domain.capture import MetadataRequest
 from local_recall.domain.frames import OCRBlock, OCRResult, RedactedRecord
 from local_recall.domain.lifecycle import CaptureGeneration
-from local_recall.domain.metadata import SourceConfidence
+from local_recall.domain.metadata import ContextMetadata, SourceConfidence
 from local_recall.domain.redaction import PixelRegion
-from local_recall.metadata import GenericXorgMetadataSource, XorgWindowProperties
+from local_recall.metadata import (
+    GenericXorgMetadataSource,
+    QtileMetadataSource,
+    QtileSnapshot,
+    XorgWindowProperties,
+)
 from local_recall.pipeline import (
     BoundedCapturePipeline,
     EncryptedStageItem,
@@ -82,6 +87,18 @@ class SyntheticXorgReader:
         self, window_id: int, *, include_title: bool
     ) -> XorgWindowProperties:
         assert window_id == self._snapshot.window_id
+        assert include_title
+        return self._snapshot
+
+
+class SyntheticQtileReader:
+    def __init__(self, snapshot: QtileSnapshot) -> None:
+        self._snapshot = snapshot
+
+    async def is_available(self) -> bool:
+        return True
+
+    async def snapshot(self, *, include_title: bool) -> QtileSnapshot:
         assert include_title
         return self._snapshot
 
@@ -232,6 +249,56 @@ def test_xorg_title_and_application_cross_redaction_before_persistence() -> None
             )
         )
     )
+    _assert_metadata_redacted_before_persistence(
+        context,
+        marker,
+        dropped_fields=("application", "window.title"),
+    )
+
+
+def test_qtile_sensitive_metadata_crosses_redaction_before_persistence() -> None:
+    marker = "password=" + "synthetic-qtile-metadata-secret"
+    observed_at = datetime(2026, 8, 12, tzinfo=UTC)
+    source = QtileMetadataSource(
+        MetadataSettings(window_titles_enabled=True),
+        reader=SyntheticQtileReader(
+            QtileSnapshot(
+                window_id=0x2A00007,
+                confirmed_window_id=0x2A00007,
+                application=marker,
+                title=marker,
+                workspace=marker,
+                confirmed_workspace=marker,
+                layout="synthetic-layout",
+                confirmed_layout="synthetic-layout",
+                screen=1,
+                confirmed_screen=1,
+            )
+        ),
+        now=lambda: observed_at,
+    )
+    context = asyncio.run(
+        source.collect(
+            MetadataRequest(
+                job_id=uuid4(),
+                generation=CaptureGeneration(1),
+                deadline_monotonic_ns=time.monotonic_ns() + 1_000_000_000,
+            )
+        )
+    )
+    _assert_metadata_redacted_before_persistence(
+        context,
+        marker,
+        dropped_fields=("application", "window.title", "workspace"),
+    )
+
+
+def _assert_metadata_redacted_before_persistence(
+    context: ContextMetadata,
+    marker: str,
+    *,
+    dropped_fields: tuple[str, ...],
+) -> None:
     record_id = uuid4()
     frame = gray_frame(
         width=4,
@@ -260,8 +327,8 @@ def test_xorg_title_and_application_cross_redaction_before_persistence() -> None
         )
         assert sink.event.wait(2)
         assert encryption.record is not None
-        assert encryption.record.frame.metadata.get("application") is None
-        assert encryption.record.frame.metadata.get("window.title") is None
+        for field_name in dropped_fields:
+            assert encryption.record.frame.metadata.get(field_name) is None
         assert encryption.record.frame.metadata.get("window.id") == 0x2A00007
         assert marker not in repr(encryption.record)
         assert sink.items[0].frames == (b"synthetic-ciphertext",)
