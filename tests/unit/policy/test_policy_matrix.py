@@ -31,7 +31,11 @@ from local_recall.policy import PolicyEngine, PolicyEvaluationContext
 NOW = datetime(2026, 8, 12, 16, 0, tzinfo=UTC)
 
 
-def _provenance(source_id: str = "xorg-generic", *, observed_at: datetime = NOW) -> MetadataProvenance:
+def _provenance(
+    source_id: str = "xorg-generic",
+    *,
+    observed_at: datetime = NOW,
+) -> MetadataProvenance:
     return MetadataProvenance(
         source_id=source_id,
         observed_at=observed_at,
@@ -62,12 +66,13 @@ def _context(
     *,
     source_id: str = "xorg-generic",
     evaluated_at: datetime = NOW,
-    observed_at: datetime = NOW,
+    observed_at: datetime | None = None,
     full_screen: bool | None = None,
     generation: int = 1,
 ) -> PolicyEvaluationContext:
+    observation = evaluated_at if observed_at is None else observed_at
     return PolicyEvaluationContext(
-        metadata=_metadata(values, source_id=source_id, observed_at=observed_at),
+        metadata=_metadata(values, source_id=source_id, observed_at=observation),
         evaluated_at=evaluated_at,
         capture_generation=CaptureGeneration(generation),
         full_screen=full_screen,
@@ -161,11 +166,12 @@ def test_each_operation_is_gated_independently() -> None:
     context = _context()
 
     for operation in PolicyOperation:
-        decision = policy.evaluate(
-            operation,
-            PolicyPhase.PRE_CAPTURE if operation in {PolicyOperation.SCREENSHOT, PolicyOperation.METADATA} else PolicyPhase.DOWNSTREAM,
-            context,
+        phase = (
+            PolicyPhase.PRE_CAPTURE
+            if operation in {PolicyOperation.SCREENSHOT, PolicyOperation.METADATA}
+            else PolicyPhase.DOWNSTREAM
         )
+        decision = policy.evaluate(operation, phase, context)
         assert not decision.allowed
         if operation is PolicyOperation.REMOTE_PROVIDER:
             assert decision.reason_code is PolicyReasonCode.REMOTE_NOT_AUTHORIZED
@@ -291,32 +297,40 @@ def test_authentication_title_is_builtin_sensitive_without_echoing_title() -> No
 
 
 def test_domain_matching_exact_subdomain_suffix_case_and_trailing_dot() -> None:
-    exact_policy = _engine(
-        _rule("exact", RuleEffect.DENY, domain="Example.COM."),
-    )
+    exact_policy = _engine(_rule("exact", RuleEffect.DENY, domain="Example.COM."))
     subdomain_policy = _engine(
-        _rule("sub", RuleEffect.DENY, domain="example.com", include_subdomains=True),
+        _rule("sub", RuleEffect.DENY, domain="example.com", include_subdomains=True)
     )
+    exact_context = {
+        "application": "Browser",
+        "workspace": "web",
+        "url.domain": "EXAMPLE.com",
+    }
+    sub_context = {
+        "application": "Browser",
+        "workspace": "web",
+        "url.domain": "a.example.com",
+    }
 
     exact = exact_policy.evaluate(
         PolicyOperation.SCREENSHOT,
         PolicyPhase.PRE_CAPTURE,
-        _context({"application": "Browser", "workspace": "web", "url.domain": "EXAMPLE.com"}),
+        _context(exact_context),
     )
     exact_sub = exact_policy.evaluate(
         PolicyOperation.SCREENSHOT,
         PolicyPhase.PRE_CAPTURE,
-        _context({"application": "Browser", "workspace": "web", "url.domain": "a.example.com"}),
+        _context(sub_context),
     )
     subdomain = subdomain_policy.evaluate(
         PolicyOperation.SCREENSHOT,
         PolicyPhase.PRE_CAPTURE,
-        _context({"application": "Browser", "workspace": "web", "url.domain": "a.example.com."}),
+        _context({**sub_context, "url.domain": "a.example.com."}),
     )
     suffix = subdomain_policy.evaluate(
         PolicyOperation.SCREENSHOT,
         PolicyPhase.PRE_CAPTURE,
-        _context({"application": "Browser", "workspace": "web", "url.domain": "notexample.com"}),
+        _context({**sub_context, "url.domain": "notexample.com"}),
     )
 
     assert not exact.allowed
@@ -335,12 +349,16 @@ def test_ipv4_and_ipv6_domains_match_exactly() -> None:
     ipv4 = _engine(_rule("ipv4", RuleEffect.DENY, domain="127.0.0.1")).evaluate(
         PolicyOperation.SCREENSHOT,
         PolicyPhase.PRE_CAPTURE,
-        _context({"application": "Browser", "workspace": "web", "url.domain": "127.0.0.1"}),
+        _context(
+            {"application": "Browser", "workspace": "web", "url.domain": "127.0.0.1"}
+        ),
     )
     ipv6 = _engine(_rule("ipv6", RuleEffect.DENY, domain="2001:db8::1")).evaluate(
         PolicyOperation.SCREENSHOT,
         PolicyPhase.PRE_CAPTURE,
-        _context({"application": "Browser", "workspace": "web", "url.domain": "2001:db8::1"}),
+        _context(
+            {"application": "Browser", "workspace": "web", "url.domain": "2001:db8::1"}
+        ),
     )
 
     assert not ipv4.allowed
@@ -414,9 +432,7 @@ def test_metadata_source_rules_use_normalized_provenance() -> None:
 
 
 def test_missing_required_rule_context_fails_closed_uncertain() -> None:
-    policy = _engine(
-        _rule("needs-domain", RuleEffect.DENY, domain="example.com"),
-    )
+    policy = _engine(_rule("needs-domain", RuleEffect.DENY, domain="example.com"))
 
     decision = policy.evaluate(
         PolicyOperation.SCREENSHOT,
