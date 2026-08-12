@@ -8,7 +8,7 @@ Linux/Xorg uses the target `org.freedesktop.login1.Session` on the local system 
 
 `LockedHint=true` is locked. `LockedHint=false` is the only observation that can establish unlocked state. A login1 `Lock` signal is treated immediately as a conservative lock transition. An `Unlock` signal is only an unlock request and therefore changes the normalized state to unknown until a fresh `LockedHint=false` query confirms the state. Malformed replies, permission failures, timeouts, disconnects, session disappearance, and unknown state all fail closed. Reconnect clears the cached object path and resolves/query the current session again before capture can resume.
 
-At startup the safety preflight runs before the lifecycle can enter recording. A daemon that starts while the desktop is already locked starts paused; unknown startup state is also paused. There is no transient capture window.
+At startup the safety preflight runs before the lifecycle can enter recording. A daemon that starts while the desktop is already locked starts paused; unknown startup state is also paused. Lock resolution is mandatory even when idle handling is disabled or every idle source is unavailable. There is no transient capture window.
 
 ## Generation and race model
 
