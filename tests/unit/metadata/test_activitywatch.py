@@ -83,7 +83,7 @@ class SyntheticClient:
     events_by_bucket: dict[str, tuple[ActivityWatchEvent, ...]]
     hostname: str = "local-host"
     available: bool = True
-    event_calls: list[str] = field(default_factory=list)
+    event_calls: list[str] = field(default_factory=lambda: list[str]())
     info_calls: int = 0
     bucket_calls: int = 0
 

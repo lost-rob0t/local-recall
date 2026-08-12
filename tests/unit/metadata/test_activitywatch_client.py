@@ -14,6 +14,7 @@ from local_recall.config import (
 )
 from local_recall.metadata import (
     ActivityWatchAdapterFailure,
+    ActivityWatchEvent,
     ActivityWatchEventType,
     ActivityWatchMetadataFailureCode,
     LocalActivityWatchClient,
@@ -25,8 +26,8 @@ NOW_TEXT = "2026-08-12T14:30:00+00:00"
 @dataclass
 class QueueTransport:
     responses: list[bytes]
-    targets: list[str] = field(default_factory=list)
-    limits: list[int] = field(default_factory=list)
+    targets: list[str] = field(default_factory=lambda: list[str]())
+    limits: list[int] = field(default_factory=lambda: list[int]())
 
     async def get(
         self,
@@ -98,7 +99,7 @@ def client(
 
 def discover_and_events(
     adapter: LocalActivityWatchClient,
-) -> tuple[object, ...]:
+) -> tuple[ActivityWatchEvent, ...]:
     asyncio.run(adapter.buckets(timeout_seconds=0.5))
     return asyncio.run(
         adapter.events(

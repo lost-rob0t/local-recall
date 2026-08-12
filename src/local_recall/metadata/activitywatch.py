@@ -353,7 +353,7 @@ def _scope_buckets(
                 raise ActivityWatchAdapterFailure(
                     ActivityWatchMetadataFailureCode.AMBIGUOUS_BUCKETS
                 )
-            selected = next(iter(by_host.values()), [])
+            selected = next(iter(by_host.values())) if by_host else []
 
         if len(selected) > MAX_CANDIDATES_PER_TYPE:
             raise ActivityWatchAdapterFailure(ActivityWatchMetadataFailureCode.AMBIGUOUS_BUCKETS)
