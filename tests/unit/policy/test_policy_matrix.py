@@ -301,12 +301,12 @@ def test_domain_matching_exact_subdomain_suffix_case_and_trailing_dot() -> None:
     subdomain_policy = _engine(
         _rule("sub", RuleEffect.DENY, domain="example.com", include_subdomains=True)
     )
-    exact_context = {
+    exact_context: dict[str, str | int | float | bool | None] = {
         "application": "Browser",
         "workspace": "web",
         "url.domain": "EXAMPLE.com",
     }
-    sub_context = {
+    sub_context: dict[str, str | int | float | bool | None] = {
         "application": "Browser",
         "workspace": "web",
         "url.domain": "a.example.com",
