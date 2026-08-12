@@ -47,7 +47,7 @@ jobs:
         run: ./scripts/bootstrap
       - name: Format production patch
         run: uv run --no-sync ruff format .
-      - name: Apply deterministic lint corrections
+      - name: Apply deterministic corrections
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -58,7 +58,7 @@ jobs:
               target = Path(path)
               text = target.read_text()
               if text.count(old) != 1:
-                  raise SystemExit(f"expected exactly one lint target in {path}")
+                  raise SystemExit(f"expected exactly one correction target in {path}")
               target.write_text(text.replace(old, new, 1))
 
           replace_once(
@@ -85,6 +85,16 @@ jobs:
               "tests/unit/session/test_logind_lock.py",
               '            "Path=/org/freedesktop/login1/session/_32 Interface=org.freedesktop.login1.Session Member=Lock",\n',
               '            "Path=/org/freedesktop/login1/session/_32 "\n            "Interface=org.freedesktop.login1.Session Member=Lock",\n',
+          )
+          replace_once(
+              "tests/unit/session/test_logind_lock.py",
+              "calls: list[tuple[str, ...]] = field(default_factory=list, init=False)",
+              "calls: list[tuple[str, ...]] = field(\n        default_factory=lambda: list[tuple[str, ...]](), init=False\n    )",
+          )
+          replace_once(
+              "tests/unit/session/test_session_safety.py",
+              "calls: list[tuple[bool, TransitionReason]] = field(default_factory=list, init=False)",
+              "calls: list[tuple[bool, TransitionReason]] = field(\n        default_factory=lambda: list[tuple[bool, TransitionReason]](), init=False\n    )",
           )
           PY
           uv run --no-sync ruff check --select I001,RUF022 --fix \
