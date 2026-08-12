@@ -1,8 +1,17 @@
 """Command-line entry point for the Local Recall scaffold."""
 
+import asyncio
+import os
+
 import typer
 
 from local_recall import __version__
+from local_recall.session import (
+    EnvironmentSnapshot,
+    GenericXorgMetadataProbe,
+    SessionResolver,
+    render_session_resolution_status,
+)
 
 app = typer.Typer(
     name="local-recall",
@@ -20,3 +29,17 @@ def main() -> None:
 def version() -> None:
     """Print the installed Local Recall version."""
     typer.echo(__version__)
+
+
+@app.command()
+def status() -> None:
+    """Print the sanitized desktop-session strategy status."""
+    generic_xorg_probe = GenericXorgMetadataProbe()
+    resolver = SessionResolver((), generic_xorg_probe=generic_xorg_probe)
+    resolution = asyncio.run(
+        resolver.resolve(
+            EnvironmentSnapshot.from_mapping(os.environ),
+            (generic_xorg_probe.source_id,),
+        )
+    )
+    typer.echo(render_session_resolution_status(resolution))
