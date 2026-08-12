@@ -31,7 +31,7 @@ jobs:
       - name: Install locked dependencies
         run: ./scripts/bootstrap
       - name: Check formatting
-        run: uv run --no-sync ruff format --check .
+        run: uv run --no-sync ruff format --check --diff .
       - name: Check Python lint
         run: uv run --no-sync ruff check .
       - name: Check shell scripts
