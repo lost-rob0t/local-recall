@@ -51,6 +51,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          mv tests/security/test_session_safety.py tests/security/test_session_safety_security.py
           python - <<'PY'
           from pathlib import Path
 
