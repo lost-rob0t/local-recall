@@ -115,7 +115,7 @@ def test_effective_configuration_hides_key_references() -> None:
             "schema_version": 1,
             "profile": "local-only",
             "capture": {"enabled": True},
-            "metadata": {"enabled_sources": ["generic-xorg"]},
+            "metadata": {"enabled_sources": ["xorg-generic"]},
             "encryption": {
                 "provider_id": "keyring",
                 "key_reference": {
@@ -170,3 +170,18 @@ def test_toml_loader_reads_versioned_config(tmp_path: Path) -> None:
 
     assert loaded.configuration.profile.value == "local-only"
     assert loaded.source == str(path)
+
+
+def test_loader_accepts_independent_window_title_setting() -> None:
+    loaded = load_configuration_mapping(
+        {
+            "schema_version": 1,
+            "profile": "local-only",
+            "metadata": {
+                "enabled_sources": ["xorg-generic"],
+                "window_titles_enabled": True,
+            },
+        }
+    )
+
+    assert loaded.configuration.metadata.window_titles_enabled

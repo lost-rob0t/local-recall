@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
+from local_recall.config import MetadataSettings
+from local_recall.domain.capture import MetadataRequest
 from local_recall.domain.frames import OCRBlock, OCRResult, RedactedRecord
+from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.domain.metadata import SourceConfidence
 from local_recall.domain.redaction import PixelRegion
+from local_recall.metadata import GenericXorgMetadataSource, XorgWindowProperties
 from local_recall.pipeline import (
     BoundedCapturePipeline,
     EncryptedStageItem,
@@ -59,6 +66,24 @@ class SyntheticOCRProvider:
                 ),
             ),
         )
+
+
+class SyntheticXorgReader:
+    def __init__(self, snapshot: XorgWindowProperties) -> None:
+        self._snapshot = snapshot
+
+    async def is_available(self) -> bool:
+        return True
+
+    async def active_window_id(self) -> int:
+        return self._snapshot.window_id
+
+    async def window_properties(
+        self, window_id: int, *, include_title: bool
+    ) -> XorgWindowProperties:
+        assert window_id == self._snapshot.window_id
+        assert include_title
+        return self._snapshot
 
 
 class InspectingEncryptionProcessor:
@@ -180,5 +205,65 @@ def test_redaction_failure_rejects_record_without_storage_or_content_leak() -> N
         assert fault_sink.events[0].stage is PipelineStage.ANALYZED
         assert marker not in str(fault_sink.events[0])
         assert marker not in repr(fault_sink.events[0])
+    finally:
+        pipeline.close()
+
+
+def test_xorg_title_and_application_cross_redaction_before_persistence() -> None:
+    marker = "password=" + "synthetic-metadata-secret"
+    observed_at = datetime(2026, 8, 12, tzinfo=UTC)
+    source = GenericXorgMetadataSource(
+        MetadataSettings(window_titles_enabled=True),
+        reader=SyntheticXorgReader(
+            XorgWindowProperties(
+                window_id=0x2A00007,
+                application=marker,
+                title=marker,
+            )
+        ),
+        now=lambda: observed_at,
+    )
+    context = asyncio.run(
+        source.collect(
+            MetadataRequest(
+                job_id=uuid4(),
+                generation=CaptureGeneration(1),
+                deadline_monotonic_ns=time.monotonic_ns() + 1_000_000_000,
+            )
+        )
+    )
+    record_id = uuid4()
+    frame = gray_frame(
+        width=4,
+        height=1,
+        pixels=b"safe",
+        frame_id=record_id,
+        context=context,
+    )
+    raw_frames = tuple(bytearray(value) for value in encode_raw_frame(frame))
+    gate, _ = recording_gate()
+    encryption = InspectingEncryptionProcessor()
+    sink = RecordingSink()
+    pipeline = BoundedCapturePipeline(
+        gate=gate,
+        raw_processor=LocalOCRStageProcessor(SyntheticOCRProvider("safe", PixelRegion(0, 0, 4, 1))),
+        analysis_processor=PrePersistenceRedactionStageProcessor(DeterministicRedactionPolicy()),
+        redaction_processor=encryption,
+        sink=sink,
+        fault_sink=RecordingFaultSink(),
+    )
+
+    try:
+        assert (
+            pipeline.submit_raw(record_id=record_id, frames=raw_frames).status
+            is SubmissionStatus.ACCEPTED
+        )
+        assert sink.event.wait(2)
+        assert encryption.record is not None
+        assert encryption.record.frame.metadata.get("application") is None
+        assert encryption.record.frame.metadata.get("window.title") is None
+        assert encryption.record.frame.metadata.get("window.id") == 0x2A00007
+        assert marker not in repr(encryption.record)
+        assert sink.items[0].frames == (b"synthetic-ciphertext",)
     finally:
         pipeline.close()

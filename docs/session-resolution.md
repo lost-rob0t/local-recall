@@ -36,11 +36,82 @@ Every probe has a finite deadline. Timeout, exception, source-identity mismatch,
 
 The built-in probe seams are:
 
-- `xorg-generic`: baseline application and window-title capability on a confirmed Xorg session;
+- `xorg-generic`: generic EWMH active-window collection on a confirmed Xorg session;
 - `qtile`: application, window-title, and workspace capability after a Qtile-specific health check;
 - `activitywatch`: application, activity, and idle capability after a local ActivityWatch health check.
 
-Issues #14, #15, and #16 implement the corresponding metadata collectors and concrete health adapters. Issue #13 only defines detection, probing, selection, and composition.
+Issue #14 implements the generic Xorg collector and its content-free executable health check.
+Issues #15 and #16 implement the Qtile and ActivityWatch collectors. Issue #13 defines
+detection, probing, selection, and composition.
+
+## Generic Xorg collection
+
+`GenericXorgMetadataSource` implements the backend-neutral `MetadataSource` port with the fixed
+source identifier `xorg-generic`. Xorg types and command output remain inside its adapter
+boundary. The source emits the following normalized fields in lexical order when available:
+
+| Field | Value | Availability | Confidence |
+|---|---|---|---:|
+| `application` | normalized second `WM_CLASS` component, falling back to the first | optional | 0.90 |
+| `window.height` | positive client-window height | optional with `xwininfo` | 0.95 |
+| `window.id` | validated 32-bit nonzero EWMH window identifier | required | 1.00 |
+| `window.title` | `_NET_WM_NAME`, falling back to `WM_NAME` | optional and configuration-gated | 0.90 |
+| `window.width` | positive client-window width | optional with `xwininfo` | 0.95 |
+| `window.x` | signed root-relative X coordinate | optional with `xwininfo` | 0.95 |
+| `window.y` | signed root-relative Y coordinate | optional with `xwininfo` | 0.95 |
+| `workspace` | `_NET_WM_DESKTOP` cardinal | optional | 0.90 |
+
+Every emitted field has one `MetadataProvenance` entry with source `xorg-generic`, adapter
+revision `ewmh-xprop-v1`, the collection's single timezone-aware observation timestamp, and the
+confidence shown above. Missing optional properties are omitted rather than represented through
+duplicate aliases or sentinel strings. A non-empty `MetadataRequest.requested_fields` further
+minimizes output; an unrequested title is not queried even when title collection is enabled.
+
+Window titles are independently controlled by `metadata.window_titles_enabled` and default to
+disabled. When disabled, the adapter excludes `_NET_WM_NAME` and `WM_NAME` from the reviewed
+property query and the source cannot emit `window.title`. Titles can contain sensitive document
+or account context, so enabling them should be paired with narrow capture rules. They remain raw,
+in-memory analyzed-stage metadata until the existing deterministic redaction policy either drops
+or approves each field. The source has no storage or network capability.
+
+### Focus and window lifetime policy
+
+Each attempt reads `_NET_ACTIVE_WINDOW`, queries only that validated window, then reads
+`_NET_ACTIVE_WINDOW` again. A changed or cleared focus discards the complete attempt; fields from
+different windows are never composed. One retry is allowed by default, for two total attempts.
+Repeated churn returns the fixed transient reason `focus-changed`.
+
+A window destroyed after focus resolution produces `window-unavailable`; the source may retry
+within the same fixed budget and otherwise returns that sanitized reason. A missing or zero
+`_NET_ACTIVE_WINDOW` produces `no-active-window`. Malformed/oversized identifiers, responses for
+the wrong window, incomplete geometry, malformed properties, timeouts, and unavailable
+executables have distinct fixed reason codes. Exceptions and process output are never retained in
+the public failure or status types.
+
+### Reviewed command boundary and limits
+
+The production reader deliberately uses the ubiquitous X11 command-line tools instead of adding
+a Python X11 binding whose Python 3.14 support and packaging would widen the dependency surface.
+It resolves the fixed executable identities `xprop` and optional `xwininfo` once, invokes only
+reviewed argument vectors with `create_subprocess_exec`, and never uses a shell. The window
+identifier is parsed as a nonzero 32-bit integer and reformatted by the adapter before it can
+become an argument.
+
+`xprop` is required for the source health check. `xwininfo` is optional and adds geometry without
+making application/title/workspace collection unavailable on minimal installations. Every
+invocation has a 0.5-second timeout and a 64-KiB limit on each output stream. The runner kills the
+process on timeout or limit violation and discards bounded stdout/stderr after strict parsing.
+Status probing checks only executable availability; it never reads root/window properties or
+renders active-window content.
+
+Automated tests inject synthetic readers and runners. They do not inspect the developer desktop,
+depend on installed X11 tools, or publish raw adapter output. A manual smoke test may report only
+success/failure, source ID, normalized field names/count, a fixed reason code, and whether title
+collection was enabled.
+
+Generic collection requires an EWMH-compatible Xorg window manager. Non-EWMH managers may report
+`no-active-window` or omit optional fields. Wayland collection remains unsupported; an XWayland
+`DISPLAY` never causes a Wayland session to be treated as Xorg.
 
 ## Selection policy
 
