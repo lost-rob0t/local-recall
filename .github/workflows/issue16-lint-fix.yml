@@ -40,7 +40,7 @@ jobs:
               1,
           )
           text = text.replace(
-              "                try:\n                    await writer.wait_closed()\n                except (OSError, ConnectionError):\n                    pass\n",
+              "                try:\n                    await writer.wait_closed()\n                except OSError, ConnectionError:\n                    pass\n",
               "                with suppress(OSError, ConnectionError):\n                    await writer.wait_closed()\n",
           )
           http.write_text(text)
