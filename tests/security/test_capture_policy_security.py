@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from local_recall.audit.errors import AuditFailure
 from local_recall.audit.models import (
     AuditAction,
     AuditCategory,
@@ -14,6 +15,7 @@ from local_recall.audit.models import (
     AuditReasonCode,
 )
 from local_recall.config import (
+    ConfigurationLoadError,
     ConfigurationManager,
     LocalRecallConfig,
     PrivacyProfile,
@@ -120,7 +122,7 @@ def test_effective_configuration_hides_policy_matcher_values() -> None:
 
 def test_invalid_policy_config_error_does_not_echo_secret_input() -> None:
     secret = "FakePassword-DoNotLeak-47!"
-    with pytest.raises(Exception) as raised:
+    with pytest.raises(ConfigurationLoadError) as raised:
         load_configuration_mapping(
             {
                 "schema_version": 1,
@@ -139,7 +141,7 @@ def test_invalid_policy_config_error_does_not_echo_secret_input() -> None:
 
 
 def test_extra_policy_configuration_fields_are_rejected() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ConfigurationLoadError):
         load_configuration_mapping(
             {
                 "schema_version": 1,
@@ -198,7 +200,7 @@ def test_audit_event_cannot_carry_policy_match_content() -> None:
     for secret in SECRETS:
         assert secret not in rendered
 
-    with pytest.raises(Exception):
+    with pytest.raises(AuditFailure):
         AuditEvent(
             category=AuditCategory.POLICY,
             action=AuditAction.POLICY_DECISION,
