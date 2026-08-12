@@ -46,9 +46,7 @@ def inspect_effective_configuration(configuration: LocalRecallConfig) -> dict[st
                 "domain": "<configured>" if rule.domain is not None else None,
                 "include_subdomains": rule.include_subdomains,
                 "full_screen": rule.full_screen,
-                "metadata_source": (
-                    "<configured>" if rule.metadata_source is not None else None
-                ),
+                "metadata_source": "<configured>" if rule.metadata_source is not None else None,
                 "time_window": "<configured>" if rule.time_window is not None else None,
                 "reason_code": rule.reason_code,
             }
@@ -58,9 +56,7 @@ def inspect_effective_configuration(configuration: LocalRecallConfig) -> dict[st
         "timezone": configuration.rules.timezone,
         "max_metadata_age_seconds": configuration.rules.max_metadata_age_seconds,
         "rules": rendered_rules,
-        "sensitive_applications": (
-            f"<configured:{len(configuration.rules.sensitive_applications)}>"
-        ),
+        "sensitive_applications": f"<configured:{len(configuration.rules.sensitive_applications)}>",
         "sensitive_workspaces": f"<configured:{len(configuration.rules.sensitive_workspaces)}>",
     }
     return result
