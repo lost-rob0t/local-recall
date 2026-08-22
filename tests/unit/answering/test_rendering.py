@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from local_recall.activity.clustering import ActivityCluster
+from local_recall.answering.rendering import render_answer
 from local_recall.answering.models import (
     AnswerCitation,
     AnswerClaim,
@@ -9,7 +10,6 @@ from local_recall.answering.models import (
     AnswerMode,
     CitedAnswer,
 )
-from local_recall.answering.rendering import render_answer
 
 RECORD_A = UUID("00000000-0000-0000-0000-000000000401")
 RECORD_B = UUID("00000000-0000-0000-0000-000000000402")
