@@ -46,8 +46,8 @@ def test_answering_source_has_no_capture_lifecycle_storage_or_remote_transport_i
 
 
 def test_answering_reprs_do_not_expose_question_or_generated_claim_text() -> None:
-    secret_question = "What was I doing Saturday with PRIVATE-QUESTION-9f2c?"
-    secret_claim = "PRIVATE-CLAIM-6d31"
+    secret_question = "What was I doing Saturday with PRIVATE-QUESTION-9f2c?"  # pragma: allowlist secret
+    secret_claim = "PRIVATE-CLAIM-6d31"  # pragma: allowlist secret
     planned = plan_answer_query(
         secret_question,
         now=datetime(2026, 8, 24, 15, 30, tzinfo=UTC),
