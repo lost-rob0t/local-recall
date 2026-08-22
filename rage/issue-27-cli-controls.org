@@ -79,7 +79,42 @@
 - Accepted RED: exact head =6735573ed91180685bc740aebd0bdcdfec1c2f86=, CI run =32594272226=. Formatting, Ruff, ShellCheck, and failure-propagation passed. Strict Pyright then failed specifically because =local_recall.cli_contract= did not exist, with the expected cascade of unknown contract types. No production CLI-contract code existed at this head.
 
 ** GREEN
-Pending production implementation after accepted RED.
+- Implemented the closed typed CLI contract, narrow =DaemonClient= service boundary, stable exit semantics, daemon-authoritative lifecycle rendering, cited query output, explicit time filters, typed diagnostics, local =config validate=, and static completion behavior.
+- The default client intentionally returns the sanitized =daemon-unavailable= outcome until issue #29 provides the authenticated owner-only daemon transport; #27 does not create an unauthenticated interim socket.
+
+* RAGE Iteration 2 - acceptance audit hardening
+** Finding: malformed command payload grammar
+- Acceptance audit found that typed requests could still encode nonsensical command/payload combinations: =ask=/=search= without usable query text and arbitrary query text attached to non-text commands.
+- Test-only head =bf664b196a38fe95f9dbbe3d64ae555aafc772c3=, CI run =32598318258=, is accepted RED evidence. Formatting, Ruff, ShellCheck, strict Pyright, and failure-propagation passed; unit tests then failed exactly 13 new malformed-payload assertions while 640 tests passed.
+- Production head =39f5cdc3e72f56fe30daa0ecd61f40ffbb349ff5= added a closed command/query grammar: =ask=/=search= require bounded nonblank text, and every other command rejects unexpected query text. CI run =32598398084= completed green across both Ubuntu matrices, canonical repository gate, and failure-propagation.
+
+** Finding: lifecycle success without authoritative state
+- Acceptance audit then found that =start=, =pause=, =resume=, =status=, and privacy controls could accept a content-free =SUCCESS= response, violating the daemon-authoritative lifecycle invariant.
+- Head =9dc1df89bec3ff5d02d7fcbea28ff323b100496d=, CI run =32598471027=, was rejected as RED evidence because formatting failed before behavior tests.
+- Corrected test-only head =d92bbc78be32987d73b8e903e9f79794fce80669=, CI run =32598535635=, is accepted RED evidence. Formatting, Ruff, ShellCheck, strict Pyright, and failure-propagation passed; unit tests collected 660 and failed exactly the six new lifecycle-state assertions, with 654 passing. The concurrent STOP/PAUSE regression passed at this RED head.
+- Production change =a7570a14c5d200a6520615b1b35aa722ac55cf16= requires authoritative lifecycle state on every successful lifecycle/privacy/status response before the CLI can return success; =stop= remains stricter and additionally requires =off=.
+
+** Security and documentation completion
+- Added structural security coverage proving =cli.py=, =cli_contract.py=, and =cli_service.py= do not import capture, lifecycle, storage, retrieval, answering, provider, or routing implementations.
+- Added seeded query-content coverage proving payload text cannot enter routing metadata or object representations.
+- Added =docs/cli.md= and README linkage documenting command surface, authoritative-state semantics, typed output, exit codes, privacy properties, and the explicit #29 IPC ownership boundary.
+
+** Pre-ledger final GREEN
+- Exact implementation/documentation head =aef29c46d1751ebfe1bfb6c383fe8ec38ead1856= passed CI run =32598664211=.
+- Ubuntu 24.04 evidence: formatting clean; Ruff clean; ShellCheck clean; strict Pyright =0 errors, 0 warnings=; 660 unit tests passed; 6 contract tests passed; 37 integration tests passed; 59 security tests passed; repository security/policy scans passed.
+- Ubuntu 22.04, canonical =./scripts/check=, and failure-propagation jobs also passed on the same exact head.
+- =nix flake check= could not be executed by this worker runtime because no Nix executable/runtime is available. No Nix result is claimed. The repository's current CI/canonical gate remains the observed executable merge gate for this issue; NixOS packaging/release behavior is separately owned by later issue #40.
+
+* Acceptance mapping
+- Idempotent control / meaningful exits: CLI sends one typed request, performs no client retry, and maps closed outcomes to stable process exit codes.
+- Stop confirmation: successful =stop= requires authoritative lifecycle state =off=; missing state or any other state is non-zero.
+- Cited question output: =ask= transports bounded question text and renders typed answer text plus opaque record/timestamp citations; machine JSON is supported.
+- Unavailable daemon: deterministic =daemon-unavailable= path exits 3 without exception/path leakage.
+- Locked key/session: typed =locked= outcome exits 4 with sanitized reason code.
+- Concurrent controls: deterministic concurrent STOP/PAUSE test proves independent request IDs and preserves urgent priority on STOP without client-side serialization.
+- Required command surface: lifecycle/privacy, =ask=/=timeline=/=search=, =config validate=, =providers=, =health=, and =storage stats= are exposed.
+- Completion privacy: static shell completion constructs no daemon client and exposes no captured/history values.
+- IPC/authentication boundary: #27 defines and tests the client contract; #29 remains the explicit owner of authenticated owner-only IPC/server implementation.
 
 * Hard invariants
 - The CLI must not become a second lifecycle, policy, retrieval, or provider authority.
