@@ -168,7 +168,20 @@ gpg_timeout_seconds = 10.0
 
 `fallback_provider_id = "gpg"` requires `gpg_recipient`. A recipient without an explicit GPG fallback is rejected, and the primary and fallback provider IDs must differ. The recipient is hidden from effective-configuration inspection. GPG has no environment-variable override because recipient selection is security-sensitive configuration.
 
-## Capture pipeline bounds
+## Adaptive capture and pipeline bounds
+
+Adaptive capture is composed directly from the validated `[capture]` settings. `cadence_seconds`
+sets the base interval and `change_threshold` sets the maximum 64-bit perceptual-hash Hamming
+fraction that may be coalesced as a near duplicate. Active-window/workspace changes use a fixed
+250 ms debounce so rapid focus churn replaces one bounded pending trigger rather than creating an
+event queue.
+
+The adaptive layer never grants capture permission and owns no bulk queue. It runs only after the
+existing lifecycle/policy boundary has produced an approved capture request. A due frame is
+fingerprinted before OCR/model work; a near duplicate in the same capture generation,
+configuration revision, policy revision, and normalized application/workspace/window context is
+coalesced and not admitted downstream. Any of those privacy-context changes force a fresh
+observation even when the pixels are identical.
 
 The bounded in-memory pipeline reads these capture settings:
 
@@ -176,7 +189,7 @@ The bounded in-memory pipeline reads these capture settings:
 - `max_queue_items` controls each later stage edge and defaults to `32`;
 - `overload_policy` is `drop-newest` or `coalesce-latest`.
 
-Both queue limits are validated in the range 1–256. `coalesce-latest` permits at most one additional raw item in memory; it does not create a general-purpose queue. These fields are additive version-1 settings, so older version-1 files retain safe defaults without migration.
+Both queue limits are validated in the range 1–256. `coalesce-latest` permits at most one additional raw item in memory; it does not create a general-purpose queue. When the existing pipeline reports a dropped or coalesced submission, adaptive cadence backs off by a bounded multiplier; accepted submissions decay it toward the configured base cadence. No second queue or pressure metric is introduced. These fields are additive version-1 settings, so older version-1 files retain safe defaults without migration.
 
 ## OCR and redaction
 
@@ -217,72 +230,3 @@ A missing requirement rejects the configuration before capture can start.
 ## Environment overrides
 
 Only the following non-secret overrides are accepted:
-
-| Variable | Field |
-|---|---|
-| `LOCAL_RECALL_PROFILE` | `profile` |
-| `LOCAL_RECALL_CAPTURE_ENABLED` | `capture.enabled` |
-| `LOCAL_RECALL_CAPTURE_CADENCE_SECONDS` | `capture.cadence_seconds` |
-| `LOCAL_RECALL_CAPTURE_SCREENSHOTS_ENABLED` | `capture.screenshots_enabled` |
-| `LOCAL_RECALL_RETENTION_MAX_AGE_DAYS` | `retention.max_age_days` |
-| `LOCAL_RECALL_RETENTION_MAX_BYTES` | `retention.max_bytes` |
-| `LOCAL_RECALL_MODELS_GENERATION_PROVIDER` | `models.generation_provider` |
-| `LOCAL_RECALL_MODELS_EMBEDDING_PROVIDER` | `models.embedding_provider` |
-| `LOCAL_RECALL_MODELS_REMOTE_ENABLED` | `models.remote_enabled` |
-| `LOCAL_RECALL_ENCRYPTION_PROVIDER` | `encryption.provider_id` |
-| `LOCAL_RECALL_STORAGE_BACKEND` | `storage.backend_id` |
-
-Unknown variables beginning with `LOCAL_RECALL_` reject the configuration. Secret and credential values have no environment override. `LOCAL_RECALL_CONFIG` may identify the configuration path and is not treated as a field override.
-
-## Atomic reload and failure behavior
-
-A reload follows this order:
-
-1. Read the candidate without changing the active snapshot.
-2. Parse TOML.
-3. Migrate the schema in memory.
-4. Apply allowlisted non-secret environment overrides.
-5. Validate the entire effective configuration.
-6. Compute a deterministic revision digest.
-7. Atomically replace the active immutable snapshot.
-
-If any step fails, the candidate is never partially visible. The manager atomically installs the built-in capture-disabled safe snapshot. This deliberately stops an active capture configuration rather than continuing under a stale configuration after an invalid reload.
-
-Error messages contain field locations and validation reasons but omit rejected input values.
-
-## Schema migration
-
-The loader requires `schema_version`.
-
-### Version 0 to version 1
-
-The migration is deterministic:
-
-- `privacy_mode` becomes `profile`;
-- `recording_enabled` becomes `capture.enabled`;
-- `interval_seconds` becomes `capture.cadence_seconds`.
-
-If old and new names both exist, migration rejects the file as ambiguous. Migrated configuration is then validated against the complete version 1 security rules. A migrated file that enabled capture without encryption or storage therefore fails closed.
-
-Versions newer than the runtime supports are rejected. Migrations never silently discard unknown fields; the final model forbids extras.
-
-
-## ActivityWatch metadata
-
-Optional ActivityWatch enrichment is configured under `[metadata.activitywatch]`. The endpoint is restricted to a loopback HTTP origin, URL capture defaults to `disabled`, and the only enabled URL mode is `domain-only`. Window-title capture remains controlled independently by `metadata.window_titles_enabled`. See [ActivityWatch metadata](activitywatch.md) for bucket discovery, correlation, transport bounds, privacy, fallback, and sanitized troubleshooting.
-
-## Session idle capture settings
-
-Idle pause is additive and disabled by default. Lock-screen protection is not configurable off. Example:
-
-```toml
-[capture.idle]
-enabled = true
-pause_capture = true
-threshold_seconds = 180.0
-resume_behavior = "immediate"
-active_grace_seconds = 0.0
-max_observation_age_seconds = 5.0
-```
-
-See [session-safety.md](session-safety.md) for reload, precedence, and fail-closed behavior.
