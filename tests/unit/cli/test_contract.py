@@ -77,6 +77,7 @@ def test_cited_query_payload_is_typed_and_hidden_from_repr() -> None:
     response = CliResponse.success(request_id="req-1", query_payload=payload)
 
     assert response.query_payload == payload
+    assert response.query_payload is not None
     assert response.query_payload.citations == (citation,)
     assert marker not in repr(payload)
     assert marker not in repr(response)
