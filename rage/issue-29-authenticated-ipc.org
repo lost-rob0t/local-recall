@@ -1,0 +1,47 @@
+#+title: RAGE issue 29 — authenticated local daemon API and IPC
+
+* Consumption
+- Issue: #29 = [P1] Implement authenticated local daemon API and IPC
+- Immutable starting main: =73f0d09d006f5d7e565be1593652739774dc3fed=
+- Consumed from branch: =agent/issue-29-authenticated-ipc=
+- Dependencies: #7, #12, #27
+- Dependency state at consumption: closed/completed by current main; no open pull request or unfinished remote transaction observed.
+
+* Acceptance criteria
+1. Another local user cannot control or query the daemon.
+2. Socket permissions and peer identity are validated at startup and per connection where supported.
+3. Fuzzed malformed requests cannot crash the daemon or leak captured/private content.
+4. CLI and recording-status indicator use the authenticated local API rather than direct daemon-internal imports.
+
+* Issue requirements
+- Prefer a Unix-domain socket with owner-only permissions on Linux.
+- Authenticate clients and authorize control, query, export, and deletion operations separately where useful.
+- Bind no TCP listener by default.
+- Bound request size, concurrency, and deadlines/timeouts.
+- Prioritize stop/privacy commands over query/model work.
+- Sanitize all errors and audit security-relevant requests.
+- Keep a transport abstraction so a loopback transport may be added deliberately later.
+
+* Hard project invariants carried into this issue
+- Local-first; no silent remote fallback.
+- IPC must not bypass lifecycle, policy, privacy-mode, lock-state, retrieval, redaction, provider-egress, storage, or audit authorities.
+- Content-bearing request/response data must not enter sanitized status, errors, or audit records.
+- No plaintext screenshot/OCR/decrypted-working-set persistence is introduced by IPC.
+- Stop/privacy controls must fail closed and must not be starved behind ordinary query/model work.
+- No TCP listener is introduced by default.
+
+* RAGE iteration 1
+** Research
+Pending.
+
+** Evidence-derived design
+Pending.
+
+** RED
+Pending.
+
+** GREEN
+Pending.
+
+** Verification gates
+Pending.
