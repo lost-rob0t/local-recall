@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
 from local_recall.domain.crypto import EncryptedRecordEnvelope
-from local_recall.domain.frames import RedactedRecord
+from local_recall.domain.frames import PixelFormat, RedactedFrame, RedactedRecord
+from local_recall.domain.lifecycle import CaptureGeneration
+from local_recall.domain.metadata import ContextMetadata
 from local_recall.ports.encryption import DecryptionRequest, EncryptionRequest
 from local_recall.retrieval.service import RetrievalQuery, RetrievalService
 from local_recall.retrieval.time import ResolvedTimeRange
 
-from .test_metadata_filters import Policy, Storage, _record
+from .test_metadata_filters import Policy, Storage
 
 
 class CancellingEncryption:
@@ -30,9 +32,28 @@ class CancellingEncryption:
         raise AssertionError("retrieval must never encrypt")
 
 
+def _record() -> RedactedRecord:
+    captured_at = datetime(2026, 8, 22, 11, 0, tzinfo=UTC)
+    frame = RedactedFrame(
+        frame_id=uuid4(),
+        generation=CaptureGeneration(1),
+        captured_at=captured_at,
+        width=1,
+        height=1,
+        stride=3,
+        pixel_format=PixelFormat.RGB8,
+        pixels=b"PIX",
+        metadata=ContextMetadata(captured_at, ()),
+        ocr_text=("redacted activity",),
+        findings=(),
+        policy_revision="redaction-policy-v1",
+    )
+    return RedactedRecord(record_id=uuid4(), frame=frame, created_at=captured_at)
+
+
 def test_cancellation_propagates_without_partial_batch() -> None:
-    first = _record("max", 1)
-    second = _record("columns", 2)
+    first = _record()
+    second = _record()
     encryption = CancellingEncryption()
     service = RetrievalService(
         storage=Storage((first, second)),
