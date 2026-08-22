@@ -118,3 +118,84 @@ No persistent-data migration is intended. Frame/provenance domain types may gain
 - canonical =./scripts/check= green;
 - =nix flake check= when the flake gate applies;
 - exact-head GitHub Actions green before merge.
+
+* Iteration 2 - XWD stdout capture with bounded process isolation
+:PROPERTIES:
+:ISSUE: 19
+:START_COMMIT: e5c6ac6cb4fc70b594fb51d5dcef40baca338560
+:WORK_BRANCH: agent/issue-19-xorg-capture-rage
+:SUPERSEDES: Iteration 1 native Xlib acquisition choice
+:END:
+
+** Why Iteration 1 was superseded
+Further adversarial research changed the native-acquisition decision. The issue does not require an in-process Xlib binding; it requires bounded, memory-only Xorg capture with no plaintext artifact. X.Org's =xwd= utility already provides the root-window dump on standard output by default, and the XWD wire/file header is a small specified structure whose integer header fields are stored MSB-first. Running a fixed =xwd -root -silent= child behind a hard process deadline gives a stronger kill boundary than a Python FFI call into a potentially blocked Xlib request.
+
+The original rejection of =xwd= was therefore too broad. The relevant danger is uncontrolled shell/file/format behavior, not the mere fact that an executable is used. A fixed absolute executable, no shell, stdout-only capture, strict XWD parser, output cap, sanitized errors, and child termination on timeout/cancel satisfy the privacy and boundedness invariants more directly.
+
+No Iteration 1 code was preserved merely to save sunk cost. The project-owned =ApprovedCaptureRequest=, generation, =RawFrame= provenance, trusted in-memory crop, and downstream policy/redaction boundaries remain valid because they are independent of native acquisition.
+
+** External evidence that changed the design
+- X.Org =xwd= documentation: output is standard output when no output file is given; =-root= selects the root window; =-silent= suppresses the bell. This allows a zero-tempfile capture path.
+- XWD =XWDFile.h=: the fixed header is 25 CARD32 fields / 100 bytes, file version 7, with explicit pixmap format, dimensions, byte order, bits-per-pixel, bytes-per-line, visual class, RGB masks, color-table count, and window geometry. Header integer fields are MSB-first. The parser can therefore reject unsupported layouts before allocating/copying normalized pixels.
+- =xrandr --listmonitors= provides monitor rectangles in the same X root coordinate space. Reading monitor layout before and after =xwd= allows topology changes during capture to fail closed rather than attaching stale geometry.
+
+** Iteration 2 chosen design
+1. =XorgCaptureBackend= remains the only public pixel-capture adapter and still requires =ApprovedCaptureRequest=.
+2. =XwdSnapshotReader= reads monitor topology, obtains one root XWD byte stream, reads topology again, rejects changes, strictly validates/decodes the XWD stream, and emits canonical packed RGB8.
+3. =FixedXwdNativeRunner= issues only two command identities: =xwd -root -silent= and =xrandr --listmonitors=. Callers cannot interpolate captured values into arguments.
+4. =BoundedNativeCommandExecutor= is isolated from capture parsing. It maps fixed command IDs to absolute executable paths, supplies a minimal X11 environment, bounds stdout/stderr, derives timeout from the immutable monotonic request deadline, and kills the child on timeout, output overflow, cancellation, or broken pipe state.
+5. No native stdout/stderr, executable path, DISPLAY value, XAUTHORITY value, pixels, or command output may appear in public errors/reprs.
+6. Focused-window mode remains root capture followed by a trusted in-memory crop. It never selects a second arbitrary drawable.
+
+** New failure/race analysis
+- =xwd= exits non-zero or display disappears -> sanitized =display-unavailable=; no frame.
+- XWD malformed, truncated, oversized, unsupported visual/pixmap format, invalid masks/stride/dimensions -> =capture-format-invalid= before =RawFrame=.
+- monitor topology differs before/after root dump -> =display-changed=; no frame.
+- deadline already expired -> fail before process creation.
+- deadline expires while helper is active -> kill child, drain/cancel pipe tasks, fixed =capture-deadline-expired=.
+- caller cancellation while helper is active -> kill child, clean pipe tasks, re-raise cancellation; no late result.
+- stdout/stderr exceeds bound -> kill child and fixed =capture-output-too-large=; bytes never enter errors.
+- hostile process environment such as =LD_PRELOAD= or proxy variables -> excluded from the helper environment; only the minimum X11/session values plus fixed C locale are retained.
+
+** Iteration 2 TDD ledger
+*** RED 3 - XWD reader contract
+- Test-only head =1a252c0ae5d226e42dd7236040482c04ad6a46db=.
+- Actions run =32560048617=.
+- Formatting, Ruff, and ShellCheck passed; strict Pyright then failed because =XwdSnapshotReader= did not exist. The new tests required in-memory TrueColor decoding, exact RGB8 output, monitor topology recheck, and malformed/oversized dump rejection.
+- This is accepted RED evidence. No production reader existed.
+
+*** GREEN 3 - strict XWD reader
+- Implementation head =68facdbb932d00c28ece523c033382f31e539f0d= implemented strict XWD parsing and topology verification but failed Ruff formatting. That head is explicitly rejected as GREEN evidence.
+- Mechanical format head =ff46e89160db241bc67279e4c702fbb4ac1a7af5=.
+- Actions run =32560201133= passed Ubuntu 22.04, Ubuntu 24.04, failure-propagation, and the canonical repository gate on that exact head. This is accepted GREEN evidence for the reader slice.
+
+*** RED 4 - fixed native command seam
+- Initial test head =457427d842c623512c2e1e8ecf102fc8a5c36c1f= failed formatting and is rejected as RED evidence.
+- Formatted test-only head =c7874d195c583917c7610e1a2efdf1a69384557c=; Actions run =32560328533=.
+- Formatting, Ruff, and ShellCheck passed; strict Pyright failed only on the deliberately missing =NativeCommandResult=, =FixedXwdNativeRunner=, and public output-bound constants. Tests require exact fixed command vectors, negative-origin xrandr parsing, sanitized nonzero failures, and malformed monitor rejection.
+- This is accepted RED evidence.
+
+*** GREEN 4 - fixed xwd/xrandr runner
+- Implementation head =49b47ed2a04ceb85e4b708516252908aaefb2e3b= added the fixed runner and parser but failed only Ruff's Python 3.14 exception-group formatting style. It is rejected as GREEN evidence.
+- Mechanical format head =6a6c5e10374c9fd1e483671d3f31bafda3a042b0= then exposed a strict-Pyright issue in the fake executor fixture, not production behavior.
+- Fixture-only correction head =c1107e1cd9f5476d9fcbba2ebea23e10fa474d51= made the fixture explicitly typed. The next test slice superseded that head before a final all-green run completed, so it is not claimed as a final GREEN checkpoint.
+
+*** RED 5 - bounded production subprocess executor
+- Test-only head =3b28753f55238c64ac2be337c2cd6d788983e594=; Actions run =32560603744=.
+- Canonical formatting and Ruff passed. Strict Pyright failed because =BoundedNativeCommandExecutor= did not yet exist; the resulting unknown-member errors all descend from that absent production type.
+- The tests require absolute executable allowlisting, a minimal environment that strips =LD_PRELOAD=/proxy variables, failure before spawn for unknown commands/expired deadlines, output-limit child kill, deadline child kill, and cancellation child kill.
+- This is accepted RED evidence.
+
+*** GREEN 5 - in progress
+- Production process-isolation module was added at =src/local_recall/capture/native.py= on head =570ff749e7a990c70f0b946681de46654a1d290d= and the executor test was adjusted to target that isolated module on head =13ddf95210bc9d161ae74a24657f4c61a1b50dea=.
+- Exact-head Actions verification is pending. Do not treat this slice as GREEN until formatting, strict typing, behavioral tests, security checks, failure propagation, and canonical gate all pass on the same head.
+
+** Remaining issue gate after Iteration 2 core work
+- finish exact-head executor GREEN and repair only evidence-backed defects;
+- provide production executable discovery/composition without shell interpolation;
+- add integration proof from approved Xorg capture into the existing in-memory redaction pipeline;
+- add structural/security regressions proving no capture module can create plaintext screenshot files and private native output is sanitized;
+- prove lifecycle/policy stale-work behavior at the integration boundary, not only the type boundary;
+- document Xorg backend limitations/provenance and operational dependency expectations;
+- run canonical =./scripts/check= and applicable =nix flake check= evidence;
+- re-read issue #19, PR discussion/reviews, complete open backlog, mergeability, and exact-head required checks before any merge.
