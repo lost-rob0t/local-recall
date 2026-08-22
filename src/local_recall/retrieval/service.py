@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
-from local_recall.domain._validation import require_nonempty
+from local_recall.domain._validation import require_aware, require_nonempty
 from local_recall.domain.frames import RedactedRecord
 from local_recall.ports.encryption import DecryptionRequest, EncryptionProvider
 from local_recall.ports.storage import DayRangeQuery, QueryableStorageBackend
@@ -73,13 +73,14 @@ class RetrievalPolicyDecision:
 class RetrievedMetadataProvenance:
     field_name: str
     source_id: str
-    observed_at: object
+    observed_at: datetime
     confidence: float
     adapter_revision: str | None
 
     def __post_init__(self) -> None:
         require_nonempty(self.field_name, "field_name")
         require_nonempty(self.source_id, "source_id")
+        require_aware(self.observed_at, "observed_at")
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError("retrieval provenance confidence is invalid")
 
@@ -87,7 +88,7 @@ class RetrievedMetadataProvenance:
 @dataclass(frozen=True, slots=True, repr=False)
 class RetrievedPassage:
     record_id: UUID
-    captured_at: object
+    captured_at: datetime
     excerpt: str = field(repr=False)
     score: float
     metadata_provenance: tuple[RetrievedMetadataProvenance, ...]
@@ -95,6 +96,7 @@ class RetrievedPassage:
     redaction_finding_count: int
 
     def __post_init__(self) -> None:
+        require_aware(self.captured_at, "captured_at")
         if not 0.0 <= self.score <= 1.0:
             raise ValueError("retrieval score is invalid")
         require_nonempty(self.redaction_policy_revision, "redaction_policy_revision")
@@ -152,11 +154,12 @@ class RetrievalService:
         if not query_decision.allowed:
             return _empty_batch(query, query_decision)
 
-        last_included = query.time_range.end_at - timedelta(microseconds=1)
+        start_utc = query.time_range.start_at.astimezone(UTC)
+        last_included_utc = query.time_range.end_at.astimezone(UTC) - timedelta(microseconds=1)
         candidates = await self._storage.list_candidates(
             DayRangeQuery(
-                start_day=query.time_range.start_at.date(),
-                end_day=last_included.date(),
+                start_day=start_utc.date(),
+                end_day=last_included_utc.date(),
                 limit=query.candidate_limit,
             )
         )
