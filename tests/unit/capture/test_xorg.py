@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import struct
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
@@ -27,6 +28,27 @@ class FakeReader:
             raise self.error
         assert self.snapshot is not None
         return self.snapshot
+
+
+@dataclass
+class FakeNativeRunner:
+    dump: bytes
+    layouts: list[tuple[xorg_capture.XorgMonitor, ...]]
+    dump_calls: int = 0
+    layout_calls: int = 0
+
+    async def capture_root_dump(self, *, deadline_monotonic_ns: int) -> bytes:
+        assert deadline_monotonic_ns > 0
+        self.dump_calls += 1
+        return self.dump
+
+    async def monitor_layout(
+        self, *, deadline_monotonic_ns: int
+    ) -> tuple[xorg_capture.XorgMonitor, ...]:
+        assert deadline_monotonic_ns > 0
+        layout = self.layouts[min(self.layout_calls, len(self.layouts) - 1)]
+        self.layout_calls += 1
+        return layout
 
 
 def _request(
@@ -103,6 +125,49 @@ def _window_metadata(*, source_id: str = "xorg-generic") -> domain.ContextMetada
             domain.ContextField(name="window.width", value=2, provenance=provenance),
             domain.ContextField(name="window.height", value=2, provenance=provenance),
         ),
+    )
+
+
+def _xwd_truecolor_dump(*, width: int = 2, height: int = 1) -> bytes:
+    name = b"root\0"
+    header_size = 100 + len(name)
+    bytes_per_line = width * 4
+    header = struct.pack(
+        ">25I",
+        header_size,
+        7,
+        2,
+        24,
+        width,
+        height,
+        0,
+        0,
+        32,
+        0,
+        32,
+        32,
+        bytes_per_line,
+        4,
+        0x00FF0000,
+        0x0000FF00,
+        0x000000FF,
+        8,
+        256,
+        0,
+        width,
+        height,
+        0,
+        0,
+        0,
+    )
+    pixels = b"\x03\x02\x01\x00\x30\x20\x10\x00" * height
+    return header + name + pixels[: bytes_per_line * height]
+
+
+def _monitor_layout() -> tuple[xorg_capture.XorgMonitor, ...]:
+    return (
+        xorg_capture.XorgMonitor("left", 0, 0, 1, 1, 1.0, 1.0),
+        xorg_capture.XorgMonitor("right", 1, 0, 1, 1, 1.25, 1.25),
     )
 
 
@@ -192,3 +257,43 @@ def test_capture_backend_rejects_unapproved_request_at_runtime() -> None:
 
     with pytest.raises(TypeError, match="approved capture request required"):
         backend.validate_request(cast(domain.ApprovedCaptureRequest, intent))
+
+
+def test_native_xwd_reader_decodes_truecolor_into_memory() -> None:
+    runner = FakeNativeRunner(dump=_xwd_truecolor_dump(), layouts=[_monitor_layout()])
+    reader = xorg_capture.XwdSnapshotReader(runner=runner, now=lambda: NOW)
+
+    snapshot = asyncio.run(reader.capture_root(deadline_monotonic_ns=9_000_000_000))
+
+    assert (snapshot.width, snapshot.height, snapshot.stride) == (2, 1, 6)
+    assert snapshot.pixel_format is domain.PixelFormat.RGB8
+    assert snapshot.pixels == b"\x01\x02\x03\x10\x20\x30"
+    assert snapshot.monitors == _monitor_layout()
+    assert snapshot.backend_revision == "xwd-zpixmap-v1"
+    assert runner.dump_calls == 1
+    assert runner.layout_calls == 2
+
+
+def test_native_xwd_reader_rejects_display_layout_change() -> None:
+    first = _monitor_layout()
+    second = (xorg_capture.XorgMonitor("solo", 0, 0, 2, 1),)
+    runner = FakeNativeRunner(dump=_xwd_truecolor_dump(), layouts=[first, second])
+    reader = xorg_capture.XwdSnapshotReader(runner=runner, now=lambda: NOW)
+
+    with pytest.raises(xorg_capture.XorgCaptureError, match="display-changed"):
+        asyncio.run(reader.capture_root(deadline_monotonic_ns=9_000_000_000))
+
+
+def test_native_xwd_reader_rejects_malformed_or_oversized_dump() -> None:
+    layout = _monitor_layout()
+    malformed = FakeNativeRunner(dump=b"not-an-xwd", layouts=[layout])
+    reader = xorg_capture.XwdSnapshotReader(runner=malformed, now=lambda: NOW)
+    with pytest.raises(xorg_capture.XorgCaptureError, match="capture-format-invalid"):
+        asyncio.run(reader.capture_root(deadline_monotonic_ns=9_000_000_000))
+
+    oversized_header = bytearray(_xwd_truecolor_dump())
+    oversized_header[16:20] = (40_000).to_bytes(4, "big")
+    oversized = FakeNativeRunner(dump=bytes(oversized_header), layouts=[layout])
+    reader = xorg_capture.XwdSnapshotReader(runner=oversized, now=lambda: NOW)
+    with pytest.raises(xorg_capture.XorgCaptureError, match="capture-format-invalid"):
+        asyncio.run(reader.capture_root(deadline_monotonic_ns=9_000_000_000))
