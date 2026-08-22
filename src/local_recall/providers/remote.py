@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Mapping
 from urllib.parse import urlsplit
 
 from local_recall.routing import ApprovedEgressPayload, EgressDataClass
