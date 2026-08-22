@@ -36,22 +36,6 @@ class FakeExecutor:
         return {"ok": True}
 
 
-class FakeBuilder:
-    def build(
-        self,
-        spec: RemoteProviderSpec,
-        approved: ApprovedEgressPayload,
-        credential: ResolvedCredential,
-    ) -> RemoteHttpRequest:
-        return RemoteHttpRequest(
-            method="POST",
-            origin="https://api.example.test",
-            path="/v1/messages",
-            headers={"authorization": f"Bearer {credential.value}"},
-            body=b'{"private":"payload"}',
-        )
-
-
 def _approved() -> ApprovedEgressPayload:
     return ApprovedEgressPayload(
         authorization_id="auth-1",
@@ -102,7 +86,6 @@ def test_remote_client_records_authorized_egress_without_payload_or_credential()
         ),
         credential_provider=FakeCredentialProvider(),
         executor=FakeExecutor(),
-        builder=FakeBuilder(),
         audit=audit,
     )
 
@@ -137,7 +120,6 @@ def test_remote_client_rejection_is_audited_without_attempting_transport() -> No
         ),
         credential_provider=FakeCredentialProvider(),
         executor=FakeExecutor(),
-        builder=FakeBuilder(),
         audit=audit,
     )
     correlation_id = uuid4()
