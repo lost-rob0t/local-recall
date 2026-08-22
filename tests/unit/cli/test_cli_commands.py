@@ -1,11 +1,15 @@
 import datetime as dt
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 from typer.testing import CliRunner
 
 from local_recall.cli import app, set_client_factory
 from local_recall.cli_contract import (
     CliCitation,
+    CliDiagnosticCategory,
+    CliDiagnosticEntry,
+    CliDiagnosticPayload,
     CliLifecycleState,
     CliOutcome,
     CliQueryPayload,
@@ -205,6 +209,97 @@ def test_locked_query_has_stable_nonzero_exit() -> None:
 
     assert result.exit_code == 4
     assert "key-store-locked" in result.stdout
+
+
+def test_providers_json_renders_typed_diagnostics() -> None:
+    client = FakeClient(
+        CliResponse.success(
+            request_id="placeholder",
+            diagnostic_payload=CliDiagnosticPayload(
+                category=CliDiagnosticCategory.PROVIDERS,
+                entries=(
+                    CliDiagnosticEntry(name="ollama", state="available", value="local"),
+                ),
+            ),
+        )
+    )
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(app, ["providers", "--json"])
+    finally:
+        set_client_factory(previous)
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == (
+        '{"category":"providers","entries":[{"name":"ollama",'
+        '"state":"available","value":"local"}]}'
+    )
+    assert client.requests[0].command.value == "providers"
+
+
+def test_health_renders_human_diagnostics() -> None:
+    client = FakeClient(
+        CliResponse.success(
+            request_id="placeholder",
+            diagnostic_payload=CliDiagnosticPayload(
+                category=CliDiagnosticCategory.HEALTH,
+                entries=(CliDiagnosticEntry(name="daemon", state="ok"),),
+            ),
+        )
+    )
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(app, ["health"])
+    finally:
+        set_client_factory(previous)
+
+    assert result.exit_code == 0
+    assert "daemon: ok" in result.stdout
+    assert client.requests[0].command.value == "health"
+
+
+def test_storage_stats_is_nested_and_machine_readable() -> None:
+    client = FakeClient(
+        CliResponse.success(
+            request_id="placeholder",
+            diagnostic_payload=CliDiagnosticPayload(
+                category=CliDiagnosticCategory.STORAGE,
+                entries=(CliDiagnosticEntry(name="records", state="ok", value="42"),),
+            ),
+        )
+    )
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(app, ["storage", "stats", "--json"])
+    finally:
+        set_client_factory(previous)
+
+    assert result.exit_code == 0
+    assert '"category":"storage"' in result.stdout
+    assert '"value":"42"' in result.stdout
+    assert client.requests[0].command.value == "storage-stats"
+
+
+def test_config_validate_accepts_versioned_file(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text('schema_version = 1\nprofile = "privacy-strict"\n', encoding="utf-8")
+
+    result = runner.invoke(app, ["config", "validate", str(path)])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "valid"
+
+
+def test_config_validate_failure_is_content_free(tmp_path: Path) -> None:
+    marker = "VALUE-MUST-NOT-APPEAR"
+    path = tmp_path / "config.toml"
+    path.write_text(f'schema_version = 1\nprofile = "{marker}"\n', encoding="utf-8")
+
+    result = runner.invoke(app, ["config", "validate", str(path)])
+
+    assert result.exit_code == 2
+    assert "invalid-configuration" in result.stdout
+    assert marker not in result.stdout
 
 
 def test_static_completion_does_not_construct_daemon_client() -> None:
