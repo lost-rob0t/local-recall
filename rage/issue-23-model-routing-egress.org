@@ -1,0 +1,105 @@
+#+title: RAGE issue 23 - model routing policies and optional remote providers
+#+startup: overview
+
+* Immutable issue state
+:PROPERTIES:
+:ISSUE: 23
+:START_COMMIT: 14db91804a6233bf676a1820e04c29db2abfd2fd
+:START_BRANCH: main
+:WORK_BRANCH: agent/issue-23-model-routing-egress
+:END:
+
+Consumed issue: =lost-rob0t/local-recall#23=, model routing policies and optional remote providers.
+
+Declared dependencies:
+- #6 validated configuration and privacy profiles - closed completed
+- #9 local OCR and pre-persistence secret redaction - closed completed
+- #21 local generation-provider support with Ollama - closed completed
+- #22 local embedding provider and encrypted semantic index - closed completed
+
+There were no open pull requests at consumption time. Issue #23 had no comments or competing owner transaction. It is therefore the first open dependency-satisfied issue in declared sequence.
+
+Issue acceptance gate:
+- routing modes =local-only=, =local-first=, =remote-explicit=, and =privacy-strict=;
+- remote providers disabled by default and never selected merely because local inference fails;
+- provider strategies for OpenAI-compatible endpoints/OpenRouter, Anthropic, and Google where practical;
+- separate remote-egress permission gates for redacted text, approved metadata, and images, with image egress denied by default;
+- payload inspection, bounded size, deterministic secret re-scan, and sanitized audit/control records before network I/O;
+- credentials resolved by reference through a key/credential provider boundary rather than stored in configuration or logs;
+- optional per-query preview/confirmation represented as explicit authorization, not inferred from configuration;
+- =local-only= and =privacy-strict= produce zero remote calls under all local failure conditions;
+- provider errors cannot fall through to a less-private provider or route;
+- mock-server tests verify headers, payload filtering, cancellation, retry policy, and fail-closed behavior.
+
+* Iteration 1 - routing and egress authority before HTTP adapters
+** Repository evidence
+- =domain.providers= already defines =RoutingRequest= and =RoutingDecision= and requires every remote decision to carry an explicit =egress_authorization_id=.
+- =ports.routing.ModelRoutingPolicy= already defines the strategy seam; no production routing policy exists yet.
+- =PrivacyClass= already separates public, operational metadata, redacted content, encrypted content, raw capture, and secret material. Raw capture and secret material are never remotely eligible.
+- =ModelSettings.remote_enabled= and per-provider =enabled= plus =credential_reference= already fail closed in validated configuration. Provider credentials are represented indirectly and are hidden from repr.
+- The threat model's TB-08 requires explicit enablement by data class, re-scan, payload preview/limits, TLS, and no silent fallback. It also states that a local failure cannot silently select a remote provider.
+- Existing Ollama code owns the local provider transport. Issue #23 must compose with it rather than alter local capture or redaction authority.
+
+** External primary-source research
+- OpenAI's current API quickstart uses HTTPS =POST /v1/responses= with bearer-token authentication. Source: https://platform.openai.com/
+- OpenRouter's current API exposes =POST /api/v1/chat/completions= with bearer-token authentication and explicitly documents provider/router fallback behavior. Because Local Recall must not silently become less private, OpenRouter provider fallback must be constrained/disabled or treated as an explicit provider policy rather than accepted implicitly. Sources: https://openrouter.ai/docs/quickstart and https://openrouter.ai/docs/guides/features/router-metadata
+- Google's Gemini API exposes HTTPS =models.generateContent= and current API-key/auth-key authentication. Google now recommends its newer Interactions API for new projects, so a stable project-owned provider strategy must isolate endpoint/schema churn behind the existing =GenerationProvider= port. Sources: https://ai.google.dev/api/generate-content and https://ai.google.dev/gemini-api/docs/api-key
+- Provider APIs and model identifiers are moving surfaces. Local Recall therefore must not encode remote-provider protocol details into routing or privacy-domain objects.
+
+** Evidence-derived design
+1. Routing authority and egress authority are separate. A routing policy may identify a candidate remote provider only when the request already carries explicit egress authorization; the provider adapter may not mint authorization.
+2. =local-only= and =privacy-strict= are hard local-only modes. Missing/unavailable local capability returns a sanitized routing failure and never considers remote providers.
+3. =local-first= prefers a suitable local provider and, critically, does NOT convert local failure into remote permission. Without explicit remote authorization it fails locally. This preserves the issue and threat-model invariant instead of interpreting "first" as an automatic network fallback.
+4. =remote-explicit= is the only mode in which a remote provider can be selected. Selection requires all of: global remote enablement, provider enablement, capability match, privacy-class acceptance, explicit egress authorization, authorized data classes, and any requested provider identity.
+5. Introduce a closed =EgressDataClass= for =redacted-text=, =approved-metadata=, and =redacted-image=. Images are denied unless the authorization explicitly includes the image class. Raw capture, secret material, encrypted envelopes, and arbitrary payload categories are not representable as remote data classes.
+6. Introduce an immutable =EgressAuthorization= carrying an opaque authorization ID, optional fixed provider ID, allowed data classes, and bounded payload size. It contains no prompt/content and has content-free repr.
+7. Extend routing input with routing mode, egress data classes, and optional preferred provider ID. The policy operates only on provider capabilities/control metadata; it never sees prompt text or screenshot bytes.
+8. Remote provider adapters accept only an =ApprovedEgressPayload= produced by a separate gate after deterministic redaction/re-scan and size validation. Adapters cannot accept raw =GenerationRequest= directly for remote transport.
+9. No adapter-level provider fallback. One approved remote route maps to one configured provider request. Retry is permitted only to the same provider/endpoint for narrowly classified transient transport failures and remains deadline/cancellation bounded.
+10. Credentials are resolved immediately before transport through an injected credential resolver and are never retained in provider objects, request repr, exceptions, audit attributes, or response metadata.
+11. Audit/control surfaces record provider ID, routing mode, authorization ID, data classes, payload byte count, and fixed outcome/reason codes only. Prompt/context, headers, credential values, provider response bodies, and URLs containing credentials are forbidden.
+
+** Rejected alternatives
+- automatic local-first -> remote fallback: directly violates the threat model and issue acceptance criteria;
+- letting individual provider adapters decide privacy eligibility: duplicates policy and creates inconsistent bypass paths;
+- using =PrivacyClass= alone as the egress modality gate: cannot express the separate image-denied-by-default requirement cleanly;
+- passing raw =GenerationRequest= into a remote HTTP adapter: makes it too easy to bypass re-scan/preview/size checks;
+- storing API keys in =RemoteProviderSettings=: violates existing credential-reference design;
+- accepting OpenRouter's default multi-provider fallback as-is: a single Local Recall authorization could silently reach a different upstream provider;
+- generic arbitrary-header configuration: expands secret/log injection surface and makes provider contracts unauditable;
+- retries across provider IDs after an error: converts availability behavior into an unapproved privacy route change.
+
+** Security/privacy invariants
+- routing decisions contain no content;
+- no remote decision exists without an explicit authorization ID;
+- raw capture and secret material are never remotely routable;
+- an image cannot be remotely routed unless image egress is explicitly authorized;
+- local provider failure never changes the authorization state or routing mode;
+- remote provider failure never triggers another provider automatically;
+- credentials are obtained by reference only at the transport boundary and are zero-retention control inputs;
+- network adapters receive only already-approved bounded payloads;
+- cancellation/deadline expiry destroys the pending approved payload reference and prevents retry;
+- sanitization prevents prompts, OCR, titles, secrets, API keys, authorization headers, and provider response bodies from entering status/audit/errors.
+
+** Failure/race analysis
+- local provider becomes unavailable after capability discovery: return local-unavailable; do not reconsider remote;
+- authorization expires/is revoked between routing and send: egress gate revalidates immediately before transport and denies;
+- configured remote provider disabled during queued work: configuration revision mismatch denies transport;
+- payload grows after preview/authorization: immutable approved payload binds byte count/digest; changed payload requires a new authorization;
+- secret re-scan becomes uncertain/fails: no remote transport;
+- remote returns 429/5xx: same-provider bounded retry only if explicitly classified and within deadline; never provider fallback;
+- redirect response: reject rather than follow to an unapproved origin;
+- cancellation during socket/request: close request and return sanitized cancelled outcome;
+- provider response malformed/oversized: reject without logging body;
+- OpenRouter router chooses an unexpected upstream: adapter must either pin/deny fallbacks through supported routing controls or fail validation when response metadata proves route drift; do not silently accept broadened routing.
+
+** Iteration 1 verification gates
+- unit contract for all four routing modes, local preference, explicit remote authorization, capability/privacy/data-class filtering, preferred-provider binding, deterministic ordering, and no remote fallback after local unavailability;
+- security tests proving raw/secret/image-without-authorization cannot produce a remote decision and repr/errors contain no content;
+- configuration tests for provider-specific bounded settings without embedded credentials;
+- integration/transport tests with synthetic local HTTP servers only, asserting exact approved headers/body fields, no redirect following, cancellation/deadline behavior, response size/schema validation, and same-provider-only retry;
+- seeded secret/prompt/title fixtures prove no forbidden content reaches mock remote transport metadata or audit output;
+- canonical =./scripts/check=, =nix flake check= when applicable, and exact-head GitHub Actions before merge.
+
+* TDD evidence
+Behavioral RED has not yet been accepted. The next commit must add the smallest deterministic routing/egress contract tests before production implementation. Formatting/lint/type failures unrelated to the missing contract do not count as RED.
