@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime
+from typing import cast
 
 from local_recall.domain._validation import require_nonempty
 from local_recall.retrieval.service import RetrievalBatch, RetrievedPassage
@@ -80,9 +81,10 @@ def parse_generated_claims(
 
     require_nonempty(text, "generated claims")
     raw = _load_json_object(text)
-    if set(raw) != {"claims"} or not isinstance(raw["claims"], list):
+    claims_value = raw.get("claims")
+    if set(raw) != {"claims"} or not isinstance(claims_value, list):
         raise ValueError("generated claim schema is invalid")
-    raw_claims = raw["claims"]
+    raw_claims = cast(list[object], claims_value)
     if not raw_claims or len(raw_claims) > _MAX_CLAIMS:
         raise ValueError("generated claim schema is invalid")
 
@@ -98,18 +100,18 @@ def parse_generated_claims(
     )
 
 
-def _load_json_object(text: str) -> dict[str, Any]:
+def _load_json_object(text: str) -> dict[str, object]:
     try:
-        raw = json.loads(text, object_pairs_hook=_reject_duplicate_keys)
+        raw_value: object = json.loads(text, object_pairs_hook=_reject_duplicate_keys)
     except (json.JSONDecodeError, ValueError) as exc:
         raise ValueError("generated claim schema is invalid") from exc
-    if not isinstance(raw, dict):
+    if not isinstance(raw_value, dict):
         raise ValueError("generated claim schema is invalid")
-    return raw
+    return cast(dict[str, object], raw_value)
 
 
-def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
             raise ValueError("duplicate JSON key")
@@ -118,11 +120,14 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _parse_claim(raw: object, *, by_label: dict[str, EvidenceItem]) -> AnswerClaim:
-    if not isinstance(raw, dict) or set(raw) != {"kind", "text", "evidence_ids"}:
+    if not isinstance(raw, dict):
         raise ValueError("generated claim schema is invalid")
-    kind_value = raw["kind"]
-    text = raw["text"]
-    evidence_ids = raw["evidence_ids"]
+    raw_map = cast(dict[str, object], raw)
+    if set(raw_map) != {"kind", "text", "evidence_ids"}:
+        raise ValueError("generated claim schema is invalid")
+    kind_value = raw_map["kind"]
+    text = raw_map["text"]
+    evidence_value = raw_map["evidence_ids"]
     if not isinstance(kind_value, str) or not isinstance(text, str):
         raise ValueError("generated claim schema is invalid")
     if not text.strip() or len(text) > _MAX_CLAIM_CHARS:
@@ -131,12 +136,14 @@ def _parse_claim(raw: object, *, by_label: dict[str, EvidenceItem]) -> AnswerCla
         kind = AnswerClaimKind(kind_value)
     except ValueError as exc:
         raise ValueError("generated claim schema is invalid") from exc
-    if (
-        not isinstance(evidence_ids, list)
-        or not evidence_ids
-        or any(not isinstance(label, str) for label in evidence_ids)
-        or len(set(evidence_ids)) != len(evidence_ids)
-        or any(label not in by_label for label in evidence_ids)
+    if not isinstance(evidence_value, list):
+        raise ValueError("generated claim evidence is invalid")
+    evidence_objects = cast(list[object], evidence_value)
+    if not evidence_objects or any(not isinstance(label, str) for label in evidence_objects):
+        raise ValueError("generated claim evidence is invalid")
+    evidence_ids = tuple(cast(str, label) for label in evidence_objects)
+    if len(set(evidence_ids)) != len(evidence_ids) or any(
+        label not in by_label for label in evidence_ids
     ):
         raise ValueError("generated claim evidence is invalid")
 
@@ -162,6 +169,6 @@ def _normalize_support_text(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
-def _timeline_key(claim: AnswerClaim) -> tuple[object, str]:
+def _timeline_key(claim: AnswerClaim) -> tuple[datetime, str]:
     earliest = min(claim.citations, key=lambda item: (item.captured_at, item.record_id.hex))
     return earliest.captured_at, earliest.record_id.hex
