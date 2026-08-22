@@ -165,11 +165,7 @@ class CliResponse:
         request_id: str,
         lifecycle_state: CliLifecycleState | str | None = None,
     ) -> CliResponse:
-        state = (
-            CliLifecycleState(lifecycle_state)
-            if lifecycle_state is not None
-            else None
-        )
+        state = CliLifecycleState(lifecycle_state) if lifecycle_state is not None else None
         return cls(
             protocol_version=PROTOCOL_VERSION,
             request_id=request_id,
