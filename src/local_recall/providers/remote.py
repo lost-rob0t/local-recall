@@ -51,6 +51,8 @@ class RemoteProviderSpec:
             raise ValueError("remote provider id must not be empty")
         if not self.model_id:
             raise ValueError("remote model id must not be empty")
+        if any(character in self.model_id for character in ("\x00", "\r", "\n")):
+            raise ValueError("remote model id contains invalid characters")
         try:
             parsed = urlsplit(self.endpoint)
             port = parsed.port
@@ -90,8 +92,16 @@ class RemoteRequestBuilder:
             raise RemoteRequestError("provider-authorization-mismatch")
         if self._present_data_classes(approved) != approved.data_classes:
             raise RemoteRequestError("approved-payload-class-mismatch")
+        self._require_text_only(approved)
+
         if spec.kind is RemoteProviderKind.OPENROUTER:
             return self._build_openrouter(spec, approved, credential)
+        if spec.kind is RemoteProviderKind.OPENAI_COMPATIBLE:
+            return self._build_openai_compatible(spec, approved, credential)
+        if spec.kind is RemoteProviderKind.ANTHROPIC:
+            return self._build_anthropic(spec, approved, credential)
+        if spec.kind is RemoteProviderKind.GOOGLE:
+            return self._build_google(spec, approved, credential)
         raise RemoteRequestError("unsupported-remote-provider")
 
     @staticmethod
@@ -108,43 +118,134 @@ class RemoteRequestBuilder:
         return frozenset(classes)
 
     @staticmethod
-    def _build_openrouter(
-        spec: RemoteProviderSpec,
-        approved: ApprovedEgressPayload,
-        credential: ResolvedCredential,
-    ) -> RemoteHttpRequest:
+    def _require_text_only(approved: ApprovedEgressPayload) -> None:
         if approved.metadata or approved.image:
             raise RemoteRequestError("unsupported-egress-modality")
         if not approved.text:
             raise RemoteRequestError("remote-text-required")
 
+    @staticmethod
+    def _endpoint_parts(spec: RemoteProviderSpec) -> tuple[str, str]:
         parsed = urlsplit(spec.endpoint)
         if not parsed.hostname:
             raise RemoteRequestError("invalid-remote-endpoint")
         origin = f"https://{parsed.hostname}"
         if parsed.port is not None:
             origin = f"{origin}:{parsed.port}"
+        return origin, parsed.path
 
-        body = json.dumps(
-            {
-                "messages": [{"role": "user", "content": approved.text}],
-                "model": spec.model_id,
-                "provider": {"allow_fallbacks": False},
-            },
+    @staticmethod
+    def _json_body(payload: object) -> bytes:
+        return json.dumps(
+            payload,
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
-        headers = MappingProxyType(
-            {
-                "authorization": f"Bearer {credential.value}",
-                "content-type": "application/json",
-            }
-        )
+
+    @classmethod
+    def _build_openrouter(
+        cls,
+        spec: RemoteProviderSpec,
+        approved: ApprovedEgressPayload,
+        credential: ResolvedCredential,
+    ) -> RemoteHttpRequest:
+        origin, path = cls._endpoint_parts(spec)
         return RemoteHttpRequest(
             method="POST",
             origin=origin,
-            path=parsed.path,
-            headers=headers,
-            body=body,
+            path=path,
+            headers=MappingProxyType(
+                {
+                    "authorization": f"Bearer {credential.value}",
+                    "content-type": "application/json",
+                }
+            ),
+            body=cls._json_body(
+                {
+                    "messages": [{"role": "user", "content": approved.text}],
+                    "model": spec.model_id,
+                    "provider": {"allow_fallbacks": False},
+                }
+            ),
+        )
+
+    @classmethod
+    def _build_openai_compatible(
+        cls,
+        spec: RemoteProviderSpec,
+        approved: ApprovedEgressPayload,
+        credential: ResolvedCredential,
+    ) -> RemoteHttpRequest:
+        origin, path = cls._endpoint_parts(spec)
+        return RemoteHttpRequest(
+            method="POST",
+            origin=origin,
+            path=path,
+            headers=MappingProxyType(
+                {
+                    "authorization": f"Bearer {credential.value}",
+                    "content-type": "application/json",
+                }
+            ),
+            body=cls._json_body(
+                {
+                    "messages": [{"role": "user", "content": approved.text}],
+                    "model": spec.model_id,
+                }
+            ),
+        )
+
+    @classmethod
+    def _build_anthropic(
+        cls,
+        spec: RemoteProviderSpec,
+        approved: ApprovedEgressPayload,
+        credential: ResolvedCredential,
+    ) -> RemoteHttpRequest:
+        origin, path = cls._endpoint_parts(spec)
+        return RemoteHttpRequest(
+            method="POST",
+            origin=origin,
+            path=path,
+            headers=MappingProxyType(
+                {
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                    "x-api-key": credential.value,
+                }
+            ),
+            body=cls._json_body(
+                {
+                    "max_tokens": 1024,
+                    "messages": [{"role": "user", "content": approved.text}],
+                    "model": spec.model_id,
+                }
+            ),
+        )
+
+    @classmethod
+    def _build_google(
+        cls,
+        spec: RemoteProviderSpec,
+        approved: ApprovedEgressPayload,
+        credential: ResolvedCredential,
+    ) -> RemoteHttpRequest:
+        origin, path = cls._endpoint_parts(spec)
+        expected_suffix = f"/models/{spec.model_id}:generateContent"
+        if not path.endswith(expected_suffix):
+            raise RemoteRequestError("provider-endpoint-model-mismatch")
+        return RemoteHttpRequest(
+            method="POST",
+            origin=origin,
+            path=path,
+            headers=MappingProxyType(
+                {
+                    "content-type": "application/json",
+                    "x-goog-api-key": credential.value,
+                }
+            ),
+            body=cls._json_body(
+                {"contents": [{"parts": [{"text": approved.text}]}]}
+            ),
         )
