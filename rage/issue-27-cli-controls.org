@@ -1,0 +1,42 @@
+#+title: RAGE Issue 27 - CLI controls and query commands
+
+* Consumption
+- Issue: #27 =Implement CLI controls and query commands=
+- Immutable starting main: =109834de2453f86a70559c12bd182a409ab310eb=
+- Branch: =agent/issue-27-cli-controls=
+- Dependencies: #7 completed; #26 completed.
+- Open PRs at consumption: none.
+
+* Acceptance criteria
+- Control commands are idempotent and return meaningful exit codes.
+- =stop= confirms that capture and pending persistence have ceased.
+- =ask "What was I doing Saturday?"= produces cited output.
+- Tests cover unavailable daemon, locked key store, and concurrent control requests.
+
+* Required command surface
+- =start=, =pause=, =resume=, =stop=, =status=
+- =privacy-on=, =privacy-off=
+- =ask=, =timeline=, =search= with explicit time filters
+- =config validate=, =providers=, =health=, =storage stats=
+- Machine-readable JSON where useful.
+
+* RAGE Iteration 1
+** Research
+Pending.
+
+** Evidence-derived design
+Pending research.
+
+** RED
+Pending design.
+
+** GREEN
+Pending accepted RED.
+
+* Hard invariants
+- The CLI must not become a second lifecycle, policy, retrieval, or provider authority.
+- Stop/privacy control must remain higher priority than ordinary query work.
+- CLI/status/error/completion surfaces must not expose captured text, raw OCR, titles, command lines, secrets, provider payloads, or storage paths.
+- No plaintext capture artifacts or temporary screenshot files.
+- Local-first routing and no silent remote fallback remain authoritative.
+- Tests and CI must remain failure-honest; zero required tests is failure and no false-green constructs are permitted.
