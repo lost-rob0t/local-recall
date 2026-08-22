@@ -124,7 +124,9 @@ class AnsweringService:
                 privacy_class=PrivacyClass.REDACTED_CONTENT,
                 allow_remote=allow_remote,
                 egress_authorization_id=(
-                    egress_authorization.authorization_id if egress_authorization is not None else None
+                    egress_authorization.authorization_id
+                    if egress_authorization is not None
+                    else None
                 ),
                 data_classes=_REMOTE_DATA_CLASSES if allow_remote else frozenset(),
                 authorization=egress_authorization,
