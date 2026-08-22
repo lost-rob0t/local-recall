@@ -4,7 +4,11 @@ from datetime import UTC, datetime
 
 import pytest
 
-from local_recall.cli_contract import CliStatusPayload
+from local_recall.cli_contract import (
+    CliLifecycleState,
+    CliResponse,
+    CliStatusPayload,
+)
 
 
 @pytest.mark.parametrize(
@@ -44,3 +48,23 @@ def test_status_payload_is_content_minimizing() -> None:
     assert payload.metadata_source == "qtile"
     assert "xorg" not in repr(payload)
     assert "qtile" not in repr(payload)
+
+
+def test_status_response_carries_lifecycle_and_status_payload_together() -> None:
+    payload = CliStatusPayload(
+        privacy_mode=False,
+        capture_backend="xorg",
+        metadata_source="qtile",
+        last_capture_at=datetime(2026, 8, 22, 20, 0, tzinfo=UTC),
+    )
+
+    response = CliResponse.success(
+        request_id="request-1",
+        lifecycle_state=CliLifecycleState.RECORDING,
+        status_payload=payload,
+    )
+
+    assert response.lifecycle_state is CliLifecycleState.RECORDING
+    assert response.status_payload is payload
+    assert "xorg" not in repr(response)
+    assert "qtile" not in repr(response)
