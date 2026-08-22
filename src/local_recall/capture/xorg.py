@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 import struct
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from time import monotonic_ns as system_monotonic_ns
 from typing import Protocol, runtime_checkable
@@ -32,6 +33,13 @@ _XWD_TRUE_COLOR = 4
 _XWD_LSB_FIRST = 0
 _XWD_MSB_FIRST = 1
 _XWD_BACKEND_REVISION = "xwd-zpixmap-v1"
+_MAX_MONITORS = 32
+_MONITOR_LINE = re.compile(
+    r"^\s*\d+:\s+[+*]*([A-Za-z0-9_.:-]{1,128})\s+"
+    r"(\d{1,5})/\d+x(\d{1,5})/\d+([+-]\d+)([+-]\d+)\s+\S+\s*$"
+)
+MAX_XWD_OUTPUT_BYTES = _MAX_PIXEL_BYTES + 2 * 1024 * 1024
+MAX_MONITOR_OUTPUT_BYTES = 64 * 1024
 
 
 class XorgCaptureError(RuntimeError):
@@ -105,6 +113,63 @@ class NativeXorgRunner(Protocol):
     async def capture_root_dump(self, *, deadline_monotonic_ns: int) -> bytes: ...
 
     async def monitor_layout(self, *, deadline_monotonic_ns: int) -> tuple[XorgMonitor, ...]: ...
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class NativeCommandResult:
+    return_code: int
+    stdout: bytes = field(repr=False)
+    stderr: bytes = field(default=b"", repr=False)
+
+    def __repr__(self) -> str:
+        return (
+            f"NativeCommandResult(return_code={self.return_code}, "
+            f"stdout_bytes={len(self.stdout)}, stderr_bytes={len(self.stderr)})"
+        )
+
+
+@runtime_checkable
+class NativeCommandExecutor(Protocol):
+    async def run(
+        self,
+        command: str,
+        args: tuple[str, ...],
+        *,
+        deadline_monotonic_ns: int,
+        max_output_bytes: int,
+    ) -> NativeCommandResult: ...
+
+
+class FixedXwdNativeRunner:
+    """Issue only the two fixed Xorg read commands required for capture."""
+
+    def __init__(self, *, executor: NativeCommandExecutor) -> None:
+        self._executor = executor
+
+    async def capture_root_dump(self, *, deadline_monotonic_ns: int) -> bytes:
+        result = await self._executor.run(
+            "xwd",
+            ("-root", "-silent"),
+            deadline_monotonic_ns=deadline_monotonic_ns,
+            max_output_bytes=MAX_XWD_OUTPUT_BYTES,
+        )
+        if result.return_code != 0 or not result.stdout:
+            raise XorgCaptureError("display-unavailable", private_detail=result.stderr)
+        return result.stdout
+
+    async def monitor_layout(self, *, deadline_monotonic_ns: int) -> tuple[XorgMonitor, ...]:
+        result = await self._executor.run(
+            "xrandr",
+            ("--listmonitors",),
+            deadline_monotonic_ns=deadline_monotonic_ns,
+            max_output_bytes=MAX_MONITOR_OUTPUT_BYTES,
+        )
+        if result.return_code != 0:
+            raise XorgCaptureError("display-unavailable", private_detail=result.stderr)
+        try:
+            return _parse_monitor_layout(result.stdout)
+        except (UnicodeDecodeError, ValueError):
+            raise XorgCaptureError("monitor-layout-invalid") from None
 
 
 class XwdSnapshotReader:
@@ -227,6 +292,37 @@ class XorgCaptureBackend:
             metadata=request.metadata,
             capture_provenance=provenance,
         )
+
+
+def _parse_monitor_layout(payload: bytes) -> tuple[XorgMonitor, ...]:
+    text = payload.decode("ascii", errors="strict")
+    lines = text.splitlines()
+    if not lines or not lines[0].startswith("Monitors: "):
+        raise ValueError("monitor header missing")
+    try:
+        expected = int(lines[0].removeprefix("Monitors: "))
+    except ValueError:
+        raise ValueError("monitor count invalid") from None
+    if not 1 <= expected <= _MAX_MONITORS or len(lines) != expected + 1:
+        raise ValueError("monitor count out of bounds")
+    monitors: list[XorgMonitor] = []
+    identifiers: set[str] = set()
+    for line in lines[1:]:
+        match = _MONITOR_LINE.fullmatch(line)
+        if match is None:
+            raise ValueError("monitor line invalid")
+        monitor_id, width_text, height_text, x_text, y_text = match.groups()
+        if monitor_id in identifiers:
+            raise ValueError("duplicate monitor identifier")
+        identifiers.add(monitor_id)
+        width = int(width_text)
+        height = int(height_text)
+        x = int(x_text)
+        y = int(y_text)
+        monitor = XorgMonitor(monitor_id, x, y, width, height)
+        monitor.to_domain()
+        monitors.append(monitor)
+    return tuple(monitors)
 
 
 def _trusted_window_region(
