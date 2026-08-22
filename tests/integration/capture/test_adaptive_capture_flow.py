@@ -104,12 +104,8 @@ def test_duplicate_frame_is_coalesced_before_downstream_admission() -> None:
     flow = _flow(backend)
     request = _request()
 
-    first = asyncio.run(
-        flow.capture_if_due(request=request, now_monotonic_ns=1_000_000_000)
-    )
-    second = asyncio.run(
-        flow.capture_if_due(request=request, now_monotonic_ns=2_000_000_000)
-    )
+    first = asyncio.run(flow.capture_if_due(request=request, now_monotonic_ns=1_000_000_000))
+    second = asyncio.run(flow.capture_if_due(request=request, now_monotonic_ns=2_000_000_000))
 
     assert first.outcome is AdaptiveCaptureOutcome.ADMIT
     assert first.frame is not None
@@ -167,12 +163,8 @@ def test_not_due_does_not_invoke_capture_backend() -> None:
     )
     request = _request()
 
-    first = asyncio.run(
-        flow.capture_if_due(request=request, now_monotonic_ns=1_000_000_000)
-    )
-    second = asyncio.run(
-        flow.capture_if_due(request=request, now_monotonic_ns=2_000_000_000)
-    )
+    first = asyncio.run(flow.capture_if_due(request=request, now_monotonic_ns=1_000_000_000))
+    second = asyncio.run(flow.capture_if_due(request=request, now_monotonic_ns=2_000_000_000))
 
     assert first.outcome is AdaptiveCaptureOutcome.ADMIT
     assert second.outcome is AdaptiveCaptureOutcome.SKIP
