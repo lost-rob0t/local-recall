@@ -342,10 +342,13 @@ def _passage(
         for context_field in record.frame.metadata.fields
         for item in context_field.provenance
     )
-    score = semantic_score if semantic_score is not None else 1.0
-    if semantic_score is None and query.keywords:
+    if semantic_score is not None:
+        score = semantic_score
+    elif query.keywords:
         haystack = text.casefold()
         score = sum(keyword in haystack for keyword in query.keywords) / len(query.keywords)
+    else:
+        score = max((item.confidence for item in provenance), default=0.0)
     return RetrievedPassage(
         record_id=record.record_id,
         captured_at=record.frame.captured_at,
