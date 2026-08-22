@@ -8,6 +8,7 @@ from typing import cast
 import pytest
 
 from local_recall.capture import xorg as xorg_capture
+from local_recall.capture.native import BoundedNativeCommandExecutor
 
 
 class FakeProcess:
@@ -54,9 +55,9 @@ def _executor(
     process: FakeProcess,
     *,
     monotonic_ns: int = 1_000_000_000,
-) -> tuple[xorg_capture.BoundedNativeCommandExecutor, FakeSpawner]:
+) -> tuple[BoundedNativeCommandExecutor, FakeSpawner]:
     spawner = FakeSpawner(process)
-    executor = xorg_capture.BoundedNativeCommandExecutor(
+    executor = BoundedNativeCommandExecutor(
         executables={
             "xwd": Path("/usr/bin/xwd"),
             "xrandr": Path("/usr/bin/xrandr"),
