@@ -118,3 +118,46 @@ The important design change from this research is that “cluster” should not 
 - Initial production head =10da8bfad472decf342bb445796ae1b6cc84b948= was not accepted as GREEN because canonical Ruff formatting found one production formatting defect. No behavior was weakened; only canonical formatting was applied.
 - Exact production head =f7ec269042da56300f2105b18603a384ec373bf7= implements redacted-record-only feature extraction, reuses the existing deterministic RGB8 dHash, requires a local available embedding provider before constructing content requests, performs one bounded redacted-content embedding batch, validates provider identity/vector count/finite values, and exposes content-free failures/repr.
 - CI run =32582925411= (#545) passed on that exact head: Ubuntu 22.04 and 24.04 matrices green; strict Pyright green; unit, contract, integration, and security tests green; repository security checks green; canonical =./scripts/check= green; failure-propagation green.
+
+** Evidence-grounded summary RED
+- Test-only summary head =79e8d391c0b734a45e69401bdf4336ec0fe29b78= was followed by formatting-only repair head =1984d39ccd188b75adf5d3e67c6c47ca91eea139= so the behavioral oracle could execute.
+- CI run =32583115720= (#548) on =1984d39c...= passed Ruff formatting, Ruff lint, and ShellCheck before strict Pyright failed specifically because =local_recall.activity.summaries= and =ActivitySummarizer= did not exist. Failure-propagation remained green. This is the accepted summary RED.
+
+** Evidence-grounded summary GREEN
+- Intermediate production heads exposed two real gate defects: untyped =json.loads= data at the strict Pyright boundary and a Bandit B608 false positive caused solely by SQL-like English prompt wording. The parser was narrowed through explicit =object= / typed casts; the prompt was reworded. No =# nosec= suppression, scanner baseline change, or weakened test was used.
+- Exact summary head =680d758accaf5ea97d61b532afaa883194881f2b= passed CI run =32583692217= (#552): both Ubuntu matrices green; strict Pyright green; unit, contract, integration, and security suites green; repository security checks green; canonical =./scripts/check= green; failure-propagation green.
+- Fresh attribution research reinforced the conservative design: FactCC (EMNLP 2020) uses source-span evidence for factual verification; SUnsET (EMNLP 2025) reports that explicit evidence spans/citations improve trustworthiness while models still struggle to copy precise support; FullCite (2026) likewise treats precise evidence-span identification as a hard grounding problem. The implementation therefore keeps v0.1 summaries extractive and locally validates exact redacted source substrings instead of trusting unsupported free-form prose.
+
+** Encrypted derived-state store RED
+- Test-only store head =84588ead6e55716be9d67efce154ee6cc533c716= defined encrypted owner-only round trip, authoritative replacement, membership, plaintext-leak, and tamper-authentication fixtures.
+- CI run =32583782532= (#553) passed formatting, Ruff lint, and ShellCheck before strict Pyright failed specifically because =local_recall.activity.store=, =EncryptedActivityStore=, =ActivityEntry=, =ActivitySnapshot=, and =ActivityStoreFailure= did not exist. This is the accepted store RED.
+
+** Encrypted derived-state store GREEN
+- First production head =ac94d2f6732a6e4a96100c8455d82a6129e5f1a1= was rejected as GREEN because Ruff formatting found mechanical line-wrap defects. Exact formatted head =01b7bfe1f16a21e89b69abba4baa25200d0ef271= was then tested without weakening behavior.
+- CI run =32583895835= (#555) passed on =01b7bfe...=: both Ubuntu matrices green; formatting/lint/shell/strict Pyright green; unit, contract, integration, and security suites green; security checks green; canonical repository gate green; failure-propagation green.
+- The store uses =KeyPurpose.SUMMARY=, a random per-snapshot data key, XChaCha20-Poly1305 authenticated encryption, owner-only directory/file permissions, symlink rejection, bounded envelope size, atomic temp+fsync+replace+directory-fsync publication, sanitized authentication failure, and plaintext-buffer scrubbing. Tests prove summary text, source IDs, provider/model identity, and policy revisions are absent from persisted plaintext bytes.
+
+** Reconciliation RED
+- Initial test-only head =f3b4dedadbf34ca802330690ed26c9bb4f2ce9bf= was rejected as RED evidence because Ruff formatting stopped before the behavioral oracle. Formatting-only head =f581969d538bcb2c4a7d0729d9770068c551a912= corrected only the canonical layout.
+- CI run =32584058800= (#557) on =f581969d...= passed formatting, Ruff lint, and ShellCheck on both Ubuntu matrices, then strict Pyright failed specifically because =local_recall.activity.reconcile= and =ActivityReconciler= did not exist. Failure-propagation was green. This is the accepted reconciliation RED.
+
+** Reconciliation GREEN
+- Production implementation added serialized full replacement from canonical redacted records, deterministic content/policy fingerprints, exact-membership prior-summary reuse, deletion/content/policy invalidation, a distinct =ActivitySummaryUnavailable= path for temporary local-generation unavailability, and preservation of the previous encrypted snapshot on malformed/fabricated summary output.
+- Mechanical production formatting/slot-order failures were fixed without behavior changes; they are not counted as GREEN evidence.
+- Exact reconciliation head =60be82606dab86d7913ad81de0cc23865188ed19= passed CI run =32584249003= (#562): both Ubuntu matrices green; formatting, Ruff lint, ShellCheck, strict Pyright, unit, contract, integration, and security suites green; repository security checks green; canonical =./scripts/check= green; failure-propagation green.
+- Reconciliation tests prove unchanged cluster+fingerprint summaries are reused, deletion removes source membership and regenerates affected summaries, policy/redacted-content change changes the fingerprint and regenerates, temporary generation unavailability publishes deterministic clusters with =summary=None=, and malformed evidence raises before encrypted replacement so the prior snapshot remains authoritative.
+
+* Acceptance mapping
+- Repetitive captures -> deterministic contiguous span fixture in =test_clustering.py=.
+- Time gaps -> hard boundary fixture for long idle gaps.
+- Application/workspace changes -> cross-application continuity only with strong evidence; workspace is a hard boundary.
+- Perceptual + semantic similarity -> existing issue #20 dHash plus local embedding cosine continuity.
+- Rapid switching / same app different task -> deterministic fixtures split low-semantic-confidence same-application records and preserve strongly related short editor/browser hops.
+- Exact source membership -> immutable ordered cluster IDs, store membership validation, summary foreign-ID rejection.
+- Incremental summaries -> unchanged membership+fingerprint reuses validated prior summary; affected clusters regenerate only when source/policy content changes.
+- Deletion/policy changes -> full canonical reconciliation atomically replaces derived state and tests prove deleted IDs disappear / policy changes regenerate.
+- Local provider only -> remote embedding and remote summary providers are rejected before content egress; no remote fallback exists in this issue.
+- No invented actions -> model output must cite cluster IDs and exact contiguous redacted OCR excerpts; unsupported/foreign/fabricated evidence rejects the summary.
+- Encrypted summary persistence -> owner-only XChaCha20-Poly1305 snapshot stores cluster, summary, model/provider and policy provenance with no plaintext content-bearing derived metadata.
+- Failure atomicity -> invalid generation leaves the prior encrypted snapshot authoritative; temporary unavailable generation is represented explicitly as no summary.
+- Documentation -> =docs/activity-clustering.md= records the trust boundary, conservative segmentation semantics, evidence-grounded summary contract, reconciliation, encryption, and failure behavior.
