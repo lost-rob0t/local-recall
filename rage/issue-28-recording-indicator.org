@@ -80,11 +80,16 @@
 
 ** GREEN
 - Production commit =90311a3e2eeb272f702f8b9e9ea7cc2cd6effa4d= added =QtileIndicatorAdapter= and =StatusNotifierItemAdapter= over the existing authoritative =IndicatorSurface= without adding lifecycle/capture/storage/provider/transport authority.
-- Integration coverage now verifies recording -> daemon unavailable -> recovered paused state, action-driven refresh after stop/privacy commands, and stale metadata discard.
+- Integration coverage verifies recording -> daemon unavailable -> recovered paused state, action-driven refresh after stop/privacy commands, and stale metadata discard.
 - Security coverage injects recognizable secret/title/OCR/provider sentinel text into daemon failure reasons and verifies it never reaches tray presentation; structural tests reject indicator imports of capture/storage/provider/policy/lifecycle/subprocess/socket/zmq authority.
 - =docs/indicator.md= documents authority boundaries, closed states, content minimization, controls, Qtile integration, generic StatusNotifier integration, and restart behavior.
-- Final exact-head CI remains the merge gate and must be recorded below before completion.
+- Verification-only formatting failure on intermediate head =430e3443d0065ede5c4b6ee940ca0d35662c819d= was corrected without changing behavior.
+- Exact final implementation head =06816cc6abf8d45d6683eb98aafcd4d55ad07f00= passed CI run 717: Ubuntu 22.04 green, Ubuntu 24.04 green, canonical =./scripts/check= green, unit/contract/integration/security tests green, strict typing/security scans green, and failure-propagation green.
 
 * Verification
-- No Nix inputs changed, so no new Nix dependency gate is introduced by this issue.
-- PR must remain unmerged until exact final head passes canonical =./scripts/check=, both Ubuntu matrices, security checks, failure-propagation, and review/mergeability inspection.
+- No Nix inputs changed, so no new Nix dependency gate was introduced by this issue.
+- PR #85 was made ready only after exact-head CI was green and live review/thread inspection found no blockers.
+- PR #85 squash-merged into =main= as =83a844693e46d2d9e0d2371b29e504209b1d7bf3=.
+- GitHub closed issue #28 as completed through the merged =Closes #28= relation.
+- Acceptance criteria are satisfied at the merged implementation boundary. The authenticated local IPC server/transport remains correctly owned by dependency-following issue #29.
+- No next issue was consumed in this closeout transaction.
