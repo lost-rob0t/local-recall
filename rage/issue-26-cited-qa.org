@@ -1,0 +1,60 @@
+#+title: RAGE issue 26 - cited question answering
+#+startup: overview
+
+* Immutable issue state
+:PROPERTIES:
+:ISSUE: 26
+:START_COMMIT: a7eb46497de6a0dd14f71015c945b38aff685957
+:START_BRANCH: main
+:WORK_BRANCH: agent/issue-26-cited-qa
+:END:
+
+Consumed issue: =lost-rob0t/local-recall#26=.
+
+Declared dependencies verified complete before consumption:
+- #23 model routing policies and optional remote providers
+- #24 time-scoped retrieval and record provenance
+- #25 activity clustering and summaries
+
+At consumption there were no issue comments on #26 and no open pull requests. #26 was the first open dependency-satisfied P1 issue in the complete live issue queue. Current =main= was immutable commit =a7eb46497de6a0dd14f71015c945b38aff685957=.
+
+Issue acceptance requires natural-language query planning for time ranges/applications/workspaces/concepts; retrieval-augmented generation through the selected routing policy; explicit separation of observed facts, model inference, and unavailable information; inline citations to activity clusters and source capture timestamps; refusal beyond retrieved evidence; concise and detailed timeline modes; a correct cited answer for “What was I doing Saturday?”; traceability of every factual claim to records; explicit insufficient-evidence behavior; and a local-only path with zero network access.
+
+* Iteration 1 - research and evidence-derived design
+** Repository evidence
+Pending inspection of current retrieval, activity, routing/provider, domain, storage, and testing contracts from the immutable start commit.
+
+** External research
+Pending primary-source review where it can materially alter claim/citation/evidence design.
+
+** Evidence-derived design
+Pending repository and external evidence.
+
+** Rejected alternatives
+Pending.
+
+** Security/privacy invariants
+- query answering may consume only already-redacted/decrypted bounded working sets from canonical retrieval/activity APIs;
+- local-only and privacy-strict routes must make zero remote requests, including on local provider failure;
+- remote generation may receive only explicitly authorized already-redacted payloads through the existing routing/egress boundary;
+- every factual answer claim must be traceable to one or more canonical records and source timestamps; model-generated prose cannot create new evidence or source membership;
+- empty/weak retrieval must fail closed to an explicit insufficient-evidence outcome rather than fabricating continuity;
+- raw pixels, raw OCR, unredacted metadata, decrypted records, prompts, provider payloads, and generated answers must not enter sanitized logs/status/errors;
+- cancellation/timeouts/provider failures cannot publish partial answers as complete;
+- query execution must not start, resume, or otherwise alter capture lifecycle state.
+
+** Failure/race analysis
+Pending detailed repository inspection.
+
+** Exact verification gates
+- deterministic RED/GREEN unit tests for query planning, evidence claim validation, citation mapping, insufficient evidence, concise/timeline rendering, and local-only routing;
+- integration tests over real encrypted storage/retrieval/activity fixtures proving “What was I doing Saturday?” resolves the configured timezone/date and returns chronological cited evidence;
+- provider/routing tests proving no remote call in local-only/privacy-strict modes and no remote fallback on local failure;
+- malformed/unsupported model output, foreign citations, uncited factual claims, cancellation, timeout, weak retrieval, deleted/stale records, and provider failure tests;
+- content-leak tests over repr/errors/status/audit surfaces;
+- canonical =./scripts/check= on the exact final head;
+- =nix flake check= only if package/flake inputs change;
+- exact-head GitHub Actions green, mergeable, and review-clean before merge.
+
+* TDD evidence
+No RED accepted yet. Tests must fail for the missing/incorrect behavioral API after formatting/lint/type collection reach the intended oracle; mechanical formatting/lint failures do not count.
