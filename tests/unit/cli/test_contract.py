@@ -67,6 +67,40 @@ def test_query_text_is_payload_not_routing_metadata() -> None:
     assert marker not in repr(request)
 
 
+def test_query_time_filter_is_typed_and_not_routing_metadata() -> None:
+    now = dt.datetime(2026, 8, 22, 19, 0, tzinfo=dt.UTC)
+    start = dt.datetime(2026, 8, 16, 0, 0, tzinfo=dt.UTC)
+    end = dt.datetime(2026, 8, 17, 0, 0, tzinfo=dt.UTC)
+    request = CliRequest.create(
+        command=CliCommand.SEARCH,
+        now=now,
+        deadline=now + dt.timedelta(seconds=2),
+        query="work",
+        start=start,
+        end=end,
+    )
+
+    assert request.start == start
+    assert request.end == end
+    assert start.isoformat() not in request.routing_json()
+    assert end.isoformat() not in repr(request)
+
+
+def test_query_time_filter_requires_ordered_pair() -> None:
+    now = dt.datetime(2026, 8, 22, 19, 0, tzinfo=dt.UTC)
+    start = dt.datetime(2026, 8, 17, 0, 0, tzinfo=dt.UTC)
+    end = dt.datetime(2026, 8, 16, 0, 0, tzinfo=dt.UTC)
+
+    with pytest.raises(ValueError, match="time filter"):
+        CliRequest.create(
+            command=CliCommand.TIMELINE,
+            now=now,
+            deadline=now + dt.timedelta(seconds=2),
+            start=start,
+            end=end,
+        )
+
+
 def test_cited_query_payload_is_typed_and_hidden_from_repr() -> None:
     marker = "synthetic-answer-marker"
     citation = CliCitation(
