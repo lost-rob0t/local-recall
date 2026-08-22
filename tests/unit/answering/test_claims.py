@@ -1,9 +1,5 @@
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from uuid import UUID
-
-import pytest
 
 from local_recall.answering.models import (
     AnswerCitation,
@@ -24,6 +20,15 @@ def citation(record_id: UUID = RECORD_A, captured_at: datetime = CAPTURE_A) -> A
     return AnswerCitation(record_id=record_id, captured_at=captured_at)
 
 
+def assert_value_error(callable_: object, expected: str) -> None:
+    try:
+        callable_()  # type: ignore[operator]
+    except ValueError as exc:
+        assert expected in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
 def test_claim_requires_canonical_citation() -> None:
     claim = AnswerClaim(
         kind=AnswerClaimKind.OBSERVED,
@@ -37,12 +42,14 @@ def test_claim_requires_canonical_citation() -> None:
 
 
 def test_claim_rejects_duplicate_citations() -> None:
-    with pytest.raises(ValueError, match="citations must be unique"):
+    def construct() -> None:
         AnswerClaim(
             kind=AnswerClaimKind.INFERENCE,
             text="The records suggest design work continued.",
             citations=(citation(), citation()),
         )
+
+    assert_value_error(construct, "citations must be unique")
 
 
 def test_cited_answer_preserves_claim_order_and_hides_content_from_repr() -> None:
@@ -75,7 +82,7 @@ def test_cited_answer_preserves_claim_order_and_hides_content_from_repr() -> Non
 
 
 def test_cited_answer_rejects_claims_when_marked_insufficient() -> None:
-    with pytest.raises(ValueError, match="insufficient answer cannot contain claims"):
+    def construct() -> None:
         CitedAnswer(
             mode=AnswerMode.CONCISE,
             claims=(
@@ -88,3 +95,5 @@ def test_cited_answer_rejects_claims_when_marked_insufficient() -> None:
             insufficient_evidence=True,
             policy_revision="policy-v7",
         )
+
+    assert_value_error(construct, "insufficient answer cannot contain claims")
