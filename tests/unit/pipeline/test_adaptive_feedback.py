@@ -3,8 +3,8 @@ from __future__ import annotations
 from uuid import UUID
 
 from local_recall.capture.adaptive import AdaptiveCaptureController
-from local_recall.pipeline.adaptive import apply_submission_feedback
 from local_recall.pipeline.models import SubmissionResult, SubmissionStatus
+from local_recall.pipeline.runtime import apply_submission_feedback
 
 
 def _controller() -> AdaptiveCaptureController:
