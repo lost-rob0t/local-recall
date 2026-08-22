@@ -93,7 +93,7 @@ class FakeLocalProvider:
 def make_service(retrieval: FakeRetrieval, provider: FakeLocalProvider) -> AnswerService:
     factory = cast(
         Callable[..., AnswerService],
-        getattr(service_module, "AnsweringService"),
+        service_module.AnsweringService,
     )
     return factory(
         retrieval=retrieval,
