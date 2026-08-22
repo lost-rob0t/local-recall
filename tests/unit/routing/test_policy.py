@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib import import_module
+
 import pytest
 
 from local_recall.domain import (
@@ -8,14 +10,14 @@ from local_recall.domain import (
     ProviderCapabilities,
     ProviderLocation,
 )
-from local_recall.routing import (
-    EgressAuthorization,
-    EgressDataClass,
-    NoRouteError,
-    RoutingMode,
-    RoutingPolicy,
-    RoutingRequest,
-)
+
+routing = import_module("local_recall.routing")
+EgressAuthorization = routing.EgressAuthorization
+EgressDataClass = routing.EgressDataClass
+NoRouteError = routing.NoRouteError
+RoutingMode = routing.RoutingMode
+RoutingPolicy = routing.RoutingPolicy
+RoutingRequest = routing.RoutingRequest
 
 
 def _provider(
