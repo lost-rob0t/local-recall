@@ -32,16 +32,47 @@
 
 * RAGE iteration 1
 ** Research
-Pending.
+- Linux =unix(7)=: pathname AF_UNIX sockets are filesystem objects; directory permissions and socket mode constrain connection, but portable software must not treat pathname permissions as the sole authentication mechanism. Linux exposes kernel-derived connected-peer credentials through =SO_PEERCRED=.
+- XDG Base Directory 0.8: =$XDG_RUNTIME_DIR= is specifically intended for per-user runtime objects including sockets, must be owner-owned, local, mode 0700, and lifetime-bound to the login session. This is the preferred parent directory; invalid/missing runtime directories must fail closed rather than fall back to a shared =/tmp= pathname.
+- Current libzmq/PyZMQ expose =IPC_FILTER_UID= for IPC listeners backed by peer credentials. The libzmq option is deprecated in favor of ZAP/IPC allow-block mechanisms, so it is acceptable only as Linux defense in depth, not the long-term protocol authentication authority.
+- Existing architecture already commits v0.1 CLI/query IPC to ZeroMQ =ROUTER/DEALER= over =ipc://= with bounded HWM/timeouts/linger and an authenticated session token. Replacing this with a second raw-socket protocol would create competing transport semantics and violate the architecture.
+- Existing threat model TB-06 requires owner-only Unix socket placement, safe directory, peer identity, request limits, and capability separation; same-UID malicious processes are explicitly outside the strong isolation guarantee, so the goal is to exclude other UIDs and keep command capabilities explicit rather than claiming same-UID secrecy.
 
 ** Evidence-derived design
-Pending.
+- Keep ZeroMQ =ipc://= as the transport and add a project-owned authenticated IPC layer beneath the existing =DaemonClient= port.
+- Endpoint resolution: only an absolute validated =$XDG_RUNTIME_DIR=/local-recall/control.sock= style path under an owner-owned 0700 runtime directory. Reject symlink/non-directory/wrong-owner/wrong-mode parents. Never bind TCP or abstract Unix sockets in v0.1.
+- Listener hardening: explicit ROUTER socket options, finite HWM/send/receive timeouts, =LINGER= 0, and Linux UID filtering when supported. After bind, verify the socket node is a socket, owned by the daemon UID, and mode 0600; cleanup only the exact validated socket node owned by the daemon.
+- Protocol authentication: issue an owner-only random session token in the runtime directory, mode 0600, generated at daemon startup and rotated on restart. Requests carry token material in a dedicated non-logged frame; routing JSON stays content-free. Token comparison is constant-time. Filesystem/UID controls are defense in depth; the token is the protocol authentication authority.
+- Authorization: map the closed =CliCommand= set to capabilities: lifecycle/control, query, diagnostics; future export/delete capabilities remain distinct. A client session is authorized per command, never by arbitrary method strings.
+- Framing: versioned multipart message with bounded routing frame, authentication frame, and optional bounded content frame. No pickle or arbitrary Python objects. Unknown frame count, oversized frames, malformed UTF-8/JSON, protocol mismatch, priority mismatch, expired deadline, or invalid command fail with fixed sanitized reason codes.
+- Scheduling: urgent stop/privacy requests enter a dedicated bounded urgent lane serviced before ordinary control/query lanes; no unbounded retry or hidden queue. Query concurrency is separately bounded.
+- Audit: accepted/rejected authentication, authorization, overload, timeout, malformed request, and completion produce fixed event/reason/capability metadata only. Request text, response text, token bytes, endpoint paths, usernames, titles, and provider payloads are forbidden from audit events.
+- CLI/indicator: default client factory becomes the authenticated IPC client; both keep depending only on =DaemonClient= / typed CLI contracts and never import daemon internals.
+
+*** Rejected alternatives
+1. Raw =asyncio.start_unix_server= protocol beside ZeroMQ: rejected as a second transport stack conflicting with ADR-0006/architecture.
+2. Socket chmod only: rejected because Linux pathname permissions are defense in depth and do not provide protocol authentication.
+3. =IPC_FILTER_UID= as sole auth: rejected because libzmq deprecates the filter and same-UID identity is too coarse for explicit protocol/session authentication.
+4. CURVE keypairs for local v0.1 IPC: rejected for the first slice as unnecessary key-distribution complexity; owner runtime-dir token + peer UID/permissions satisfies the stated local-user threat while preserving a future ZAP/CURVE upgrade path.
+5. TCP loopback fallback: rejected; issue and architecture require no default TCP listener.
+
+*** Failure/race analysis
+- Stale socket node at startup: remove only after lstat verifies a same-owner socket node under the validated runtime directory; regular file/symlink/wrong-owner is a startup fault.
+- Runtime directory replaced between validation and bind: revalidate parent identity/ownership immediately around bind and verify bound node after creation; treat mismatch as fault and tear down.
+- Token file replacement/permission drift: server owns creation; clients require regular non-symlink file, same UID, mode 0600, bounded exact token length.
+- Client disconnect/cancel: finite deadlines and zero linger; no successful result may be synthesized after timeout/cancellation.
+- Query saturation cannot starve STOP/privacy: separate urgent bounded lane and explicit priority validation.
 
 ** RED
-Pending.
+Pending. First test slice will require a project-owned IPC endpoint/authentication module that does not yet exist.
 
 ** GREEN
 Pending.
 
 ** Verification gates
-Pending.
+- Focused unit/security/contract tests for endpoint validation, token handling, frame limits, UID filter/socket options, authorization, malformed input, timeout/cancellation, and priority behavior.
+- Integration fixture using only synthetic CLI requests over a temporary owner-only runtime directory.
+- Structural test: CLI/indicator use =DaemonClient= and authenticated IPC client, no daemon-internal imports.
+- Canonical =./scripts/check= must pass with nonzero test counts and security/failure-propagation gates.
+- =nix flake check= when the issue changes Nix packaging/service definitions.
+- Exact final PR head GitHub Actions green before merge.
