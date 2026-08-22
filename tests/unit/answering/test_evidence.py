@@ -78,12 +78,9 @@ def test_generated_claim_rejects_unknown_duplicate_and_missing_evidence_labels()
         minimum_score=0.20,
     )
     invalid_payloads = (
-        '{"claims":[{"kind":"inference","text":"Work continued.",'
-        '"evidence_ids":["E9"]}]}',
-        '{"claims":[{"kind":"inference","text":"Work continued.",'
-        '"evidence_ids":["E1","E1"]}]}',
-        '{"claims":[{"kind":"inference","text":"Work continued.",'
-        '"evidence_ids":[]}]}',
+        '{"claims":[{"kind":"inference","text":"Work continued.","evidence_ids":["E9"]}]}',
+        '{"claims":[{"kind":"inference","text":"Work continued.","evidence_ids":["E1","E1"]}]}',
+        '{"claims":[{"kind":"inference","text":"Work continued.","evidence_ids":[]}]}',
     )
 
     for payload in invalid_payloads:
@@ -108,8 +105,7 @@ def test_observed_claim_must_be_directly_supported_by_cited_excerpt() -> None:
 
     try:
         evidence.parse_generated_claims(
-            '{"claims":[{"kind":"observed","text":"Deployed the service.",'
-            '"evidence_ids":["E1"]}]}',
+            '{"claims":[{"kind":"observed","text":"Deployed the service.","evidence_ids":["E1"]}]}',
             table=table,
             mode=answering_models.AnswerMode.CONCISE,
             policy_revision="policy-v8",
@@ -133,7 +129,7 @@ def test_generated_schema_is_closed_and_timeline_is_chronological() -> None:
         '{"claims":['
         '{"kind":"observed","text":"Ran the test suite.","evidence_ids":["E1"]},'
         '{"kind":"observed","text":"Edited the design document.","evidence_ids":["E2"]}'
-        ']}',
+        "]}",
         table=table,
         mode=answering_models.AnswerMode.TIMELINE,
         policy_revision="policy-v8",
