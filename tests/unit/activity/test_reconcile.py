@@ -207,7 +207,9 @@ def test_policy_or_redacted_content_change_forces_summary_regeneration(tmp_path:
     assert second.entries[0].policy_revisions == ("policy-v2",)
 
 
-def test_unavailable_generation_keeps_deterministic_clusters_without_summary(tmp_path: Path) -> None:
+def test_unavailable_generation_keeps_deterministic_clusters_without_summary(
+    tmp_path: Path,
+) -> None:
     generator = Generator(available=False)
     reconciler, store = _reconciler(tmp_path / "activity", generator)
 
@@ -219,7 +221,9 @@ def test_unavailable_generation_keeps_deterministic_clusters_without_summary(tmp
     assert asyncio.run(store.load()) == snapshot
 
 
-def test_invalid_generated_evidence_preserves_previous_authoritative_snapshot(tmp_path: Path) -> None:
+def test_invalid_generated_evidence_preserves_previous_authoritative_snapshot(
+    tmp_path: Path,
+) -> None:
     generator = Generator()
     reconciler, store = _reconciler(tmp_path / "activity", generator)
     original = _record(1, "fix parser")
