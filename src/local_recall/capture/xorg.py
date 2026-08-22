@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import struct
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from time import monotonic_ns as system_monotonic_ns
 from typing import Protocol, runtime_checkable
 from uuid import uuid4
@@ -23,6 +24,14 @@ _TRUSTED_GEOMETRY_SOURCES = frozenset({"xorg-generic", "qtile"})
 _GEOMETRY_FIELDS = ("window.x", "window.y", "window.width", "window.height")
 _MAX_DIMENSION = 32_768
 _MAX_PIXEL_BYTES = 512 * 1024 * 1024
+_XWD_HEADER_BYTES = 100
+_XWD_COLOR_BYTES = 12
+_XWD_VERSION = 7
+_XWD_ZPIXMAP = 2
+_XWD_TRUE_COLOR = 4
+_XWD_LSB_FIRST = 0
+_XWD_MSB_FIRST = 1
+_XWD_BACKEND_REVISION = "xwd-zpixmap-v1"
 
 
 class XorgCaptureError(RuntimeError):
@@ -89,6 +98,66 @@ class XorgSnapshot:
 @runtime_checkable
 class XorgSnapshotReader(Protocol):
     async def capture_root(self, *, deadline_monotonic_ns: int) -> XorgSnapshot: ...
+
+
+@runtime_checkable
+class NativeXorgRunner(Protocol):
+    async def capture_root_dump(self, *, deadline_monotonic_ns: int) -> bytes: ...
+
+    async def monitor_layout(
+        self, *, deadline_monotonic_ns: int
+    ) -> tuple[XorgMonitor, ...]: ...
+
+
+class XwdSnapshotReader:
+    """Decode an in-memory XWD root dump behind a bounded native runner."""
+
+    def __init__(
+        self,
+        *,
+        runner: NativeXorgRunner,
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        self._runner = runner
+        self._now = now
+
+    async def capture_root(self, *, deadline_monotonic_ns: int) -> XorgSnapshot:
+        before = await self._runner.monitor_layout(deadline_monotonic_ns=deadline_monotonic_ns)
+        payload = await self._runner.capture_root_dump(deadline_monotonic_ns=deadline_monotonic_ns)
+        after = await self._runner.monitor_layout(deadline_monotonic_ns=deadline_monotonic_ns)
+        if before != after:
+            raise XorgCaptureError("display-changed")
+        if not before:
+            raise XorgCaptureError("display-unavailable")
+        try:
+            decoded = _decode_xwd(payload)
+            _validate_monitors(before, decoded.root_x, decoded.root_y, decoded.width, decoded.height)
+        except XorgCaptureError:
+            raise
+        except (OverflowError, ValueError, struct.error):
+            raise XorgCaptureError("capture-format-invalid") from None
+        return XorgSnapshot(
+            captured_at=self._now(),
+            root_x=decoded.root_x,
+            root_y=decoded.root_y,
+            width=decoded.width,
+            height=decoded.height,
+            stride=decoded.stride,
+            pixel_format=PixelFormat.RGB8,
+            pixels=decoded.pixels,
+            monitors=before,
+            backend_revision=_XWD_BACKEND_REVISION,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _DecodedXwd:
+    root_x: int
+    root_y: int
+    width: int
+    height: int
+    stride: int
+    pixels: bytes
 
 
 class XorgCaptureBackend:
@@ -208,3 +277,132 @@ def _crop_snapshot(snapshot: XorgSnapshot, region: CaptureRegion) -> tuple[bytes
         start = (local_y + row) * snapshot.stride + local_x * bytes_per_pixel
         rows.append(snapshot.pixels[start : start + packed_stride])
     return b"".join(rows), packed_stride
+
+
+def _decode_xwd(payload: bytes) -> _DecodedXwd:
+    if len(payload) < _XWD_HEADER_BYTES:
+        raise ValueError("short header")
+    values = struct.unpack(">25I", payload[:_XWD_HEADER_BYTES])
+    (
+        header_size,
+        version,
+        pixmap_format,
+        depth,
+        width,
+        height,
+        xoffset,
+        byte_order,
+        _bitmap_unit,
+        _bitmap_bit_order,
+        _bitmap_pad,
+        bits_per_pixel,
+        bytes_per_line,
+        visual_class,
+        red_mask,
+        green_mask,
+        blue_mask,
+        _bits_per_rgb,
+        _colormap_entries,
+        ncolors,
+        window_width,
+        window_height,
+        window_x,
+        window_y,
+        _window_border_width,
+    ) = values
+
+    if version != _XWD_VERSION or pixmap_format != _XWD_ZPIXMAP:
+        raise ValueError("unsupported xwd version or pixmap format")
+    if visual_class != _XWD_TRUE_COLOR or depth <= 0 or depth > 32:
+        raise ValueError("unsupported xwd visual")
+    if not 0 < width <= _MAX_DIMENSION or not 0 < height <= _MAX_DIMENSION:
+        raise ValueError("xwd dimensions out of bounds")
+    if window_width != width or window_height != height or xoffset != 0:
+        raise ValueError("xwd root geometry mismatch")
+    if header_size < _XWD_HEADER_BYTES + 1 or header_size > len(payload):
+        raise ValueError("xwd header size invalid")
+    if payload[header_size - 1] != 0:
+        raise ValueError("xwd window name is not terminated")
+    if ncolors > 65_536:
+        raise ValueError("xwd color table too large")
+    color_bytes = ncolors * _XWD_COLOR_BYTES
+    image_offset = header_size + color_bytes
+    if image_offset > len(payload):
+        raise ValueError("xwd color table truncated")
+    if bits_per_pixel not in (16, 24, 32) or bits_per_pixel % 8 != 0:
+        raise ValueError("xwd pixel width unsupported")
+    source_bytes_per_pixel = bits_per_pixel // 8
+    if bytes_per_line < width * source_bytes_per_pixel:
+        raise ValueError("xwd stride too small")
+    source_size = bytes_per_line * height
+    if source_size > _MAX_PIXEL_BYTES or len(payload) - image_offset != source_size:
+        raise ValueError("xwd pixel payload invalid")
+    if byte_order not in (_XWD_LSB_FIRST, _XWD_MSB_FIRST):
+        raise ValueError("xwd byte order invalid")
+    _validate_color_masks(red_mask, green_mask, blue_mask, bits_per_pixel)
+
+    source = memoryview(payload)[image_offset:]
+    stride = width * PixelFormat.RGB8.bytes_per_pixel
+    target_size = stride * height
+    if target_size > _MAX_PIXEL_BYTES:
+        raise ValueError("decoded pixel payload too large")
+    target = bytearray(target_size)
+    target_index = 0
+    order = "little" if byte_order == _XWD_LSB_FIRST else "big"
+    for row in range(height):
+        row_start = row * bytes_per_line
+        for column in range(width):
+            pixel_start = row_start + column * source_bytes_per_pixel
+            pixel_value = int.from_bytes(
+                source[pixel_start : pixel_start + source_bytes_per_pixel], order
+            )
+            target[target_index] = _scale_masked_channel(pixel_value, red_mask)
+            target[target_index + 1] = _scale_masked_channel(pixel_value, green_mask)
+            target[target_index + 2] = _scale_masked_channel(pixel_value, blue_mask)
+            target_index += 3
+
+    return _DecodedXwd(
+        root_x=_signed_card32(window_x),
+        root_y=_signed_card32(window_y),
+        width=width,
+        height=height,
+        stride=stride,
+        pixels=bytes(target),
+    )
+
+
+def _validate_color_masks(red: int, green: int, blue: int, bits_per_pixel: int) -> None:
+    masks = (red, green, blue)
+    if any(mask == 0 or mask.bit_length() > bits_per_pixel for mask in masks):
+        raise ValueError("xwd color mask invalid")
+    if red & green or red & blue or green & blue:
+        raise ValueError("xwd color masks overlap")
+    for mask in masks:
+        shift = (mask & -mask).bit_length() - 1
+        normalized = mask >> shift
+        if normalized & (normalized + 1):
+            raise ValueError("xwd color mask is not contiguous")
+
+
+def _scale_masked_channel(pixel: int, mask: int) -> int:
+    shift = (mask & -mask).bit_length() - 1
+    maximum = mask >> shift
+    value = (pixel & mask) >> shift
+    return (value * 255 + maximum // 2) // maximum
+
+
+def _signed_card32(value: int) -> int:
+    return value - (1 << 32) if value & (1 << 31) else value
+
+
+def _validate_monitors(
+    monitors: tuple[XorgMonitor, ...], root_x: int, root_y: int, width: int, height: int
+) -> None:
+    root_right = root_x + width
+    root_bottom = root_y + height
+    for monitor in monitors:
+        monitor.to_domain()
+        if monitor.x < root_x or monitor.y < root_y:
+            raise ValueError("monitor lies outside root")
+        if monitor.x + monitor.width > root_right or monitor.y + monitor.height > root_bottom:
+            raise ValueError("monitor lies outside root")
