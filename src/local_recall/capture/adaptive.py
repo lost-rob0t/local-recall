@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Protocol
 
+from local_recall.domain.capture import ApprovedCaptureRequest
+from local_recall.domain.frames import PixelFormat, RawFrame
 from local_recall.domain.lifecycle import CaptureGeneration
+from local_recall.domain.metadata import ContextMetadata
 
 _HASH_BITS = 64
 _HASH_COLUMNS = 9
@@ -21,6 +25,12 @@ class CaptureTriggerKind(StrEnum):
 
 class FrameDisposition(StrEnum):
     ACCEPT = "accept"
+    COALESCE = "coalesce"
+
+
+class AdaptiveCaptureOutcome(StrEnum):
+    SKIP = "skip"
+    ADMIT = "admit"
     COALESCE = "coalesce"
 
 
@@ -72,6 +82,26 @@ class FrameDecision:
     span_count: int
     span_started_monotonic_ns: int
     span_last_seen_monotonic_ns: int
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class AdaptiveCaptureResult:
+    outcome: AdaptiveCaptureOutcome
+    trigger: CaptureTriggerDecision
+    frame: RawFrame | None
+    frame_decision: FrameDecision | None
+
+    def __repr__(self) -> str:
+        return (
+            "AdaptiveCaptureResult("
+            f"outcome={self.outcome.value!r}, trigger={self.trigger.kind.value!r}, "
+            f"has_frame={self.frame is not None}, "
+            f"has_frame_decision={self.frame_decision is not None})"
+        )
+
+
+class CaptureBackend(Protocol):
+    async def capture(self, request: ApprovedCaptureRequest) -> RawFrame: ...
 
 
 class AdaptiveCaptureController:
@@ -282,17 +312,91 @@ class AdaptiveCaptureController:
         self._span_last_seen_ns = None
 
 
+class AdaptiveCaptureFlow:
+    """Admit only due, fresh, non-duplicate frames to expensive downstream work."""
+
+    __slots__ = ("_backend", "_controller")
+
+    def __init__(
+        self,
+        *,
+        backend: CaptureBackend,
+        controller: AdaptiveCaptureController,
+    ) -> None:
+        self._backend = backend
+        self._controller = controller
+
+    async def capture_if_due(
+        self,
+        *,
+        request: ApprovedCaptureRequest,
+        now_monotonic_ns: int,
+    ) -> AdaptiveCaptureResult:
+        context = _context_from_request(request)
+        trigger = self._controller.poll(
+            context=context,
+            now_monotonic_ns=now_monotonic_ns,
+        )
+        if trigger.kind is CaptureTriggerKind.NONE:
+            return AdaptiveCaptureResult(
+                outcome=AdaptiveCaptureOutcome.SKIP,
+                trigger=trigger,
+                frame=None,
+                frame_decision=None,
+            )
+
+        self._controller.mark_capture_started(
+            context=context,
+            now_monotonic_ns=now_monotonic_ns,
+        )
+        frame = await self._backend.capture(request)
+        if frame.generation != request.intent.generation:
+            raise ValueError("captured frame generation does not match approved request generation")
+        if frame.pixel_format is not PixelFormat.RGB8:
+            raise ValueError("adaptive fingerprint requires RGB8 frame")
+
+        fingerprint = perceptual_dhash_rgb8(
+            frame.pixels,
+            width=frame.width,
+            height=frame.height,
+            stride=frame.stride,
+        )
+        frame_decision = self._controller.classify_frame(
+            context=context,
+            fingerprint=fingerprint,
+            observed_at_monotonic_ns=now_monotonic_ns,
+        )
+        if frame_decision.disposition is FrameDisposition.COALESCE:
+            return AdaptiveCaptureResult(
+                outcome=AdaptiveCaptureOutcome.COALESCE,
+                trigger=trigger,
+                frame=None,
+                frame_decision=frame_decision,
+            )
+        return AdaptiveCaptureResult(
+            outcome=AdaptiveCaptureOutcome.ADMIT,
+            trigger=trigger,
+            frame=frame,
+            frame_decision=frame_decision,
+        )
+
+
 def perceptual_dhash_rgb8(
     pixels: bytes | bytearray,
     *,
     width: int,
     height: int,
+    stride: int | None = None,
 ) -> int:
     if width <= 0 or height <= 0:
         raise ValueError("image dimensions must be positive")
-    expected_size = width * height * 3
+    row_bytes = width * 3
+    effective_stride = row_bytes if stride is None else stride
+    if effective_stride < row_bytes:
+        raise ValueError("RGB8 stride is smaller than pixel width")
+    expected_size = effective_stride * height
     if len(pixels) != expected_size:
-        raise ValueError("RGB8 buffer size does not match dimensions")
+        raise ValueError("RGB8 buffer size does not match dimensions and stride")
 
     fingerprint = 0
     bit = 0
@@ -301,7 +405,7 @@ def perceptual_dhash_rgb8(
         row: list[int] = []
         for sample_x in range(_HASH_COLUMNS):
             x = _sample_coordinate(sample_x, _HASH_COLUMNS, width)
-            offset = (y * width + x) * 3
+            offset = y * effective_stride + x * 3
             red = pixels[offset]
             green = pixels[offset + 1]
             blue = pixels[offset + 2]
@@ -311,6 +415,31 @@ def perceptual_dhash_rgb8(
                 fingerprint |= 1 << bit
             bit += 1
     return fingerprint
+
+
+def _context_from_request(request: ApprovedCaptureRequest) -> DedupContext:
+    return DedupContext(
+        generation=request.intent.generation,
+        policy_revision=request.authorization.policy_revision,
+        configuration_revision=request.intent.configuration_revision,
+        application=_metadata_text(request.metadata, "application"),
+        workspace=_metadata_text(request.metadata, "workspace"),
+        window_id=_metadata_identifier(request.metadata, "window.id"),
+    )
+
+
+def _metadata_text(metadata: ContextMetadata, name: str) -> str | None:
+    value = metadata.get(name)
+    return value if isinstance(value, str) and value else None
+
+
+def _metadata_identifier(metadata: ContextMetadata, name: str) -> str | None:
+    value = metadata.get(name)
+    if isinstance(value, str):
+        return value or None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return None
 
 
 def _sample_coordinate(index: int, samples: int, extent: int) -> int:
