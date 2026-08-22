@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -18,7 +17,7 @@ def _runtime_dir(tmp_path: Path) -> Path:
 def test_ipc_paths_use_owner_only_runtime_directory(tmp_path: Path) -> None:
     runtime_dir = _runtime_dir(tmp_path)
 
-    paths = IpcPaths.from_runtime_dir(runtime_dir, expected_uid=os.getuid())
+    paths = IpcPaths.from_runtime_dir(runtime_dir, expected_uid=runtime_dir.stat().st_uid)
 
     assert paths.runtime_dir == runtime_dir
     assert paths.socket_path == runtime_dir / "local-recall" / "control.sock"
@@ -30,12 +29,12 @@ def test_ipc_paths_reject_group_accessible_runtime_directory(tmp_path: Path) -> 
     runtime_dir.chmod(0o750)
 
     with pytest.raises(IpcSecurityError, match="runtime-dir-mode"):
-        IpcPaths.from_runtime_dir(runtime_dir, expected_uid=os.getuid())
+        IpcPaths.from_runtime_dir(runtime_dir, expected_uid=runtime_dir.stat().st_uid)
 
 
 def test_ipc_paths_reject_relative_runtime_directory() -> None:
     with pytest.raises(IpcSecurityError, match="runtime-dir-absolute"):
-        IpcPaths.from_runtime_dir(Path("runtime"), expected_uid=os.getuid())
+        IpcPaths.from_runtime_dir(Path("runtime"), expected_uid=0)
 
 
 def test_ipc_paths_reject_symlink_runtime_directory(tmp_path: Path) -> None:
@@ -44,4 +43,4 @@ def test_ipc_paths_reject_symlink_runtime_directory(tmp_path: Path) -> None:
     link.symlink_to(runtime_dir, target_is_directory=True)
 
     with pytest.raises(IpcSecurityError, match="runtime-dir-symlink"):
-        IpcPaths.from_runtime_dir(link, expected_uid=os.getuid())
+        IpcPaths.from_runtime_dir(link, expected_uid=runtime_dir.stat().st_uid)
