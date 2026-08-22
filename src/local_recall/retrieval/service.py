@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from local_recall.domain._validation import require_aware, require_nonempty
 from local_recall.domain.frames import RedactedRecord
 from local_recall.ports.encryption import DecryptionRequest, EncryptionProvider
-from local_recall.ports.storage import DayRangeQuery, QueryableStorageBackend
+from local_recall.ports.storage import CatalogRecord, DayRangeQuery, QueryableStorageBackend
 
 from .time import ResolvedTimeRange
 
@@ -23,6 +23,7 @@ class RetrievalQuery:
     application: str | None = field(default=None, repr=False)
     workspace: str | None = field(default=None, repr=False)
     keywords: tuple[str, ...] = field(default=(), repr=False)
+    semantic_text: str | None = field(default=None, repr=False)
     limit: int = 100
     candidate_limit: int = 1024
     query_id: UUID = field(default_factory=uuid4)
@@ -32,6 +33,8 @@ class RetrievalQuery:
             require_nonempty(self.application, "application")
         if self.workspace is not None:
             require_nonempty(self.workspace, "workspace")
+        if self.semantic_text is not None:
+            require_nonempty(self.semantic_text, "semantic_text")
         normalized_keywords = tuple(keyword.strip().casefold() for keyword in self.keywords)
         if any(not keyword for keyword in normalized_keywords):
             raise ValueError("retrieval keywords must not be empty")
@@ -50,8 +53,8 @@ class RetrievalQuery:
             f"RetrievalQuery(query_id={self.query_id!r}, time_range={self.time_range!r}, "
             f"application_filter={self.application is not None}, "
             f"workspace_filter={self.workspace is not None}, "
-            f"keyword_count={len(self.keywords)}, limit={self.limit}, "
-            f"candidate_limit={self.candidate_limit})"
+            f"keyword_count={len(self.keywords)}, semantic_filter={self.semantic_text is not None}, "
+            f"limit={self.limit}, candidate_limit={self.candidate_limit})"
         )
 
 
@@ -67,6 +70,30 @@ class RetrievalPolicyDecision:
         require_nonempty(self.reason_code, "reason_code")
         if not self.allowed and self.remote_provider_eligible:
             raise ValueError("denied retrieval cannot allow remote provider")
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticCandidate:
+    record_id: UUID
+    captured_at: datetime
+    score: float
+
+    def __post_init__(self) -> None:
+        require_aware(self.captured_at, "captured_at")
+        if not -1.0 <= self.score <= 1.0:
+            raise ValueError("semantic score is invalid")
+
+
+@runtime_checkable
+class SemanticSearch(Protocol):
+    async def search(
+        self,
+        text: str,
+        *,
+        start_at: datetime,
+        end_at: datetime,
+        limit: int,
+    ) -> tuple[SemanticCandidate, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +124,7 @@ class RetrievedPassage:
 
     def __post_init__(self) -> None:
         require_aware(self.captured_at, "captured_at")
-        if not 0.0 <= self.score <= 1.0:
+        if not -1.0 <= self.score <= 1.0:
             raise ValueError("retrieval score is invalid")
         require_nonempty(self.redaction_policy_revision, "redaction_policy_revision")
         if self.redaction_finding_count < 0:
@@ -144,10 +171,12 @@ class RetrievalService:
         storage: QueryableStorageBackend,
         encryption: EncryptionProvider,
         policy: RetrievalPolicy,
+        semantic_search: SemanticSearch | None = None,
     ) -> None:
         self._storage = storage
         self._encryption = encryption
         self._policy = policy
+        self._semantic_search = semantic_search
 
     async def retrieve(self, query: RetrievalQuery) -> RetrievalBatch:
         query_decision = await self._policy.authorize_query(query)
@@ -163,10 +192,22 @@ class RetrievalService:
                 limit=query.candidate_limit,
             )
         )
+        semantic_scores = await self._semantic_scores(query, candidates)
+        if query.semantic_text is not None and not semantic_scores:
+            return RetrievalBatch(
+                query_id=query.query_id,
+                passages=(),
+                remote_provider_eligible=False,
+                policy_revision=query_decision.policy_revision,
+            )
+
         passages: list[RetrievedPassage] = []
         remote_provider_eligible = query_decision.remote_provider_eligible
         for candidate in candidates:
-            envelope = await self._storage.get(candidate.record.record_id)
+            record_id = candidate.record.record_id
+            if query.semantic_text is not None and record_id not in semantic_scores:
+                continue
+            envelope = await self._storage.get(record_id)
             if envelope is None:
                 continue
             record = await self._encryption.decrypt(DecryptionRequest(envelope, envelope.key))
@@ -185,7 +226,7 @@ class RetrievalService:
             remote_provider_eligible = (
                 remote_provider_eligible and record_decision.remote_provider_eligible
             )
-            passages.append(_passage(record, query))
+            passages.append(_passage(record, query, semantic_scores.get(record_id)))
 
         passages.sort(key=lambda item: (-item.score, item.captured_at, str(item.record_id)))
         return RetrievalBatch(
@@ -194,6 +235,28 @@ class RetrievalService:
             remote_provider_eligible=remote_provider_eligible,
             policy_revision=query_decision.policy_revision,
         )
+
+    async def _semantic_scores(
+        self,
+        query: RetrievalQuery,
+        candidates: tuple[CatalogRecord, ...],
+    ) -> dict[UUID, float]:
+        if query.semantic_text is None:
+            return {}
+        if self._semantic_search is None:
+            raise RuntimeError("semantic retrieval is unavailable")
+        hits = await self._semantic_search.search(
+            query.semantic_text,
+            start_at=query.time_range.start_at,
+            end_at=query.time_range.end_at,
+            limit=query.candidate_limit,
+        )
+        canonical_ids = {candidate.record.record_id for candidate in candidates}
+        scores: dict[UUID, float] = {}
+        for hit in hits:
+            if hit.record_id in canonical_ids:
+                scores[hit.record_id] = max(scores.get(hit.record_id, -1.0), hit.score)
+        return scores
 
 
 def _empty_batch(query: RetrievalQuery, decision: RetrievalPolicyDecision) -> RetrievalBatch:
@@ -227,7 +290,11 @@ def _metadata_matches(record: RedactedRecord, field_name: str, expected: str) ->
     return isinstance(value, str) and value.casefold() == expected.casefold()
 
 
-def _passage(record: RedactedRecord, query: RetrievalQuery) -> RetrievedPassage:
+def _passage(
+    record: RedactedRecord,
+    query: RetrievalQuery,
+    semantic_score: float | None,
+) -> RetrievedPassage:
     text = "\n".join(record.frame.ocr_text)
     excerpt = text[:_MAX_EXCERPT_CHARS]
     provenance = tuple(
@@ -241,15 +308,15 @@ def _passage(record: RedactedRecord, query: RetrievalQuery) -> RetrievedPassage:
         for context_field in record.frame.metadata.fields
         for item in context_field.provenance
     )
-    keyword_score = 1.0
-    if query.keywords:
+    score = semantic_score if semantic_score is not None else 1.0
+    if semantic_score is None and query.keywords:
         haystack = text.casefold()
-        keyword_score = sum(keyword in haystack for keyword in query.keywords) / len(query.keywords)
+        score = sum(keyword in haystack for keyword in query.keywords) / len(query.keywords)
     return RetrievedPassage(
         record_id=record.record_id,
         captured_at=record.frame.captured_at,
         excerpt=excerpt,
-        score=keyword_score,
+        score=score,
         metadata_provenance=provenance,
         redaction_policy_revision=record.frame.policy_revision,
         redaction_finding_count=len(record.frame.findings),
