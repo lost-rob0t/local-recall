@@ -20,6 +20,7 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [Desktop session and metadata strategy resolution](docs/session-resolution.md)
 - [Local embeddings and encrypted semantic index](docs/semantic-index.md)
 - [Time-scoped retrieval and record provenance](docs/retrieval.md)
+- [Activity clustering and evidence-grounded summaries](docs/activity-clustering.md)
 - [Explicit remote provider routing and egress](docs/remote-providers.md)
 - [Testing policy](docs/testing.md)
 

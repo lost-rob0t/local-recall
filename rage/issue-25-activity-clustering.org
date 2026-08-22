@@ -1,0 +1,163 @@
+#+title: RAGE issue 25 - activity clustering and summaries
+#+startup: overview
+
+* Immutable issue state
+:PROPERTIES:
+:ISSUE: 25
+:START_COMMIT: 9735063a84e2ccfe6d2acada6a4d48586d6f1e60
+:START_BRANCH: main
+:WORK_BRANCH: agent/issue-25-activity-clustering
+:END:
+
+Consumed issue: =lost-rob0t/local-recall#25=.
+
+Declared dependencies were verified closed/completed before consumption:
+- #20 adaptive scheduling, perceptual deduplication, and backpressure
+- #21 local generation provider with Ollama
+- #22 local embeddings and encrypted semantic index
+- #24 time-scoped retrieval and record provenance
+
+At consumption there were no issue comments on #25, no open pull requests, and #25 was the first open dependency-satisfied issue in the complete declared sequence. Current =main= was immutable commit =9735063a84e2ccfe6d2acada6a4d48586d6f1e60=.
+
+Issue acceptance requires grouping records using time gaps, application/workspace changes, perceptual similarity, and semantic similarity; exact source-record membership; incremental local summaries through the configured generation provider; recomputation after deletion or policies change; encrypted summary persistence with model/version provenance; evidence-bounded summaries that do not invent actions; repetitive-frame span coalescing; conservative low-confidence separation; and deterministic tests for rapid switching, long idle gaps, and repeated use of one application for different tasks.
+
+* Iteration 1 - conservative contiguous activity segmentation
+** Repository evidence
+- =RedactedRecord= is the canonical decrypted activity source. It contains exact record ID, capture time, policy revision, redacted OCR, redacted metadata, and redacted pixels; clustering must not use =RawFrame= or bypass redaction.
+- Issue #20 already provides deterministic 64-bit RGB8 difference hashing in =capture.adaptive.perceptual_dhash_rgb8=. Reusing that implementation avoids a second image-similarity definition.
+- =EncryptedSemanticIndex= intentionally hides stored embedding vectors behind encrypted snapshot/search APIs. Clustering therefore must not crack the index format or expose vectors; when pairwise semantic continuity is needed it can batch the same redacted text through the configured local =EmbeddingProvider= contract from #22.
+- =GenerationProvider= already exposes =GenerationRole.SUMMARIZATION= and provider capabilities/location. Activity summarization can therefore remain downstream of redaction and reject non-local providers for this issue rather than creating a second routing system.
+- =SQLiteEncryptedStorage= remains canonical for capture records. Activity/session state is derived data and must be replaceable/rebuildable when source membership or policy revision changes.
+- Retrieval #24 already treats storage as canonical and decrypted data as bounded working state. Activity clustering should preserve that ownership rather than turn summaries into a second source of truth.
+
+** External research
+- Adams and MacKay, “Bayesian Online Changepoint Detection,” models contiguous sequential regimes by detecting abrupt changes in the generating process and tracking the current run length. Source: https://arxiv.org/abs/0710.3742 and https://lips.cs.princeton.edu/pdfs/adams2007changepoint.pdf
+- The current =ruptures= change-point documentation describes temporal segmentation as partitioning an ordered signal; its cosine kernel detects changes in mean direction of embedded vectors. Source: https://centre-borelli.github.io/ruptures-docs/user-guide/detection/kernelcpd/ and https://centre-borelli.github.io/ruptures-docs/user-guide/costs/costcosine/
+- =ruptures= PELT can find globally optimized breakpoints with pruning, but it is retrospective and adds a substantial numerical dependency/parameter surface. Source: https://centre-borelli.github.io/ruptures-docs/user-guide/detection/pelt/
+
+The important design change from this research is that “cluster” should not mean unconstrained global clustering. User activity is an ordered stream; non-adjacent records from the same application must never be pulled together merely because their embeddings look alike. The correct v0.1 primitive is contiguous segmentation/change detection with conservative boundaries.
+
+** Evidence-derived design
+1. Introduce immutable project-owned activity domain types: =ActivityRecordFeatures=, =ActivityCluster=, =ActivitySummary=, and bounded =ActivityClusteringPolicy=. Public reprs contain IDs/counts/times/control values only, never OCR, metadata values, pixels, prompts, or summary text.
+2. Input records are sorted by =(captured_at, record_id)= and segmented only against the immediately preceding accepted record/segment. Clusters are always contiguous in source time; no global/non-contiguous merge pass is permitted.
+3. A time gap greater than =max_gap_seconds= is a hard boundary. Workspace change is a hard boundary when both workspaces are known. Missing workspace/application data reduces confidence rather than being guessed.
+4. Application change is a strong boundary signal, not an unconditional boundary: a short editor↔browser hop may remain one activity only when semantic continuity is strong and the time gap is small. Same application never guarantees continuity; repeated use of Emacs/Firefox for different tasks must still split when semantic/perceptual evidence is weak.
+5. Perceptual continuity reuses =perceptual_dhash_rgb8= on the already-redacted frame and normalized Hamming similarity =1 - changed_bits/64=. It is supporting evidence only; visually static but semantically different text must not force a merge.
+6. Semantic continuity is cosine similarity between local embedding vectors created from bounded redacted OCR plus approved application/workspace metadata. Pairwise vectors are produced in one bounded batch; no remote provider is eligible for clustering.
+7. Continuity is conservative and deterministic. Hard boundaries win first. Otherwise same-application, perceptual, semantic, and short-gap evidence form a bounded score. A merge occurs only when score >= configured threshold and every required evidence item is available. Ambiguous/low-confidence pairs split.
+8. Exact source membership is stored as an ordered tuple of record IDs. Cluster start/end are first/last source timestamps; a repeated-frame run therefore becomes one activity span without manufacturing intermediate captures.
+9. Summary generation is local-only and incremental. The generation prompt contains only bounded redacted text plus opaque source labels. The model must return a strict JSON claim envelope. Each claim must cite one or more cluster source IDs and include an evidence excerpt that exactly occurs in the corresponding redacted source text. Invalid JSON, foreign IDs, missing citations, or non-matching excerpts reject the generated summary. Stored summaries omit the excerpts but retain the exact source IDs for every accepted claim.
+10. Model output cannot become canonical evidence. =ActivitySummary= is explicitly derived/model-generated, records provider/model ID and source membership, and can always be regenerated. Query answering later must retain record citations rather than cite a summary alone.
+11. Persist derived clusters/summaries in a dedicated owner-only encrypted activity snapshot using the existing =KeyProvider= envelope pattern, not plaintext SQLite columns. The encrypted snapshot stores cluster membership, summary text, provider/model provenance, policy revision set, and a deterministic source fingerprint.
+12. Reconciliation is full replacement from canonical records in v0.1. Deletion removes source IDs naturally; changed redaction/policy revision changes the fingerprint and forces affected summary regeneration. This is intentionally simpler and safer than in-place partial graph mutation. The write remains atomic and resumable by rebuilding from source records.
+13. Provider unavailability does not block clustering. Clusters may exist with =summary=None= and can be summarized later. Cancellation/failure never publishes a partially generated replacement snapshot.
+
+** Rejected alternatives
+- DBSCAN/HDBSCAN/k-means over all embeddings: ignores chronology and can merge unrelated non-adjacent tasks that happen to use the same application/topic;
+- importing =ruptures= for v0.1: useful research reference but unnecessary dependency/parameter surface for a deterministic online-compatible boundary policy with explicit acceptance fixtures;
+- reading private embedding vectors from =EncryptedSemanticIndex=: breaks the index abstraction and couples clustering to encrypted snapshot internals;
+- application equality as the primary grouping key: fails the explicit repeated-same-application/different-task case;
+- perceptual hash equality as the primary grouping key: static UIs can show semantically different content, and tiny layout changes can obscure a coherent task;
+- model-generated cluster boundaries: non-deterministic, expensive, hard to regression-test, and violates the requirement for exact reproducible membership;
+- storing summaries or cluster labels in plaintext SQLite metadata: expands the plaintext leakage budget;
+- accepting free-form model summaries solely because the prompt says “do not hallucinate”: prompts are not an enforceable evidence boundary;
+- claiming exact semantic truth from embedding cosine: similarity is only a heuristic signal and cannot authorize a merge by itself when stronger hard-boundary evidence disagrees.
+
+** Security/privacy invariants
+- clustering consumes =RedactedRecord= only; raw/unredacted frames are structurally outside the API;
+- no remote provider is used for embedding or summarization in this issue;
+- source membership is exact and ordered; no summary can cite a record outside its cluster;
+- no model output can add source membership;
+- summary evidence excerpts must match already-redacted source text and are not persisted in the derived snapshot;
+- low-confidence/ambiguous continuity splits rather than merges;
+- derived activity state is rebuildable and never overrides canonical capture records;
+- plaintext filesystem/catalog surfaces do not gain OCR, summary, application/workspace values, embeddings, or pixel data;
+- cancellation/provider failure cannot publish a partial replacement;
+- repr/errors/status remain content-free.
+
+** Failure/race analysis
+- record deleted between retrieval and reconciliation -> the next reconciliation omits it; derived state is replace-only and cannot resurrect it;
+- record policy revision changes -> source fingerprint changes and dependent summary is regenerated;
+- embedding provider returns wrong count/dimensions/non-finite values -> fail the semantic clustering batch rather than silently downgrading merge confidence;
+- local generation provider unavailable -> preserve deterministic clusters without summaries and retry later;
+- model cites unknown source ID or fabricated excerpt -> reject that summary, preserve the prior valid snapshot if one exists;
+- cancellation during embedding/generation/encryption/write -> propagate cancellation and leave previous snapshot authoritative;
+- equal timestamps -> stable record-ID ordering makes membership deterministic;
+- application/workspace metadata absent -> confidence decreases; never invent values;
+- very long input window -> explicit record/context/token limits bound embedding and generation batches;
+- policy/context boundary changes inside adjacent records -> different redaction policy revisions are a hard cluster boundary so summaries never mix authorization/redaction epochs implicitly.
+
+** Exact verification gates
+- unit RED/GREEN for time-gap, workspace, application, perceptual, semantic, low-confidence, equal-time ordering, and policy-revision boundaries;
+- acceptance fixtures for rapid switching, long idle gap, repeated same application/different task, and repetitive frames forming one span;
+- provider tests proving local-only embedding/summarization, bounded batching, cancellation, unavailable-provider behavior, malformed generation output, foreign IDs, and fabricated evidence rejection;
+- encrypted-store integration/security tests proving summaries/membership are not visible in plaintext files/catalogs and replacement survives restart;
+- deletion/policy reconciliation tests proving affected summaries regenerate and deleted IDs disappear;
+- content-leak tests over repr/errors/status/audit surfaces;
+- canonical =./scripts/check= on the exact final head;
+- =nix flake check= only if package/flake inputs change;
+- exact-head GitHub Actions green and mergeable before merge.
+
+* TDD evidence
+** Contiguous segmentation RED
+- Test-only head =53ea17d5e59d62ab7b800434d1c921825afee4fe= defines deterministic acceptance cases for repetitive frames, long idle gaps, workspace changes, short cross-application continuity, same-application semantic task changes, missing-confidence evidence, policy revision changes, and equal-timestamp ordering.
+- Pull-request CI run =32582164512= (#534) completed with failure on that exact head. Both Ubuntu matrices passed bootstrap, Ruff formatting, Ruff lint, and ShellCheck before strict Pyright failed because =local_recall.activity.clustering= did not exist. The primary oracle was =Import "local_recall.activity.clustering" could not be resolved=; subsequent unknown-type diagnostics were consequences of the same missing production API.
+- The failure-propagation job remained green, proving the test runner itself still propagated known failures correctly.
+- This is the accepted RED for the first implementation slice. Production clustering code is added only after this observed behavioral/API failure.
+
+** Contiguous segmentation GREEN
+- Production head =b91efd1eb62bb6b4fdc1ea66cef8d6963851b1de= added the minimal immutable feature/policy/cluster types and contiguous segmenter required by the RED fixtures.
+- Pull-request CI run =32582309638= (#537) passed on that exact head: Ubuntu 22.04 and 24.04 matrices green; strict Pyright green; unit, contract, integration, and security tests green; repository security checks green; canonical =./scripts/check= green; failure-propagation green.
+- The accepted implementation is conservative by construction: time/workspace/policy hard boundaries win before similarity, semantic evidence must meet its floor, perceptual evidence must be present, and missing similarity evidence splits rather than being guessed.
+
+** Activity feature extraction RED
+- Three mechanical attempts were explicitly rejected as RED evidence: heads =a516364567b257731e89ce3f8329a41fbd71eae7= and =6730a40a7a66cd30cc83019386700474dd63585c= failed Ruff import sorting, while =bfac17fa222c0365d01d15d618ab4128c9c2b613= failed Ruff formatting before the behavioral oracle. None count as TDD proof.
+- The structurally valid test-only head =c99099175059f8388b38ec1c8b108e9d4923206b= passed Ruff formatting, Ruff lint, and ShellCheck on both Ubuntu matrices in CI run =32582747571= (#543), then strict Pyright failed specifically because =local_recall.activity.features= and its =ActivityFeatureExtractor=/=ActivityFeatureFailure= API did not exist. Failure-propagation remained green. This is the accepted RED.
+
+** Activity feature extraction GREEN
+- Initial production head =10da8bfad472decf342bb445796ae1b6cc84b948= was not accepted as GREEN because canonical Ruff formatting found one production formatting defect. No behavior was weakened; only canonical formatting was applied.
+- Exact production head =f7ec269042da56300f2105b18603a384ec373bf7= implements redacted-record-only feature extraction, reuses the existing deterministic RGB8 dHash, requires a local available embedding provider before constructing content requests, performs one bounded redacted-content embedding batch, validates provider identity/vector count/finite values, and exposes content-free failures/repr.
+- CI run =32582925411= (#545) passed on that exact head: Ubuntu 22.04 and 24.04 matrices green; strict Pyright green; unit, contract, integration, and security tests green; repository security checks green; canonical =./scripts/check= green; failure-propagation green.
+
+** Evidence-grounded summary RED
+- Test-only summary head =79e8d391c0b734a45e69401bdf4336ec0fe29b78= was followed by formatting-only repair head =1984d39ccd188b75adf5d3e67c6c47ca91eea139= so the behavioral oracle could execute.
+- CI run =32583115720= (#548) on =1984d39c...= passed Ruff formatting, Ruff lint, and ShellCheck before strict Pyright failed specifically because =local_recall.activity.summaries= and =ActivitySummarizer= did not exist. Failure-propagation remained green. This is the accepted summary RED.
+
+** Evidence-grounded summary GREEN
+- Intermediate production heads exposed two real gate defects: untyped =json.loads= data at the strict Pyright boundary and a Bandit B608 false positive caused solely by SQL-like English prompt wording. The parser was narrowed through explicit =object= / typed casts; the prompt was reworded. No =# nosec= suppression, scanner baseline change, or weakened test was used.
+- Exact summary head =680d758accaf5ea97d61b532afaa883194881f2b= passed CI run =32583692217= (#552): both Ubuntu matrices green; strict Pyright green; unit, contract, integration, and security suites green; repository security checks green; canonical =./scripts/check= green; failure-propagation green.
+- Fresh attribution research reinforced the conservative design: FactCC (EMNLP 2020) uses source-span evidence for factual verification; SUnsET (EMNLP 2025) reports that explicit evidence spans/citations improve trustworthiness while models still struggle to copy precise support; FullCite (2026) likewise treats precise evidence-span identification as a hard grounding problem. The implementation therefore keeps v0.1 summaries extractive and locally validates exact redacted source substrings instead of trusting unsupported free-form prose.
+
+** Encrypted derived-state store RED
+- Test-only store head =84588ead6e55716be9d67efce154ee6cc533c716= defined encrypted owner-only round trip, authoritative replacement, membership, plaintext-leak, and tamper-authentication fixtures.
+- CI run =32583782532= (#553) passed formatting, Ruff lint, and ShellCheck before strict Pyright failed specifically because =local_recall.activity.store=, =EncryptedActivityStore=, =ActivityEntry=, =ActivitySnapshot=, and =ActivityStoreFailure= did not exist. This is the accepted store RED.
+
+** Encrypted derived-state store GREEN
+- First production head =ac94d2f6732a6e4a96100c8455d82a6129e5f1a1= was rejected as GREEN because Ruff formatting found mechanical line-wrap defects. Exact formatted head =01b7bfe1f16a21e89b69abba4baa25200d0ef271= was then tested without weakening behavior.
+- CI run =32583895835= (#555) passed on =01b7bfe...=: both Ubuntu matrices green; formatting/lint/shell/strict Pyright green; unit, contract, integration, and security suites green; security checks green; canonical repository gate green; failure-propagation green.
+- The store uses =KeyPurpose.SUMMARY=, a random per-snapshot data key, XChaCha20-Poly1305 authenticated encryption, owner-only directory/file permissions, symlink rejection, bounded envelope size, atomic temp+fsync+replace+directory-fsync publication, sanitized authentication failure, and plaintext-buffer scrubbing. Tests prove summary text, source IDs, provider/model identity, and policy revisions are absent from persisted plaintext bytes.
+
+** Reconciliation RED
+- Initial test-only head =f3b4dedadbf34ca802330690ed26c9bb4f2ce9bf= was rejected as RED evidence because Ruff formatting stopped before the behavioral oracle. Formatting-only head =f581969d538bcb2c4a7d0729d9770068c551a912= corrected only the canonical layout.
+- CI run =32584058800= (#557) on =f581969d...= passed formatting, Ruff lint, and ShellCheck on both Ubuntu matrices, then strict Pyright failed specifically because =local_recall.activity.reconcile= and =ActivityReconciler= did not exist. Failure-propagation was green. This is the accepted reconciliation RED.
+
+** Reconciliation GREEN
+- Production implementation added serialized full replacement from canonical redacted records, deterministic content/policy fingerprints, exact-membership prior-summary reuse, deletion/content/policy invalidation, a distinct =ActivitySummaryUnavailable= path for temporary local-generation unavailability, and preservation of the previous encrypted snapshot on malformed/fabricated summary output.
+- Mechanical production formatting/slot-order failures were fixed without behavior changes; they are not counted as GREEN evidence.
+- Exact reconciliation head =60be82606dab86d7913ad81de0cc23865188ed19= passed CI run =32584249003= (#562): both Ubuntu matrices green; formatting, Ruff lint, ShellCheck, strict Pyright, unit, contract, integration, and security suites green; repository security checks green; canonical =./scripts/check= green; failure-propagation green.
+- Reconciliation tests prove unchanged cluster+fingerprint summaries are reused, deletion removes source membership and regenerates affected summaries, policy/redacted-content change changes the fingerprint and regenerates, temporary generation unavailability publishes deterministic clusters with =summary=None=, and malformed evidence raises before encrypted replacement so the prior snapshot remains authoritative.
+
+* Acceptance mapping
+- Repetitive captures -> deterministic contiguous span fixture in =test_clustering.py=.
+- Time gaps -> hard boundary fixture for long idle gaps.
+- Application/workspace changes -> cross-application continuity only with strong evidence; workspace is a hard boundary.
+- Perceptual + semantic similarity -> existing issue #20 dHash plus local embedding cosine continuity.
+- Rapid switching / same app different task -> deterministic fixtures split low-semantic-confidence same-application records and preserve strongly related short editor/browser hops.
+- Exact source membership -> immutable ordered cluster IDs, store membership validation, summary foreign-ID rejection.
+- Incremental summaries -> unchanged membership+fingerprint reuses validated prior summary; affected clusters regenerate only when source/policy content changes.
+- Deletion/policy changes -> full canonical reconciliation atomically replaces derived state and tests prove deleted IDs disappear / policy changes regenerate.
+- Local provider only -> remote embedding and remote summary providers are rejected before content egress; no remote fallback exists in this issue.
+- No invented actions -> model output must cite cluster IDs and exact contiguous redacted OCR excerpts; unsupported/foreign/fabricated evidence rejects the summary.
+- Encrypted summary persistence -> owner-only XChaCha20-Poly1305 snapshot stores cluster, summary, model/provider and policy provenance with no plaintext content-bearing derived metadata.
+- Failure atomicity -> invalid generation leaves the prior encrypted snapshot authoritative; temporary unavailable generation is represented explicitly as no summary.
+- Documentation -> =docs/activity-clustering.md= records the trust boundary, conservative segmentation semantics, evidence-grounded summary contract, reconciliation, encryption, and failure behavior.
