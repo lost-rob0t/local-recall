@@ -27,9 +27,11 @@ def test_status_uses_authoritative_daemon_state() -> None:
     client = FakeClient(
         CliResponse.success(request_id="placeholder", lifecycle_state=CliLifecycleState.RECORDING)
     )
-    set_client_factory(lambda: client)
-
-    result = runner.invoke(app, ["status"])
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(app, ["status"])
+    finally:
+        set_client_factory(previous)
 
     assert result.exit_code == 0
     assert "recording" in result.stdout
@@ -42,9 +44,11 @@ def test_stop_only_succeeds_after_daemon_confirms_off() -> None:
     client = FakeClient(
         CliResponse.success(request_id="placeholder", lifecycle_state=CliLifecycleState.OFF)
     )
-    set_client_factory(lambda: client)
-
-    result = runner.invoke(app, ["stop"])
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(app, ["stop"])
+    finally:
+        set_client_factory(previous)
 
     assert result.exit_code == 0
     assert "off" in result.stdout
@@ -59,9 +63,11 @@ def test_unavailable_daemon_has_stable_nonzero_exit() -> None:
             reason_code="daemon-unavailable",
         )
     )
-    set_client_factory(lambda: client)
-
-    result = runner.invoke(app, ["start"])
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(app, ["start"])
+    finally:
+        set_client_factory(previous)
 
     assert result.exit_code == 3
     assert "daemon-unavailable" in result.stdout
@@ -71,9 +77,11 @@ def test_privacy_command_is_urgent_control() -> None:
     client = FakeClient(
         CliResponse.success(request_id="placeholder", lifecycle_state=CliLifecycleState.PAUSED)
     )
-    set_client_factory(lambda: client)
-
-    result = runner.invoke(app, ["privacy-on"])
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(app, ["privacy-on"])
+    finally:
+        set_client_factory(previous)
 
     assert result.exit_code == 0
     assert client.requests[0].priority.value == "urgent-control"
@@ -85,9 +93,12 @@ def test_static_completion_does_not_construct_daemon_client() -> None:
     def forbidden_factory() -> DaemonClient:
         raise AssertionError(marker)
 
-    set_client_factory(forbidden_factory)
-    result = runner.invoke(app, ["--show-completion", "bash"])
+    previous = set_client_factory(forbidden_factory)
+    try:
+        result = runner.invoke(app, ["--show-completion", "bash"])
+    finally:
+        set_client_factory(previous)
 
     assert result.exit_code == 0
     assert marker not in result.stdout
-    assert "status" in result.stdout
+    assert "LOCAL_RECALL_COMPLETE" in result.stdout
