@@ -19,9 +19,7 @@ from local_recall.ipc import SessionToken
 MAX_ROUTING_BYTES = 4_096
 MAX_REQUEST_PAYLOAD_BYTES = 131_072
 _REQUEST_FRAME_COUNT = 3
-_ROUTING_KEYS = frozenset(
-    {"protocol_version", "request_id", "command", "priority", "deadline"}
-)
+_ROUTING_KEYS = frozenset({"protocol_version", "request_id", "command", "priority", "deadline"})
 _PAYLOAD_KEYS = frozenset({"query", "start", "end"})
 
 
@@ -125,7 +123,7 @@ class IpcRequestCodec:
                 start=start,
                 end=end,
             )
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             raise IpcProtocolError("invalid-request") from None
 
         return CliRequest(
@@ -148,7 +146,7 @@ def _decode_object(frame: bytes, *, error: str) -> dict[str, object]:
     try:
         text = frame.decode("utf-8", errors="strict")
         loaded = cast(object, json.loads(text))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except UnicodeDecodeError, json.JSONDecodeError:
         raise IpcProtocolError(error) from None
     if not isinstance(loaded, dict):
         raise IpcProtocolError(error)
