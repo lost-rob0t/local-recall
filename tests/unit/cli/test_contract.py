@@ -1,7 +1,6 @@
 import datetime as dt
 
 import pytest
-
 from local_recall.cli_contract import (
     CliCommand,
     CliOutcome,
