@@ -45,7 +45,9 @@ Hard properties:
 - `LD_PRELOAD`, proxy variables, and unrelated environment values are not passed to capture helpers;
 - private native output, display values, executable paths, and pixel bytes are excluded from public errors;
 - monitor topology changes, display loss, malformed XWD data, unsupported layouts, and size violations fail closed without constructing a frame;
-- returned frames preserve the approved lifecycle generation so downstream stale-work gates remain authoritative;
+- returned frames preserve the approved lifecycle generation;
+- raw pipeline ingress requires that producer generation explicitly as `expected_generation` and compares it with the current capture permit before accepting any bytes;
+- a frame produced under generation N therefore cannot be relabelled as N+1 after lock, privacy, stop, fault, or other generation invalidation; rejected stale buffers are scrubbed before the exception escapes;
 - no backend failure can create a plaintext screenshot artifact through Local Recall.
 
 ## Supported XWD subset
