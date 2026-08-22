@@ -39,8 +39,7 @@ def test_answering_source_has_no_capture_lifecycle_storage_or_remote_transport_i
         module
         for module in imported
         if any(
-            module == prefix or module.startswith(f"{prefix}.")
-            for prefix in _FORBIDDEN_PREFIXES
+            module == prefix or module.startswith(f"{prefix}.") for prefix in _FORBIDDEN_PREFIXES
         )
     )
     assert offenders == []
