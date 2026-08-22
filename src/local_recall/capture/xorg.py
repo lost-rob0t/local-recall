@@ -104,9 +104,7 @@ class XorgSnapshotReader(Protocol):
 class NativeXorgRunner(Protocol):
     async def capture_root_dump(self, *, deadline_monotonic_ns: int) -> bytes: ...
 
-    async def monitor_layout(
-        self, *, deadline_monotonic_ns: int
-    ) -> tuple[XorgMonitor, ...]: ...
+    async def monitor_layout(self, *, deadline_monotonic_ns: int) -> tuple[XorgMonitor, ...]: ...
 
 
 class XwdSnapshotReader:
@@ -131,10 +129,12 @@ class XwdSnapshotReader:
             raise XorgCaptureError("display-unavailable")
         try:
             decoded = _decode_xwd(payload)
-            _validate_monitors(before, decoded.root_x, decoded.root_y, decoded.width, decoded.height)
+            _validate_monitors(
+                before, decoded.root_x, decoded.root_y, decoded.width, decoded.height
+            )
         except XorgCaptureError:
             raise
-        except (OverflowError, ValueError, struct.error):
+        except OverflowError, ValueError, struct.error:
             raise XorgCaptureError("capture-format-invalid") from None
         return XorgSnapshot(
             captured_at=self._now(),
