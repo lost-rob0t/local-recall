@@ -12,6 +12,7 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [Configuration and privacy profiles](docs/configuration.md)
 - [Capture lifecycle and hard gate](docs/lifecycle.md)
 - [Bounded in-memory capture pipeline](docs/pipeline.md)
+- [Xorg screenshot capture backend](docs/xorg-capture.md)
 - [Local OCR and deterministic redaction](docs/redaction.md)
 - [Authenticated encryption and key providers](docs/encryption.md)
 - [Encrypted storage, catalog, and migrations](docs/storage.md)

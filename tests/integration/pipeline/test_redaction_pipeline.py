@@ -153,7 +153,7 @@ def test_pipeline_persists_only_redacted_output_without_filesystem_plaintext(
     monkeypatch.setattr(Path, "write_bytes", forbidden)
     monkeypatch.setattr(Path, "write_text", forbidden)
 
-    gate, _ = recording_gate()
+    gate, generation = recording_gate()
     encryption = InspectingEncryptionProcessor()
     sink = RecordingSink()
     fault_sink = RecordingFaultSink()
@@ -169,7 +169,11 @@ def test_pipeline_persists_only_redacted_output_without_filesystem_plaintext(
     )
 
     try:
-        result = pipeline.submit_raw(record_id=record_id, frames=raw_frames)
+        result = pipeline.submit_raw(
+            record_id=record_id,
+            frames=raw_frames,
+            expected_generation=generation,
+        )
         assert result.status is SubmissionStatus.ACCEPTED
         assert sink.event.wait(2)
         assert encryption.event.is_set()
@@ -198,7 +202,7 @@ def test_redaction_failure_rejects_record_without_storage_or_content_leak() -> N
         frame_id=record_id,
     )
     raw_frames = tuple(bytearray(value) for value in encode_raw_frame(frame))
-    gate, _ = recording_gate()
+    gate, generation = recording_gate()
     sink = RecordingSink()
     fault_sink = RecordingFaultSink()
     pipeline = BoundedCapturePipeline(
@@ -212,7 +216,11 @@ def test_redaction_failure_rejects_record_without_storage_or_content_leak() -> N
 
     try:
         assert (
-            pipeline.submit_raw(record_id=record_id, frames=raw_frames).status
+            pipeline.submit_raw(
+                record_id=record_id,
+                frames=raw_frames,
+                expected_generation=generation,
+            ).status
             is SubmissionStatus.ACCEPTED
         )
         assert fault_sink.event.wait(2)
@@ -308,7 +316,7 @@ def _assert_metadata_redacted_before_persistence(
         context=context,
     )
     raw_frames = tuple(bytearray(value) for value in encode_raw_frame(frame))
-    gate, _ = recording_gate()
+    gate, generation = recording_gate()
     encryption = InspectingEncryptionProcessor()
     sink = RecordingSink()
     pipeline = BoundedCapturePipeline(
@@ -322,7 +330,11 @@ def _assert_metadata_redacted_before_persistence(
 
     try:
         assert (
-            pipeline.submit_raw(record_id=record_id, frames=raw_frames).status
+            pipeline.submit_raw(
+                record_id=record_id,
+                frames=raw_frames,
+                expected_generation=generation,
+            ).status
             is SubmissionStatus.ACCEPTED
         )
         assert sink.event.wait(2)

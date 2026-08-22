@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -19,6 +20,51 @@ class PixelFormat(StrEnum):
     @property
     def bytes_per_pixel(self) -> int:
         return {PixelFormat.RGBA8: 4, PixelFormat.RGB8: 3, PixelFormat.GRAY8: 1}[self]
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureRegion:
+    x: int
+    y: int
+    width: int
+    height: int
+
+    def __post_init__(self) -> None:
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError("capture region dimensions must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class MonitorGeometry:
+    monitor_id: str
+    x: int
+    y: int
+    width: int
+    height: int
+    scale_x: float = 1.0
+    scale_y: float = 1.0
+
+    def __post_init__(self) -> None:
+        require_nonempty(self.monitor_id, "monitor_id")
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError("monitor dimensions must be positive")
+        if not math.isfinite(self.scale_x) or not math.isfinite(self.scale_y):
+            raise ValueError("monitor scale must be finite")
+        if self.scale_x <= 0 or self.scale_y <= 0:
+            raise ValueError("monitor scale must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureProvenance:
+    backend_id: str
+    backend_revision: str
+    root_region: CaptureRegion
+    region: CaptureRegion
+    monitors: tuple[MonitorGeometry, ...]
+
+    def __post_init__(self) -> None:
+        require_nonempty(self.backend_id, "backend_id")
+        require_nonempty(self.backend_revision, "backend_revision")
 
 
 def _validate_frame(
@@ -52,6 +98,7 @@ class RawFrame:
     pixel_format: PixelFormat
     pixels: bytes = field(repr=False)
     metadata: ContextMetadata
+    capture_provenance: CaptureProvenance | None = None
 
     def __post_init__(self) -> None:
         _validate_frame(
