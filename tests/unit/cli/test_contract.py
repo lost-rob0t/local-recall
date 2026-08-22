@@ -137,16 +137,13 @@ def test_query_payload_json_preserves_citations_for_machine_output() -> None:
 def test_diagnostic_payload_is_closed_and_machine_readable() -> None:
     payload = CliDiagnosticPayload(
         category=CliDiagnosticCategory.PROVIDERS,
-        entries=(
-            CliDiagnosticEntry(name="ollama", state="available", value="local"),
-        ),
+        entries=(CliDiagnosticEntry(name="ollama", state="available", value="local"),),
     )
     response = CliResponse.success(request_id="req-2", diagnostic_payload=payload)
 
     assert response.diagnostic_payload == payload
     assert payload.to_json() == (
-        '{"category":"providers","entries":'
-        '[{"name":"ollama","state":"available","value":"local"}]}'
+        '{"category":"providers","entries":[{"name":"ollama","state":"available","value":"local"}]}'
     )
     assert "ollama" not in repr(payload)
     assert "ollama" not in repr(response)
