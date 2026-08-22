@@ -104,4 +104,45 @@ Test-only head =2460ae320cc6efd52250fa1e7a04133cbb71b2a4=, CI run 407:
 This is the accepted behavioral RED for Iteration 1. Production implementation begins only after this observed failure.
 
 ** Production implementation
-Head =604f268cad4972d51281399f0d874e0595454e06= adds the project-owned standard-library-only adaptive controller and deterministic RGB8 dHash seam. Green verification pending.
+Head =604f268cad4972d51281399f0d874e0595454e06= adds the project-owned standard-library-only adaptive controller and deterministic RGB8 dHash seam.
+
+Exact head =e60bb0599bac1f9d6f0ac89846b8f89b53101cdd= passed CI run 410 after replacing two production assertions flagged by Bandit with explicit fail-closed runtime checks. Iteration 1 therefore proved the isolated controller contract green before integration work began.
+
+* Iteration 2 - authorized capture to downstream admission
+** Gap found after Iteration 1
+The green controller existed only as an isolated decision seam. No production path yet bound an =ApprovedCaptureRequest= to privacy-scoped dedup context, capture scheduling, backend invocation, generation validation, perceptual classification, and downstream admission. Without that seam, the repository could not prove that a duplicate frame was actually stopped before OCR/model work.
+
+The narrow integration boundary remains in =capture.adaptive= rather than creating another scheduler or pipeline. It consumes only an already-authorized request and a capture backend; it cannot mint authorization, modify lifecycle state, or persist data. Existing #8 pipeline queues remain the sole bulk buffering authority.
+
+** Rejected Iteration 2 RED candidates
+- =b6742fc4a81172389da611f20065fbffa1d19ca9= / CI run 411: rejected because Ruff import sorting failed before the missing flow API was evaluated.
+- =e80031fd36a6f05bb262c5d2c744500cf0c50e20= / CI run 412: rejected because Ruff formatting failed before the behavioral gate.
+- =d7d2a42c7cbe7bc39512e36913855b6a5683d809= / CI run 413: rejected because import sorting still failed. Moving the expected API into the existing =capture.adaptive= module removed this hygiene ambiguity.
+
+** Accepted Iteration 2 RED
+Test-only head =1b824d044438a931d0d004418f1122765c0ddca8=, CI run 414:
+- formatting: passed;
+- Ruff lint: passed;
+- ShellCheck: passed;
+- strict Pyright: failed specifically because =AdaptiveCaptureFlow= and =AdaptiveCaptureOutcome= were absent from the production adaptive boundary;
+- failure-propagation gate remained green.
+
+This is the accepted behavioral RED for the admission seam.
+
+** Iteration 2 implementation
+Head =3a6107bd6d181ccff0336fc00563f6f5e763270c= added:
+- =AdaptiveCaptureFlow= over an injected typed =CaptureBackend=;
+- explicit =skip/admit/coalesce= outcomes with content-redacted result repr;
+- request-derived dedup context scoped by capture generation, policy revision, configuration revision, application, workspace, and window ID;
+- scheduling before backend invocation so not-due work never captures pixels;
+- generation validation before fingerprint/dedup state mutation;
+- RGB8 fingerprinting with explicit row-stride support and no persistent image copy;
+- duplicate coalescing that returns no frame for downstream work;
+- privacy revision changes that force a fresh admission even when pixels are identical.
+
+The first production CI correctly exposed only two strict-typing errors in the test oracle because =frame_decision= is absent on skip outcomes. The test was narrowed with explicit non-None assertions rather than weakening production typing.
+
+Exact head =855eab28d08051966b4701c613778fe480e12a46= passed CI run 416 across Ubuntu 22.04/24.04 checks, canonical repository gate, and failure-propagation verification.
+
+** Bounded-state verification
+Head =23e5fa9b3165eb46d56c19635b2127bba321affc= adds a deterministic 10,000-transition churn test. It verifies the controller retains only one pending metadata-change candidate, keeps a bounded content-free repr, and does not accumulate prior workspace/window identities. Exact-head CI remains the final gate for this verification commit.
