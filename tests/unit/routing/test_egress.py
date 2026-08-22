@@ -44,7 +44,7 @@ def test_safe_redacted_text_is_approved_with_content_free_control_metadata() -> 
 
 def test_payload_is_rescanned_and_secret_match_fails_closed() -> None:
     gate = EgressGate()
-    secret = "Authorization: Bearer ghp_1234567890abcdefghijklmnopqrstuv"
+    secret = "Authorization: Bearer ghp_1234567890abcdefghijklmnopqrstuv"  # pragma: allowlist secret
 
     with pytest.raises(EgressDeniedError, match="secret-detected") as captured:
         gate.approve(
