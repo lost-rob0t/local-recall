@@ -23,7 +23,7 @@ from .support import (
 
 
 def test_end_to_end_pipeline_never_uses_filesystem_backing(monkeypatch: pytest.MonkeyPatch) -> None:
-    gate, _ = recording_gate()
+    gate, generation = recording_gate()
     sink = RecordingSink()
     fault_sink = RecordingFaultSink()
     filesystem_calls: list[str] = []
@@ -50,7 +50,11 @@ def test_end_to_end_pipeline_never_uses_filesystem_backing(monkeypatch: pytest.M
     record_id = uuid4()
 
     try:
-        result = pipeline.submit_raw(record_id=record_id, frames=(payload,))
+        result = pipeline.submit_raw(
+            record_id=record_id,
+            frames=(payload,),
+            expected_generation=generation,
+        )
         assert result.status is SubmissionStatus.ACCEPTED
         assert sink.event.wait(2)
 
@@ -78,7 +82,11 @@ def test_stop_cancels_in_flight_and_prevents_storage_write() -> None:
     )
 
     try:
-        pipeline.submit_raw(record_id=uuid4(), frames=(bytearray(b"sensitive"),))
+        pipeline.submit_raw(
+            record_id=uuid4(),
+            frames=(bytearray(b"sensitive"),),
+            expected_generation=generation,
+        )
         assert blocker.started.wait(1)
 
         gate.bind_owner()
@@ -107,7 +115,7 @@ def test_stop_cancels_in_flight_and_prevents_storage_write() -> None:
 
 def test_worker_fault_event_contains_record_id_but_not_captured_content() -> None:
     marker = "CAPTURED-CONTENT-MUST-NOT-LEAK"
-    gate, _ = recording_gate()
+    gate, generation = recording_gate()
     fault_sink = RecordingFaultSink()
     pipeline = BoundedCapturePipeline(
         gate=gate,
@@ -120,7 +128,11 @@ def test_worker_fault_event_contains_record_id_but_not_captured_content() -> Non
     record_id = uuid4()
 
     try:
-        pipeline.submit_raw(record_id=record_id, frames=(bytearray(marker.encode()),))
+        pipeline.submit_raw(
+            record_id=record_id,
+            frames=(bytearray(marker.encode()),),
+            expected_generation=generation,
+        )
         assert fault_sink.event.wait(2)
 
         event = fault_sink.events[0]
