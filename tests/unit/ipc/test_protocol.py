@@ -3,8 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-import local_recall.ipc as ipc
-import local_recall.ipc_protocol as ipc_protocol
+from local_recall import ipc, ipc_protocol
 from local_recall.cli_contract import CliCommand, CliRequest
 
 NOW = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
