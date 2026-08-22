@@ -1,8 +1,9 @@
 import datetime as dt
 from dataclasses import dataclass, field
 
-from local_recall.cli_contract import CliCommand, CliOutcome, CliResponse
 from local_recall.cli_service import DaemonClient, execute_command, exit_code_for
+
+from local_recall.cli_contract import CliCommand, CliOutcome, CliResponse
 
 
 @dataclass
