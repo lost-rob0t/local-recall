@@ -108,9 +108,7 @@ def _window_metadata(*, source_id: str = "xorg-generic") -> domain.ContextMetada
 
 def test_full_desktop_capture_preserves_generation_and_monitor_provenance() -> None:
     reader = FakeReader(snapshot=_snapshot())
-    backend = xorg_capture.XorgCaptureBackend(
-        reader=reader, monotonic_ns=lambda: 1_000_000_000
-    )
+    backend = xorg_capture.XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
     frame = asyncio.run(backend.capture(_request()))
 
@@ -131,9 +129,7 @@ def test_full_desktop_capture_preserves_generation_and_monitor_provenance() -> N
 
 def test_validated_window_geometry_crops_only_after_root_capture() -> None:
     reader = FakeReader(snapshot=_snapshot())
-    backend = xorg_capture.XorgCaptureBackend(
-        reader=reader, monotonic_ns=lambda: 1_000_000_000
-    )
+    backend = xorg_capture.XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
     frame = asyncio.run(backend.capture(_request(metadata=_window_metadata())))
 
@@ -147,9 +143,7 @@ def test_validated_window_geometry_crops_only_after_root_capture() -> None:
 
 def test_untrusted_window_geometry_falls_back_to_full_desktop() -> None:
     reader = FakeReader(snapshot=_snapshot())
-    backend = xorg_capture.XorgCaptureBackend(
-        reader=reader, monotonic_ns=lambda: 1_000_000_000
-    )
+    backend = xorg_capture.XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
     frame = asyncio.run(
         backend.capture(_request(metadata=_window_metadata(source_id="unknown-source")))
@@ -161,9 +155,7 @@ def test_untrusted_window_geometry_falls_back_to_full_desktop() -> None:
 
 def test_expired_deadline_fails_before_reader_is_invoked() -> None:
     reader = FakeReader(snapshot=_snapshot())
-    backend = xorg_capture.XorgCaptureBackend(
-        reader=reader, monotonic_ns=lambda: 10_000_000_000
-    )
+    backend = xorg_capture.XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 10_000_000_000)
 
     with pytest.raises(xorg_capture.XorgCaptureError, match="capture-deadline-expired"):
         asyncio.run(backend.capture(_request(deadline=9_000_000_000)))
@@ -176,9 +168,7 @@ def test_reader_failure_is_sanitized() -> None:
     reader = FakeReader(
         error=xorg_capture.XorgCaptureError("capture-failed", private_detail=private_value)
     )
-    backend = xorg_capture.XorgCaptureBackend(
-        reader=reader, monotonic_ns=lambda: 1_000_000_000
-    )
+    backend = xorg_capture.XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
     with pytest.raises(xorg_capture.XorgCaptureError) as caught:
         asyncio.run(backend.capture(_request()))
