@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Callable
+from typing import Annotated
 
 import typer
 
@@ -171,9 +172,9 @@ def privacy_off() -> None:
 @app.command()
 def ask(
     question: str,
-    start: dt.datetime | None = typer.Option(None),
-    end: dt.datetime | None = typer.Option(None),
-    json_output: bool = typer.Option(False, "--json"),
+    start: Annotated[dt.datetime | None, typer.Option()] = None,
+    end: Annotated[dt.datetime | None, typer.Option()] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Ask a question over retained activity with citations."""
     _run_query_command(
@@ -188,9 +189,9 @@ def ask(
 @app.command()
 def search(
     query: str,
-    start: dt.datetime | None = typer.Option(None),
-    end: dt.datetime | None = typer.Option(None),
-    json_output: bool = typer.Option(False, "--json"),
+    start: Annotated[dt.datetime | None, typer.Option()] = None,
+    end: Annotated[dt.datetime | None, typer.Option()] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Search retained activity with optional explicit time bounds."""
     _run_query_command(
@@ -204,9 +205,9 @@ def search(
 
 @app.command()
 def timeline(
-    start: dt.datetime | None = typer.Option(None),
-    end: dt.datetime | None = typer.Option(None),
-    json_output: bool = typer.Option(False, "--json"),
+    start: Annotated[dt.datetime | None, typer.Option()] = None,
+    end: Annotated[dt.datetime | None, typer.Option()] = None,
+    json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Render a bounded activity timeline."""
     _run_query_command(
