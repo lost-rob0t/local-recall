@@ -9,7 +9,13 @@ from local_recall.domain.frames import PixelFormat, RedactedFrame, RedactedRecor
 from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.domain.metadata import ContextMetadata
 from local_recall.ports.encryption import DecryptionRequest
-from local_recall.ports.storage import CatalogRecord, DayRangeQuery
+from local_recall.ports.storage import (
+    CatalogRecord,
+    DayRangeQuery,
+    DeleteRequest,
+    DeleteResult,
+    StorageIntegrityReport,
+)
 from local_recall.retrieval.service import (
     RetrievalPolicyDecision,
     RetrievalQuery,
@@ -44,6 +50,17 @@ class Storage:
 
     async def get(self, record_id: UUID) -> EncryptedRecordEnvelope | None:
         return self.envelopes.get(record_id)
+
+    async def put(self, envelope: EncryptedRecordEnvelope) -> StoredRecordRef:
+        self.envelopes[envelope.record_id] = envelope
+        return StoredRecordRef(envelope.record_id, self.backend_id, envelope.schema_version)
+
+    async def delete(self, request: DeleteRequest) -> DeleteResult:
+        deleted = self.envelopes.pop(request.record_id, None) is not None
+        return DeleteResult(request.record_id, deleted, False)
+
+    async def recover(self) -> StorageIntegrityReport:
+        return StorageIntegrityReport(verified_records=len(self.envelopes))
 
 
 class Decryptor:
