@@ -1,0 +1,89 @@
+#+title: RAGE issue 24 - time-scoped retrieval and record provenance
+#+startup: overview
+
+* Immutable issue state
+:PROPERTIES:
+:ISSUE: 24
+:START_COMMIT: 6355587e905de3b2e6b2c71199d07eaaa4c557e2
+:START_BRANCH: main
+:WORK_BRANCH: agent/issue-24-time-scoped-retrieval
+:END:
+
+Consumed issue: =lost-rob0t/local-recall#24=.
+
+Declared dependencies were verified closed/completed before consumption:
+- #11 encrypted storage, minimal coarse-day catalog, record schema, and migrations
+- #22 local embedding provider and encrypted semantic index
+
+At consumption there were no issue comments on #24. The complete open issue queue began at #24, and #24 was the first open dependency-satisfied issue in declared sequence after the completed #23 transaction. Current =main= was immutable commit =6355587e905de3b2e6b2c71199d07eaaa4c557e2=.
+
+Issue acceptance requires explicit/relative time-range parsing in the configured timezone, combined time/application/workspace/metadata/keyword/semantic filtering, minimum-record decryption, source timestamps and confidence, exact record/capture/provenance/redaction traceability, query-time policy/provider eligibility, correct resolution of questions such as “What was I doing Saturday?”, and prompt destruction/release of decrypted working sets on completion and cancellation.
+
+* Iteration 1 - narrow retrieval authority over encrypted canonical records
+** Repository evidence
+- =SQLiteEncryptedStorage= exposes only opaque encrypted records plus a coarse UTC =day_bucket= through =QueryableStorageBackend.list_candidates=. Exact timestamps, application/workspace names, OCR, titles, and other sensitive metadata intentionally do not exist in the plaintext catalog.
+- =EncryptedSemanticIndex= keeps record identifiers, exact capture timestamps, vectors, model identity, and dimensions inside an authenticated encrypted snapshot. =SemanticQuery= already supports aware half-open time bounds and bounded results.
+- Decryption is already isolated behind =EncryptionProvider.decrypt(DecryptionRequest)= and returns a =RedactedRecord=; retrieval must use that boundary rather than decode storage blobs itself.
+- =RedactedRecord.frame= contains the authoritative redacted OCR tuple, redacted metadata with field-level =MetadataProvenance= and confidence, redaction findings, policy revision, and exact =captured_at= timestamp.
+- The architecture assigns =RetrievalActor= responsibility for time resolution, encrypted candidate selection, minimum working-set decryption, ranking, and working-data destruction. It explicitly forbids retrieval from selecting/calling a remote provider.
+- The existing configured IANA timezone is =LocalRecallConfig.rules.timezone= and is already strictly validated with =zoneinfo.ZoneInfo=.
+
+** External primary-source research
+- CPython 3.14 =zoneinfo.ZoneInfo= is the standard-library IANA timezone implementation and handles daylight-saving transitions; ambiguous wall-clock times are represented with =fold=. Source: https://docs.python.org/3.14/library/zoneinfo.html
+- CPython 3.14 aware =datetime= values represent concrete instants and =astimezone()= preserves the instant while converting timezone representation. Source: https://docs.python.org/3.14/library/datetime.html
+
+** Evidence-derived design
+1. Retrieval owns a closed, typed =ResolvedTimeRange= with aware half-open =[start_at, end_at)= bounds. Relative calendar terms are resolved against an injected aware =now= in =rules.timezone= so tests are deterministic and DST-safe.
+2. v0.1 accepts an intentionally narrow deterministic time grammar rather than a general natural-language parser: explicit ISO date, =today=, =yesterday=, weekday names such as =Saturday=, and bounded =last N minutes/hours/days=. Question text may contain one such selector; unknown/ambiguous time language must not guess.
+3. A bare weekday resolves to the most recent occurrence including today. Calendar-day ranges are formed as local midnight -> next local midnight in the configured IANA zone, then converted to UTC instants. This allows DST days to be 23/24/25 actual hours without inventing fixed-duration days.
+4. Candidate enumeration is two-stage. First derive inclusive coarse UTC day buckets covering the exact instant range and ask storage for encrypted candidate references. Then use the encrypted semantic index when semantic text is present to narrow/rank opaque record IDs before decryption.
+5. Exact timestamp/application/workspace/metadata/keyword filtering happens only after decryption because those fields are deliberately absent from the plaintext catalog. This preserves #11’s leakage boundary.
+6. Decrypt each candidate at most once and only when it survives every pre-decryption selector available for that query (time bucket and semantic record-ID narrowing). Never decrypt records merely to build a global plaintext index.
+7. =RetrievalQuery= is immutable and bounded: resolved time selector, optional exact application/workspace selectors, optional metadata field/value selectors, optional keyword terms, optional semantic text, and a hard result limit.
+8. =RetrievedPassage= carries record ID, exact capture timestamp, matched redacted text, sanitized score/confidence, metadata provenance, redaction policy revision, and redaction finding identifiers/counts needed by later answer citation. It never carries screenshot pixels.
+9. Ranking is deterministic: semantic score when present, then exact keyword evidence/metadata confidence, then capture time/record ID for stable ties. No model-generated ranking is required.
+10. Query-time privacy is a separate injected =RetrievalPolicy= decision. Retrieval asks policy before decrypting and before returning each record. It does not call providers or mint remote authorization. Later answering composes the returned redacted context with #23 routing/egress authority.
+11. The retrieval working set is bounded and scoped to one coroutine. On success, cancellation, or failure, temporary mutable text buffers are scrubbed where practical and all references to decrypted records/passages are released in =finally=. Python cannot promise physical zeroization of immutable =str=/=bytes= copies, so documentation must not make that false claim.
+
+** Rejected alternatives
+- adding exact timestamps/application/workspace to SQLite: violates the accepted #11 plaintext leakage budget;
+- decrypting every record in the retention period: violates minimum-working-set acceptance and scales poorly;
+- treating semantic-index timestamps as canonical record existence: stale index entries could outlive a deleted/corrupt storage record; storage remains canonical and semantic hits are only selectors/ranking evidence;
+- a third-party free-form date parser: widens dependencies, grammar, locale ambiguity, and attack surface for one bounded v0.1 requirement;
+- fixed =timedelta(days=1)= UTC windows for local calendar days: wrong across DST transitions;
+- letting retrieval call remote providers: violates the architecture and #23 separation of retrieval from routing/egress;
+- claiming CPython object memory is securely zeroized: not technically defensible.
+
+** Security/privacy invariants
+- storage remains canonical for record existence;
+- no plaintext index expansion;
+- exact sensitive filters execute only in memory over already-redacted decrypted records;
+- no screenshot pixels are returned by retrieval;
+- query policy denial prevents decryption;
+- semantic hits never authorize a record absent from storage;
+- remote-provider eligibility is represented as control state only and cannot trigger network I/O here;
+- query text, OCR text, metadata values, titles, and decrypted records stay out of repr/audit/error surfaces;
+- candidate/result limits are hard bounds;
+- cancellation/failure must release the current decrypted working set and must not publish partial success as complete.
+
+** Failure/race analysis
+- record deleted after candidate enumeration -> =storage.get= returns none; skip it rather than resurrecting from semantic index;
+- record corrupted after enumeration -> storage integrity failure propagates as sanitized retrieval failure; do not substitute semantic data;
+- semantic index unavailable/model mismatch -> semantic query fails closed for semantic-required retrieval rather than silently changing semantics;
+- timezone missing from system tzdata -> configuration already rejects it; retrieval receives only validated config;
+- DST spring/fall transition -> local midnight boundaries are converted as concrete aware instants, preserving the calendar-day intent;
+- cancellation during storage/decrypt/filter -> propagate cancellation and release current references in =finally=;
+- policy changes during a query -> policy boundary must be rechecked before returning a record; later actor integration can bind policy revision/correlation explicitly;
+- oversized candidate population -> storage and semantic query limits bound enumeration; retrieval rejects requests whose configured/result bounds would exceed its maximum.
+
+** Exact verification gates
+- focused unit tests for deterministic time grammar, DST transitions, invalid/ambiguous selectors, query validation, filtering, ranking, provenance, and content-redacted repr;
+- integration tests with synthetic encrypted records proving coarse-day preselection -> minimum decrypt -> exact filters -> provenance result;
+- cancellation/failure tests proving no partial result is returned and scoped working state is released;
+- security tests proving no query/OCR/metadata/pixel content appears in repr/errors/control decisions;
+- canonical =./scripts/check= on exact final head;
+- =nix flake check= if this issue changes flake/package/config inputs; otherwise current development-shell flake remains unchanged;
+- exact-head GitHub Actions green before merge.
+
+* TDD evidence
+No RED has been accepted yet. Tests must first pass formatting/lint/type collection far enough to fail for the missing retrieval behavior rather than for harness mistakes.
