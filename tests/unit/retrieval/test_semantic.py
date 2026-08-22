@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from local_recall.domain.crypto import EncryptedRecordEnvelope, KeyHandle, StoredRecordRef
@@ -37,7 +37,9 @@ class Storage:
                 1,
             )
             for record in self.records.values()
-            if request.start_day <= record.frame.captured_at.astimezone(UTC).date() <= request.end_day
+            if request.start_day
+            <= record.frame.captured_at.astimezone(UTC).date()
+            <= request.end_day
         )
 
     async def get(self, record_id: UUID) -> EncryptedRecordEnvelope | None:
@@ -116,7 +118,9 @@ def test_semantic_hits_narrow_decryption_and_cannot_resurrect_deleted_records() 
 
     result = asyncio.run(service.retrieve(query))
 
-    assert semantic.queries == [("architecture work", time_range.start_at, time_range.end_at, 100)]
+    assert semantic.queries == [
+        ("architecture work", time_range.start_at, time_range.end_at, 100)
+    ]
     assert decryptor.decrypted == [selected.record_id]
     assert tuple(item.record_id for item in result.passages) == (selected.record_id,)
     assert result.passages[0].score == 0.91
