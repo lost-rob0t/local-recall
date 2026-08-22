@@ -3,9 +3,11 @@ import datetime as dt
 import pytest
 
 from local_recall.cli_contract import (
+    CliCitation,
     CliCommand,
     CliOutcome,
     CliPriority,
+    CliQueryPayload,
     CliRequest,
     CliResponse,
 )
@@ -63,6 +65,35 @@ def test_query_text_is_payload_not_routing_metadata() -> None:
     assert request.query == marker
     assert marker not in request.routing_json()
     assert marker not in repr(request)
+
+
+def test_cited_query_payload_is_typed_and_hidden_from_repr() -> None:
+    marker = "synthetic-answer-marker"
+    citation = CliCitation(
+        record_id="record-1",
+        captured_at=dt.datetime(2026, 8, 22, 18, 30, tzinfo=dt.UTC),
+    )
+    payload = CliQueryPayload(text=marker, citations=(citation,))
+    response = CliResponse.success(request_id="req-1", query_payload=payload)
+
+    assert response.query_payload == payload
+    assert response.query_payload.citations == (citation,)
+    assert marker not in repr(payload)
+    assert marker not in repr(response)
+
+
+def test_query_payload_json_preserves_citations_for_machine_output() -> None:
+    citation = CliCitation(
+        record_id="record-2",
+        captured_at=dt.datetime(2026, 8, 22, 18, 31, tzinfo=dt.UTC),
+    )
+    payload = CliQueryPayload(text="summary", citations=(citation,))
+
+    rendered = payload.to_json()
+
+    assert '"text":"summary"' in rendered
+    assert '"record_id":"record-2"' in rendered
+    assert '"captured_at":"2026-08-22T18:31:00+00:00"' in rendered
 
 
 def test_response_outcomes_are_closed_and_sanitized() -> None:
