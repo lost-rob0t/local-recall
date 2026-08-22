@@ -13,19 +13,29 @@ from local_recall.capture.native import BoundedNativeCommandExecutor
 
 class FakeProcess:
     def __init__(self, *, stdout: bytes = b"", stderr: bytes = b"", block: bool = False) -> None:
+        self._stdout_payload = stdout
+        self._stderr_payload = stderr
+        self._block = block
+        self.stdout: asyncio.StreamReader | None = None
+        self.stderr: asyncio.StreamReader | None = None
+        self.killed = False
+        self._finished: asyncio.Event | None = None
+        self.returncode: int | None = None if block else 0
+
+    def bind_to_running_loop(self) -> None:
         self.stdout = asyncio.StreamReader()
         self.stderr = asyncio.StreamReader()
-        self.stdout.feed_data(stdout)
-        self.stderr.feed_data(stderr)
-        self.killed = False
+        self.stdout.feed_data(self._stdout_payload)
+        self.stderr.feed_data(self._stderr_payload)
         self._finished = asyncio.Event()
-        if not block:
+        if not self._block:
             self.stdout.feed_eof()
             self.stderr.feed_eof()
             self._finished.set()
-        self.returncode: int | None = None if block else 0
 
     async def wait(self) -> int:
+        if self._finished is None:
+            raise RuntimeError("fake process was not spawned")
         await self._finished.wait()
         if self.returncode is None:
             self.returncode = -9
@@ -34,9 +44,12 @@ class FakeProcess:
     def kill(self) -> None:
         self.killed = True
         self.returncode = -9
-        self.stdout.feed_eof()
-        self.stderr.feed_eof()
-        self._finished.set()
+        if self.stdout is not None:
+            self.stdout.feed_eof()
+        if self.stderr is not None:
+            self.stderr.feed_eof()
+        if self._finished is not None:
+            self._finished.set()
 
 
 class FakeSpawner:
@@ -48,6 +61,7 @@ class FakeSpawner:
         self, executable: Path, args: tuple[str, ...], environment: Mapping[str, str]
     ) -> asyncio.subprocess.Process:
         self.calls.append((executable, args, dict(environment)))
+        self.process.bind_to_running_loop()
         return cast(asyncio.subprocess.Process, self.process)
 
 
