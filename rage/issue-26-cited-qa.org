@@ -108,9 +108,16 @@ The design change from this evidence is that the model will not generate final M
 ** Authorized remote answering
 - Accepted RED: exact head =4e943b51a268ce536e26e8bd581e33030388763b=, CI run =32588799916=. Formatting, Ruff, ShellCheck, strict Pyright, and failure propagation passed; 599 unit tests passed and exactly three tests failed because =AnsweringService= did not yet accept the =remote_providers= / egress boundary.
 - Production implementation added the narrow remote generation protocol, retrieval eligibility gate, exact =EgressAuthorization= routing, redacted-text-only =EgressPayload=, existing =EgressGate= approval, and =ApprovedEgressPayload=-only remote invocation. The first production run at =70aa15e633d3815875dce3deb0989b5656789739= failed only Ruff formatting before behavior; this is not GREEN evidence.
-- Final remote/integration/security GREEN remains the exact-head completion gate and must be recorded before merge.
+- Exact production head =a1e2977e92b3e1ac78b0f64de3321aaa5217176b=, CI run =32589261650=, passed formatting, Ruff, ShellCheck, strict Pyright, 602 unit, 6 contract, 37 integration, 57 security tests, and failure propagation before detect-secrets flagged two intentionally seeded security-test literals. This was a valid scanner failure, not GREEN evidence.
+- The synthetic literals were annotated with the repository-supported inline =pragma: allowlist secret=. First repair head =55d4f43629c769c2a1c6a14e6700cfdd290cf547= was rejected as final evidence because Ruff formatting required the long fixture assignment to wrap.
+- Final implementation head =1572397070b5d1b771c5f5d59b2ee5c831b429a0= passed CI run =32591061722= completely: Ubuntu 22.04 and 24.04 matrices green; formatting, Ruff, ShellCheck, strict Pyright, 602 unit, 6 contract, 37 integration, and 57 security tests green; repository policy, Bandit, detect-secrets/security scan green; canonical =./scripts/check= green; and eight failure-propagation modes verified.
 
-** Acceptance additions on the current branch
+** Acceptance additions on the merged implementation
 - Encrypted-storage integration coverage exercises a real =SQLiteEncryptedStorage= catalog plus synthetic decryption, semantic retrieval, timezone-aware Saturday planning, local-only generation, and canonical chronological citations while proving model context omits record UUIDs.
 - Structural security coverage proves =local_recall.answering= imports no capture/lifecycle/storage/provider-transport implementation and that planning/claim/answer reprs omit seeded question/claim content.
 - =docs/answering.md= records the trust boundary, evidence contract, rendering semantics, and explicit remote egress path.
+
+* Completion
+- PR #81 was review-clean and mergeable on exact green head =1572397070b5d1b771c5f5d59b2ee5c831b429a0= and was squash-merged to =main= as =80d43059bd73ed08f885dd73090819c751de1af9=.
+- GitHub closed issue #26 through the merged =Closes #26= transaction.
+- No later issue was consumed in this closeout transaction. The next run must re-enumerate live state before consuming #27 or any other issue.
