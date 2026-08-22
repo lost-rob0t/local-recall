@@ -67,6 +67,17 @@ class CliOutcome(StrEnum):
     INTERNAL_FAILURE = "internal-failure"
 
 
+class CliLifecycleState(StrEnum):
+    """Sanitized authoritative daemon lifecycle states."""
+
+    OFF = "off"
+    PAUSED = "paused"
+    RECORDING = "recording"
+    LOCKED = "locked"
+    OVERLOADED = "overloaded"
+    FAULTED = "faulted"
+
+
 def _require_aware(value: datetime, *, field: str) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{field} must be timezone-aware")
@@ -145,6 +156,26 @@ class CliResponse:
     request_id: str
     outcome: CliOutcome
     reason_code: str | None = None
+    lifecycle_state: CliLifecycleState | None = None
+
+    @classmethod
+    def success(
+        cls,
+        *,
+        request_id: str,
+        lifecycle_state: CliLifecycleState | str | None = None,
+    ) -> CliResponse:
+        state = (
+            CliLifecycleState(lifecycle_state)
+            if lifecycle_state is not None
+            else None
+        )
+        return cls(
+            protocol_version=PROTOCOL_VERSION,
+            request_id=request_id,
+            outcome=CliOutcome.SUCCESS,
+            lifecycle_state=state,
+        )
 
     @classmethod
     def failure(
@@ -171,14 +202,18 @@ class CliResponse:
                 "request_id": self.request_id,
                 "outcome": self.outcome.value,
                 "reason_code": self.reason_code,
+                "lifecycle_state": (
+                    self.lifecycle_state.value if self.lifecycle_state is not None else None
+                ),
             },
             sort_keys=True,
             separators=(",", ":"),
         )
 
     def __repr__(self) -> str:
+        state = self.lifecycle_state.value if self.lifecycle_state is not None else None
         return (
             "CliResponse("
             f"outcome={self.outcome.value!r}, request_id={self.request_id!r}, "
-            f"reason_code={self.reason_code!r})"
+            f"reason_code={self.reason_code!r}, lifecycle_state={state!r})"
         )
