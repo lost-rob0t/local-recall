@@ -19,6 +19,28 @@ class GenerationRole(StrEnum):
     ANSWERING = "answering"
 
 
+class EgressDataClass(StrEnum):
+    REDACTED_TEXT = "redacted-text"
+    APPROVED_METADATA = "approved-metadata"
+    REDACTED_IMAGE = "redacted-image"
+
+
+@dataclass(frozen=True, slots=True)
+class EgressAuthorization:
+    authorization_id: str
+    provider_id: str
+    data_classes: frozenset[EgressDataClass]
+    max_payload_bytes: int
+
+    def __post_init__(self) -> None:
+        require_nonempty(self.authorization_id, "authorization_id")
+        require_nonempty(self.provider_id, "provider_id")
+        if not self.data_classes:
+            raise ValueError("egress authorization requires data classes")
+        if self.max_payload_bytes <= 0:
+            raise ValueError("egress payload limit must be positive")
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderCapabilities:
     provider_id: str
@@ -114,6 +136,17 @@ class RoutingRequest:
     privacy_class: PrivacyClass
     allow_remote: bool
     egress_authorization_id: str | None = None
+    data_classes: frozenset[EgressDataClass] = frozenset()
+    authorization: EgressAuthorization | None = None
+
+    def __post_init__(self) -> None:
+        if self.egress_authorization_id is not None:
+            require_nonempty(self.egress_authorization_id, "egress_authorization_id")
+        if self.authorization is not None:
+            if not self.allow_remote:
+                raise ValueError("egress authorization requires allow_remote")
+            if self.egress_authorization_id not in {None, self.authorization.authorization_id}:
+                raise ValueError("egress authorization identifiers must match")
 
 
 @dataclass(frozen=True, slots=True)
