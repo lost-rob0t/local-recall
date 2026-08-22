@@ -18,7 +18,7 @@ type _Resolver = Callable[..., _ResolvedTimeRange]
 
 def _resolver() -> _Resolver:
     module = importlib.import_module("local_recall.retrieval.time")
-    return cast(_Resolver, getattr(module, "resolve_time_range"))
+    return cast(_Resolver, module.__dict__["resolve_time_range"])
 
 
 def test_weekday_resolves_to_most_recent_local_calendar_day() -> None:
