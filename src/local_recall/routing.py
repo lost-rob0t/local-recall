@@ -5,11 +5,14 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from local_recall.domain import (
+    EgressAuthorization,
+    EgressDataClass,
     ModelCapability,
     PrivacyClass,
     ProviderCapabilities,
     ProviderLocation,
     RoutingDecision,
+    RoutingRequest,
 )
 from local_recall.redaction.detector import DeterministicSecretDetector
 
@@ -19,12 +22,6 @@ class RoutingMode(StrEnum):
     LOCAL_ONLY = "local-only"
     LOCAL_FIRST = "local-first"
     REMOTE_EXPLICIT = "remote-explicit"
-
-
-class EgressDataClass(StrEnum):
-    REDACTED_TEXT = "redacted-text"
-    APPROVED_METADATA = "approved-metadata"
-    REDACTED_IMAGE = "redacted-image"
 
 
 class NoRouteError(RuntimeError):
@@ -44,36 +41,6 @@ class EgressDeniedError(RuntimeError):
 
     def __repr__(self) -> str:
         return f"EgressDeniedError(reason_code={self.reason_code!r})"
-
-
-@dataclass(frozen=True, slots=True)
-class EgressAuthorization:
-    authorization_id: str
-    provider_id: str
-    data_classes: frozenset[EgressDataClass]
-    max_payload_bytes: int
-
-    def __post_init__(self) -> None:
-        if not self.authorization_id:
-            raise ValueError("egress authorization id must not be empty")
-        if not self.provider_id:
-            raise ValueError("egress provider id must not be empty")
-        if not self.data_classes:
-            raise ValueError("egress authorization requires data classes")
-        if self.max_payload_bytes <= 0:
-            raise ValueError("egress payload limit must be positive")
-
-
-@dataclass(frozen=True, slots=True)
-class RoutingRequest:
-    capability: ModelCapability
-    privacy_class: PrivacyClass
-    data_classes: frozenset[EgressDataClass]
-    authorization: EgressAuthorization | None = None
-
-    def __post_init__(self) -> None:
-        if not self.data_classes:
-            raise ValueError("routing request requires data classes")
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,10 +203,17 @@ class RoutingPolicy:
         providers: tuple[ProviderCapabilities, ...],
     ) -> RoutingDecision:
         authorization = request.authorization
-        if authorization is None:
+        if not request.allow_remote or authorization is None:
             raise NoRouteError("egress-authorization-required")
+        if (
+            request.egress_authorization_id is not None
+            and request.egress_authorization_id != authorization.authorization_id
+        ):
+            raise NoRouteError("egress-authorization-mismatch")
         if request.privacy_class not in _REMOTE_PRIVACY_CLASSES:
             raise NoRouteError("privacy-class-denied")
+        if not request.data_classes:
+            raise NoRouteError("egress-data-class-required")
         if not request.data_classes.issubset(authorization.data_classes):
             raise NoRouteError("egress-data-class-denied")
 
