@@ -3,13 +3,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Iterable
+from typing import Protocol
 from uuid import UUID
 
 from local_recall.domain.frames import RedactedRecord
 from local_recall.domain.metadata import ContextField
 
-from .clustering import ActivityCluster, ActivitySegmenter
+from .clustering import ActivitySegmenter
 from .features import ActivityFeatureExtractor
 from .store import ActivityEntry, ActivitySnapshot, EncryptedActivityStore
 from .summaries import (
@@ -17,6 +17,10 @@ from .summaries import (
     ActivitySummary,
     ActivitySummaryUnavailable,
 )
+
+
+class _Digest(Protocol):
+    def update(self, value: bytes, /) -> None: ...
 
 
 class ActivityReconciler:
@@ -118,16 +122,16 @@ def _source_fingerprint(records: tuple[RedactedRecord, ...]) -> str:
     return digest.hexdigest()
 
 
-def _hash_field(digest: hashlib._Hash, field: ContextField) -> None:
+def _hash_field(digest: _Digest, field: ContextField) -> None:
     _hash_text(digest, field.name)
     encoded = json.dumps(field.value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     _hash_text(digest, encoded)
 
 
-def _hash_text(digest: hashlib._Hash, value: str) -> None:
+def _hash_text(digest: _Digest, value: str) -> None:
     _hash_bytes(digest, value.encode("utf-8"))
 
 
-def _hash_bytes(digest: hashlib._Hash, value: bytes) -> None:
+def _hash_bytes(digest: _Digest, value: bytes) -> None:
     digest.update(len(value).to_bytes(8, "big"))
     digest.update(value)
