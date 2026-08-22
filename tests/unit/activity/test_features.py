@@ -96,7 +96,11 @@ def test_remote_embedding_provider_is_rejected_before_content_egress() -> None:
         activity_features.ActivityFeatureFailure,
         match="local embedding provider required",
     ):
-        asyncio.run(activity_features.ActivityFeatureExtractor(provider).extract((_record(1, "private text"),)))
+        asyncio.run(
+            activity_features.ActivityFeatureExtractor(provider).extract(
+                (_record(1, "private text"),)
+            )
+        )
 
     assert provider.requests == []
 
