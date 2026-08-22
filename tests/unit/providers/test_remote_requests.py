@@ -28,6 +28,12 @@ def _approved(provider_id: str = "openrouter-main") -> object:
     )
 
 
+def _credential() -> object:
+    return ResolvedCredential(
+        value="sk-remote-synthetic-value",  # pragma: allowlist secret
+    )
+
+
 def test_openrouter_request_disables_upstream_provider_fallback() -> None:
     builder = RemoteRequestBuilder()
     spec = RemoteProviderSpec(
@@ -52,6 +58,87 @@ def test_openrouter_request_disables_upstream_provider_fallback() -> None:
     assert request.headers["authorization"].startswith("Bearer ")
     assert credential.value not in repr(request)
     assert credential.value not in repr(credential)
+
+
+def test_openai_compatible_request_uses_bearer_auth_and_one_model() -> None:
+    builder = RemoteRequestBuilder()
+    spec = RemoteProviderSpec(
+        provider_id="openai-main",
+        kind=RemoteProviderKind.OPENAI_COMPATIBLE,
+        endpoint="https://api.openai.com/v1/chat/completions",
+        model_id="gpt-5.2",
+    )
+
+    request = builder.build(spec, _approved("openai-main"), _credential())
+    body = json.loads(request.body.decode("utf-8"))
+
+    assert request.path == "/v1/chat/completions"
+    assert request.headers["authorization"].startswith("Bearer ")
+    assert body == {
+        "messages": [{"content": "safe redacted text", "role": "user"}],
+        "model": "gpt-5.2",
+    }
+
+
+def test_anthropic_request_uses_api_key_and_fixed_protocol_version() -> None:
+    builder = RemoteRequestBuilder()
+    spec = RemoteProviderSpec(
+        provider_id="anthropic-main",
+        kind=RemoteProviderKind.ANTHROPIC,
+        endpoint="https://api.anthropic.com/v1/messages",
+        model_id="claude-sonnet-4-6",
+    )
+
+    request = builder.build(spec, _approved("anthropic-main"), _credential())
+    body = json.loads(request.body.decode("utf-8"))
+
+    assert request.path == "/v1/messages"
+    assert request.headers["x-api-key"]
+    assert request.headers["anthropic-version"] == "2023-06-01"
+    assert "authorization" not in request.headers
+    assert "fallbacks" not in body
+    assert body == {
+        "max_tokens": 1024,
+        "messages": [{"content": "safe redacted text", "role": "user"}],
+        "model": "claude-sonnet-4-6",
+    }
+
+
+def test_google_request_uses_header_key_and_model_bound_endpoint() -> None:
+    builder = RemoteRequestBuilder()
+    spec = RemoteProviderSpec(
+        provider_id="google-main",
+        kind=RemoteProviderKind.GOOGLE,
+        endpoint=(
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            "gemini-3.7-flash:generateContent"
+        ),
+        model_id="gemini-3.7-flash",
+    )
+
+    request = builder.build(spec, _approved("google-main"), _credential())
+    body = json.loads(request.body.decode("utf-8"))
+
+    assert request.path == "/v1beta/models/gemini-3.7-flash:generateContent"
+    assert request.headers["x-goog-api-key"]
+    assert "authorization" not in request.headers
+    assert body == {"contents": [{"parts": [{"text": "safe redacted text"}]}]}
+
+
+def test_google_endpoint_model_must_match_selected_model() -> None:
+    builder = RemoteRequestBuilder()
+    spec = RemoteProviderSpec(
+        provider_id="google-main",
+        kind=RemoteProviderKind.GOOGLE,
+        endpoint=(
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            "different-model:generateContent"
+        ),
+        model_id="gemini-3.7-flash",
+    )
+
+    with pytest.raises(RemoteRequestError, match="provider-endpoint-model-mismatch"):
+        builder.build(spec, _approved("google-main"), _credential())
 
 
 def test_approved_payload_provider_must_match_remote_spec() -> None:
