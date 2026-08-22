@@ -46,13 +46,13 @@ class FakeReader:
         del self._buffer[:end]
         return value
 
-    async def readexactly(self, count: int) -> bytes:
-        if len(self._buffer) < count:
+    async def readexactly(self, n: int) -> bytes:
+        if len(self._buffer) < n:
             partial = bytes(self._buffer)
             self._buffer.clear()
-            raise asyncio.IncompleteReadError(partial, count)
-        value = bytes(self._buffer[:count])
-        del self._buffer[:count]
+            raise asyncio.IncompleteReadError(partial, n)
+        value = bytes(self._buffer[:n])
+        del self._buffer[:n]
         return value
 
 
