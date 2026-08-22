@@ -44,9 +44,7 @@ def _gradient_rgb(*, changed_pixel: bool = False) -> bytearray:
 
 def test_perceptual_hash_is_stable_for_tiny_rgb8_change() -> None:
     original = perceptual_dhash_rgb8(_gradient_rgb(), width=18, height=16)
-    near_duplicate = perceptual_dhash_rgb8(
-        _gradient_rgb(changed_pixel=True), width=18, height=16
-    )
+    near_duplicate = perceptual_dhash_rgb8(_gradient_rgb(changed_pixel=True), width=18, height=16)
 
     assert original.bit_length() <= 64
     assert (original ^ near_duplicate).bit_count() <= 2
