@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from uuid import UUID, uuid4
+from importlib import import_module
+from uuid import uuid4
 
-from local_recall.audit import AuditAction, AuditOutcome, AuditReasonCode
-from local_recall.audit.adapters import RemoteProviderAuditAdapter
+from local_recall.audit import AuditAction, AuditEvent, AuditOutcome, AuditReasonCode
 from local_recall.audit.recorder import AuditRecorder
 from local_recall.config import CredentialReference
 from local_recall.providers.remote import (
@@ -14,15 +14,23 @@ from local_recall.providers.remote import (
     RemoteProviderSpec,
     ResolvedCredential,
 )
-from local_recall.providers.remote_client import RemoteProviderClient
 from local_recall.routing import ApprovedEgressPayload, EgressDataClass
+
+RemoteProviderAuditAdapter = getattr(
+    import_module("local_recall.audit.adapters"),
+    "RemoteProviderAuditAdapter",
+)
+RemoteProviderClient = getattr(
+    import_module("local_recall.providers.remote_client"),
+    "RemoteProviderClient",
+)
 
 
 class MemorySink:
     def __init__(self) -> None:
-        self.events = []
+        self.events: list[AuditEvent] = []
 
-    def write(self, event) -> None:
+    def write(self, event: AuditEvent) -> None:
         self.events.append(event)
 
 
@@ -37,7 +45,12 @@ class FakeExecutor:
 
 
 class FakeBuilder:
-    def build(self, spec, approved, credential) -> RemoteHttpRequest:
+    def build(
+        self,
+        spec: RemoteProviderSpec,
+        approved: ApprovedEgressPayload,
+        credential: ResolvedCredential,
+    ) -> RemoteHttpRequest:
         return RemoteHttpRequest(
             method="POST",
             origin="https://api.example.test",
