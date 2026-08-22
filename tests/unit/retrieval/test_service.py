@@ -113,9 +113,7 @@ class FakeEncryption:
         self.decrypted.append(request.envelope.record_id)
         return self.records[request.envelope.record_id]
 
-    async def encrypt(
-        self, request: EncryptionRequest[RedactedRecord]
-    ) -> EncryptedRecordEnvelope:
+    async def encrypt(self, request: EncryptionRequest[RedactedRecord]) -> EncryptedRecordEnvelope:
         del request
         raise AssertionError("retrieval must never encrypt")
 
