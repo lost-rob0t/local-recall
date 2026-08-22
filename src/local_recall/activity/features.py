@@ -63,7 +63,9 @@ class ActivityFeatureExtractor:
                     stride=frame.stride,
                 )
             except ValueError as exc:
-                raise ActivityFeatureFailure("invalid redacted frame for activity fingerprint") from exc
+                raise ActivityFeatureFailure(
+                    "invalid redacted frame for activity fingerprint"
+                ) from exc
 
             application = _metadata_text(record, "application")
             workspace = _metadata_text(record, "workspace")
