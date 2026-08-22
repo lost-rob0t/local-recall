@@ -1,7 +1,7 @@
 #+title: RAGE issue 19 - Xorg screenshot capture backend
 #+startup: overview
 
-* Iteration 1
+* Immutable issue state
 :PROPERTIES:
 :ISSUE: 19
 :START_COMMIT: e5c6ac6cb4fc70b594fb51d5dcef40baca338560
@@ -9,193 +9,209 @@
 :WORK_BRANCH: agent/issue-19-xorg-capture-rage
 :END:
 
-** Consumed issue
-Implement =lost-rob0t/local-recall#19=: Xorg screenshot capture backend.
+Consumed issue: =lost-rob0t/local-recall#19=, Xorg screenshot capture backend.
 
-Dependencies declared by the issue:
+Declared dependencies:
 - #8
 - #17
 - #18
 
-All three dependencies are treated as existing authorities rather than duplicated here. The starting =main= commit is the issue #18 merge.
+All three were satisfied at the immutable starting =main= commit above. They remain authorities rather than being duplicated by this issue.
 
-Acceptance criteria copied into the working gate:
-- no capture while off, paused, locked, denied, or faulted;
-- raw capture flows directly into the in-memory redaction pipeline;
-- multi-monitor and scaling fixtures are covered;
-- backend failure cannot produce a plaintext screenshot artifact.
-
-Additional issue requirements:
-- full-desktop v0.1 capture with monitor geometry;
+Issue acceptance gate:
+- no capture while off, paused, locked, denied, faulted, stale, or policy-uncertain;
+- full-desktop Xorg capture with multi-monitor awareness;
 - optional focused-window crop only from validated metadata;
-- memory-only pixel acquisition, no temporary files;
-- preserve timestamp, dimensions, monitor geometry, and capture provenance;
-- respect lifecycle/pre-capture authorization on every invocation;
-- bounded capture duration and safe display-disconnect handling.
+- capture directly to memory with no screenshot/tempfile path;
+- preserve timestamps, dimensions, root/monitor geometry, scaling provenance, backend provenance, and capture generation;
+- bounded acquisition and safe display-disconnect behavior;
+- raw capture enters the existing in-memory redaction/encryption pipeline;
+- backend failure cannot create a plaintext screenshot artifact.
 
-** Research ledger
-*** Repository evidence
-- The public capture port accepts only =ApprovedCaptureRequest= and returns =RawFrame=. The Xorg backend must remain downstream of the existing lifecycle/policy authorization rather than create a second policy state machine.
-- =RawFrame= validates aware timestamps, positive dimensions, stride, pixel format, and exact byte length. Its current shape does not carry explicit monitor geometry or backend provenance, so issue #19 requires an additive project-owned capture provenance contract rather than smuggling geometry into arbitrary metadata.
-- Pipeline ingress already destroys stale/cancelled raw work and preserves generation identity. Issue #19 should compose with that machinery and must not add a competing cancellation generation.
+* Iteration 1 - in-process Xlib acquisition
+** Research
+Repository evidence established these ownership boundaries:
+- public capture is downstream of the existing lifecycle/policy/session-safety authorities and receives only an =ApprovedCaptureRequest=;
+- =RawFrame= is the project-owned pixel boundary and required additive typed capture provenance for #19;
+- downstream pipeline/persistence already owns processing, redaction, encryption, storage and lifecycle cancellation; the Xorg backend must not create a second state machine.
 
-*** External evidence
-- Xlib specifies =XGetImage= as the primitive for returning drawable pixels and notes that the returned =XImage= lives in client memory. It may return NULL and can raise drawable/match/value errors. Source: X.Org Xlib C Language X Interface, current release.
-- X.Org's current concepts guide warns that core =GetImage= is slow and exposes framebuffer alignment/padding/byte ordering. That makes a thin, validated conversion boundary mandatory and argues against exposing native XImage layout to the rest of Local Recall.
-- Historical X.Org security advisories include libX11/XGetImage validation defects. Treat the X server/native image structure as an untrusted boundary: bound dimensions and byte counts before copying, and use a maintained system libX11 rather than reimplementing the X wire protocol.
+External evidence initially supported a narrow Xlib =XGetImage= adapter: Xlib returns an =XImage= in client memory, but framebuffer layout, byte order, padding, native failure modes, and historical validation defects require strict bounds and normalization at the native boundary.
 
-** Evidence-derived design
-*** Chosen direction
-Use a narrow Xlib adapter behind =CaptureBackend=, with native calls isolated in one module and an injectable reader seam for deterministic tests. Capture the root drawable for full-desktop v0.1. Obtain monitor geometry through an independently injected monitor-layout reader, normalize it into project-owned immutable types, then call Xlib for one bounded root-image acquisition. Convert the native image immediately to a canonical project pixel format before constructing =RawFrame=.
+** Initial design
+- one authorized virtual-root capture;
+- canonical project-owned RGB pixels before =RawFrame= construction;
+- monitor geometry normalized into immutable provenance;
+- focused-window mode implemented as an in-memory crop of the already-authorized root image rather than a second drawable read;
+- no persistence or tempfile capability in capture code;
+- deadline checks before and after native acquisition;
+- generation copied exactly from the approved request.
 
-The production backend owns no persistence and no temporary-file path. It receives only an =ApprovedCaptureRequest=. Deadline checks happen immediately before entering the blocking native call and immediately after it returns; native work runs through a bounded executor boundary so cancellation/timeout cannot unblock later persistence merely because the native function eventually returns.
+Rejected throughout the issue:
+- screenshot files reopened later;
+- capture code deciding lifecycle/lock/privacy policy;
+- arbitrary shell commands or captured-value interpolation;
+- a second focused-window drawable capture;
+- permissive parsing of native image structures.
 
-Focused-window capture uses one authorized virtual-root image followed by an in-memory crop from validated normalized geometry. It does not call =XGetImage= on the focused window itself, avoiding viewability/overlap/depth races at a second X11 read boundary.
+** TDD evidence
+*** RED 1 - public capture API absent
+- test-only head =7e5d2ec5418544ca8f3f003c0b73b3dd2ab82b90=;
+- Actions run =32557673759=;
+- formatting, Ruff, ShellCheck and strict Pyright passed;
+- unit suite then failed exactly because =local_recall.capture= did not exist.
+This is accepted RED. Earlier format/import-order failures were rejected as evidence.
 
-*** Rejected alternatives
-- Shelling out to ImageMagick/import, scrot, or xwd: stdout could be kept in memory, but this adds executable/version/parser variability and a larger hostile-output surface. It also makes provenance and pixel-format guarantees depend on external CLI behavior.
-- Reimplementing X11 GetImage over the wire: unnecessary protocol/security complexity when the platform already provides maintained libX11.
-- Letting the backend evaluate lifecycle, lock, or privacy state itself: duplicates #7/#17/#18 authorities and creates race-prone split-brain authorization.
-- Writing screenshot files and reopening them: directly violates the issue's plaintext-artifact invariant.
-- Capturing the focused window as a second X drawable: adds X11 visibility/overlap/depth failure modes without improving the privacy boundary; root capture plus validated memory crop is simpler and deterministic.
+*** GREEN 1 - package/type boundary
+- production head =f2f4bfee631131ab6c7f761b12c28403d9461e61=;
+- added only the capture package and =XorgCaptureBackend= boundary;
+- subsequent gates reached green before the next RED slice.
 
-*** Invariants
-1. The public production capture method requires a typed =ApprovedCaptureRequest=; no unauthenticated convenience method exists.
-2. Generation on the returned frame equals the approved request generation exactly.
-3. Backend/native errors expose fixed sanitized reason codes, never display strings, window titles, pixel bytes, native exception text, paths, or command lines.
-4. No production capture module imports filesystem/tempfile/image-file encoders or opens a path for pixel persistence.
-5. Native dimensions, stride, format, and byte counts are bounded and validated before copying into Python-owned bytes.
-6. Monitor rectangles are bounded, normalized, associated with the same virtual-root coordinate space, and retained as typed provenance.
-7. Focused-window cropping is optional and accepted only when geometry originates from already validated normalized metadata; otherwise full-desktop capture remains the safe behavior.
-8. Timeout/cancellation/stale generation never converts a late native result into accepted downstream work.
+*** RED 2 - authorized behavior/provenance absent
+- test-only head =1467c4ed3606b694431b5f1d398f46bac55f1e21=;
+- Actions run =32557836459=;
+- formatting, Ruff and ShellCheck passed;
+- strict Pyright failed specifically on missing =XorgSnapshot=, =XorgMonitor=, =XorgCaptureError=, injected reader/clock construction, backend capture methods, and typed frame provenance.
+This is accepted RED. Head =44b601c86eeacacde41e6b9e0d234ed2be5dcffb= failed formatting first and was rejected as RED evidence.
 
-*** State and ownership
-- lifecycle generation: existing lifecycle authority;
-- capture policy authorization/revision: existing policy authority;
-- lock/idle safety: existing session-safety authority;
-- X11 connection and native pixel acquisition: Xorg backend only;
-- monitor-layout parsing/normalization: Xorg monitor reader only;
-- persistence/redaction: existing downstream pipeline only.
+* Iteration 2 - XWD stdout capture with process isolation
+:PROPERTIES:
+:SUPERSEDES: Iteration 1 native Xlib acquisition choice
+:END:
 
-*** Failure and race analysis
-- display disconnect before/during capture -> fixed backend-unavailable/capture-failed result; no frame constructed;
-- lock/privacy transition after authorization -> existing generation/policy invalidation makes returned work stale; backend must retain request generation and downstream gates re-check it;
-- timeout while Xlib call is blocked -> caller sees bounded failure; eventual late native result is discarded and never submitted;
-- malformed native image/overflow -> fail before copying;
-- monitor topology changes between layout read and pixel read -> retain observed layout timestamp/revision and reject impossible geometry; later iteration may add a same-capture topology recheck if tests show this is necessary;
-- focused-window geometry stale or outside root -> reject crop request and fail closed to full desktop rather than reading arbitrary coordinates.
+** Why the architecture changed
+Further adversarial research disproved the initial assumption that in-process Xlib was the strongest bounded implementation. X.Org =xwd= can emit a root-window dump to stdout without a file. Its XWD header is a small specified structure with version, dimensions, byte order, bits-per-pixel, stride, visual class, masks, color-table count and root geometry. A fixed helper process can be killed on timeout/cancellation, providing a stronger isolation boundary than a blocking FFI call.
 
-*** Migration/configuration
-No persistent-data migration is intended. Frame/provenance domain types may gain additive fields. No remote-provider or network configuration changes belong to this issue.
+The earlier blanket rejection of =xwd= was therefore wrong. The real hazards are shell/file behavior, uncontrolled executable identity, hostile output and permissive decoding. Those are addressed directly by fixed absolute executables, no shell, stdout-only capture, strict parsing, output caps, minimal environment and child termination.
 
-** TDD ledger
-*** RED 1 - production capture API absent
-- Test-only head: =7e5d2ec5418544ca8f3f003c0b73b3dd2ab82b90=.
-- GitHub Actions run: =32557673759=; Ubuntu 24.04 job =96994339021=.
-- Formatting, Ruff, ShellCheck, and strict Pyright all passed before the unit suite.
-- Unit result: 452 collected, 451 passed, exactly 1 failed.
-- Expected failure: =tests/unit/capture/test_xorg.py::test_xorg_capture_backend_module_exists= raised =ModuleNotFoundError: No module named 'local_recall.capture'=.
-- This is accepted RED evidence because the failure is the missing production API, not formatting/lint/plumbing noise. Earlier format/import-order failures were explicitly rejected as invalid RED evidence and are not implementation justification.
+** Final acquisition design
+1. =XorgCaptureBackend= remains the only public Xorg pixel adapter and accepts only =ApprovedCaptureRequest=.
+2. =XwdSnapshotReader= reads monitor topology, obtains one root XWD byte stream, re-reads topology, rejects changes, strictly validates the XWD payload and emits canonical packed RGB8.
+3. =FixedXwdNativeRunner= exposes only =xwd -root -silent= and =xrandr --listmonitors=.
+4. =BoundedNativeCommandExecutor= maps those fixed command IDs to supplied absolute paths, uses no shell, passes only minimum X11/session environment plus fixed C locale, bounds stdout/stderr, derives timeout from the immutable request deadline, and terminates a live child on timeout, overflow or caller cancellation.
+5. Monitor/root/crop geometry and scale are retained as typed capture provenance.
+6. Focused-window mode remains a trusted in-memory crop from the single root capture.
+7. Public errors contain fixed reason codes only; native output, executable paths, display values, pixels and private metadata are excluded.
 
-*** GREEN 1 - package/type boundary exists
-- Production head =f2f4bfee631131ab6c7f761b12c28403d9461e61= added only =local_recall.capture= and =XorgCaptureBackend=.
-- CI advanced successfully through formatting, Ruff, ShellCheck, strict Pyright, unit, contract, integration, and security tests before the next RED batch was introduced. This is an incremental green checkpoint, not the final issue gate.
+** Failure and race analysis
+- missing/disconnected X display or nonzero =xwd= -> sanitized failure; no frame;
+- malformed/truncated/oversized/unsupported XWD -> =capture-format-invalid= before =RawFrame=;
+- monitor topology changes around capture -> =display-changed=; no frame;
+- expired request -> fail before helper spawn;
+- deadline during helper -> terminate child and fail boundedly;
+- caller cancellation -> terminate child, clean stream tasks, propagate cancellation;
+- live stdout/stderr overflow -> terminate child and return fixed failure;
+- hostile =LD_PRELOAD=/proxy/unrelated environment -> not passed to helpers;
+- untrusted/malformed/out-of-root focused geometry -> do not perform arbitrary crop/drawable capture;
+- lock/privacy/stop/fault generation changes after acquisition -> producer generation must remain attached through ingress and stale work must be rejected.
 
-*** RED 2 - authorized capture behavior absent
-- Test head: =1467c4ed3606b694431b5f1d398f46bac55f1e21=.
-- GitHub Actions run: =32557836459=; Ubuntu 22.04 job =96994741888=.
-- Formatting, Ruff, and ShellCheck passed.
-- Strict Pyright then failed specifically on the newly required behavior: missing =XorgSnapshot=, =XorgMonitor=, =XorgCaptureError=; missing injected reader/clock constructor; missing =backend_id=, =capture=, and =validate_request=; and missing typed frame capture provenance.
-- 102 static errors are all consequences of the deliberately absent production contract, including exact call-site failures for =reader= / =monotonic_ns= and unknown capture/provenance members.
-- Earlier formatting failure on head =44b601c86eeacacde41e6b9e0d234ed2be5dcffb= was rejected as invalid RED evidence and corrected before this run.
+** TDD evidence
+*** RED 3 - XWD reader contract
+- test-only head =1a252c0ae5d226e42dd7236040482c04ad6a46db=;
+- Actions run =32560048617=;
+- formatting, Ruff and ShellCheck passed; strict Pyright failed because =XwdSnapshotReader= did not exist.
+Tests required in-memory TrueColor decode, exact RGB8 output, topology recheck and malformed/oversized rejection.
 
-** Verification gates
-- deterministic unit tests for full-root capture, multi-monitor geometry including negative origins, scaling metadata, focused crop validation, malformed/native-overflow rejection, display disconnect, timeout, and sanitized errors;
-- integration test proving an approved raw frame crosses directly into the existing in-memory redaction path with no filesystem artifact;
-- security test proving production capture modules have no tempfile/path-write/image-encoder persistence capability and seeded private values cannot appear in failures;
-- lifecycle/policy regression proving capture reader is never invoked without an =ApprovedCaptureRequest= and stale/cancelled generations cannot be accepted downstream;
-- focused tests red before production implementation;
-- canonical =./scripts/check= green;
-- =nix flake check= when the flake gate applies;
-- exact-head GitHub Actions green before merge.
+*** GREEN 3 - strict XWD reader
+- implementation head =68facdbb932d00c28ece523c033382f31e539f0d= failed formatting and is rejected as GREEN;
+- mechanical format head =ff46e89160db241bc67279e4c702fbb4ac1a7af5=;
+- Actions run =32560201133= passed Ubuntu 22.04, Ubuntu 24.04, failure propagation and canonical gate on that exact head.
 
-* Iteration 2 - XWD stdout capture with bounded process isolation
+*** RED 4 - fixed native command seam
+- head =457427d842c623512c2e1e8ecf102fc8a5c36c1f= failed formatting and is rejected as RED;
+- formatted test-only head =c7874d195c583917c7610e1a2efdf1a69384557c=;
+- Actions run =32560328533=;
+- formatting, Ruff and ShellCheck passed; strict Pyright failed only because =NativeCommandResult=, =FixedXwdNativeRunner= and output-bound constants were absent.
+
+*** GREEN 4 - fixed xwd/xrandr seam
+- head =49b47ed2a04ceb85e4b708516252908aaefb2e3b= failed Ruff formatting style and is rejected as GREEN;
+- =6a6c5e10374c9fd1e483671d3f31bafda3a042b0= then exposed only a strict-Pyright fake-executor typing issue;
+- =c1107e1cd9f5476d9fcbba2ebea23e10fa474d51= corrected the typed fixture. The next RED slice superseded it before a full exact-head all-green run, so no false GREEN claim is made for that intermediate head.
+
+*** RED 5 - bounded subprocess executor
+- test-only head =3b28753f55238c64ac2be337c2cd6d788983e594=;
+- Actions run =32560603744=;
+- formatting/Ruff passed; strict Pyright failed because =BoundedNativeCommandExecutor= was absent.
+Tests required absolute allowlisting, minimal environment, pre-spawn deadline/command rejection, output-limit termination, deadline termination and cancellation termination.
+
+*** GREEN 5 - bounded subprocess executor
+- initial implementation exposed fixture problems; the output-limit fixture originally modeled a process that had already exited successfully and then demanded it be killed, which is not a valid runtime contract;
+- fixture correction models the actual security case: oversized output while the helper remains live;
+- exact head =60f99eb757bbee36c2ed05f140002e038e7a9518=;
+- Actions run =32562735169=;
+- Ubuntu 22.04, Ubuntu 24.04, failure propagation and canonical repository gate all passed.
+Production behavior was not weakened to satisfy the fixture.
+
+*** RED 6 - production composition absent
+- first test-only head =939533c1b8f9094780c2f692880f0f1d14c2c021= failed Ruff import sorting and is rejected as RED;
+- mechanically corrected test-only head =de797180953aab4a152072639593c21c795f5431=;
+- Actions run =32562854491=;
+- formatting, Ruff and ShellCheck passed; strict Pyright failed specifically because =local_recall.capture.composition.build_xorg_capture_backend= did not exist.
+This is accepted RED.
+
+*** GREEN 6 - production composition
+- production head =5f9b014a4d25ae07468ff85a7d879932b66ceb74=;
+- =build_xorg_capture_backend= composes =BoundedNativeCommandExecutor -> FixedXwdNativeRunner -> XwdSnapshotReader -> XorgCaptureBackend=;
+- Actions run =32562906564= passed Ubuntu 22.04, Ubuntu 24.04, failure propagation and canonical repository gate.
+
+* Iteration 3 - producer-generation binding at raw ingress
 :PROPERTIES:
 :ISSUE: 19
 :START_COMMIT: e5c6ac6cb4fc70b594fb51d5dcef40baca338560
 :WORK_BRANCH: agent/issue-19-xorg-capture-rage
-:SUPERSEDES: Iteration 1 native Xlib acquisition choice
 :END:
 
-** Why Iteration 1 was superseded
-Further adversarial research changed the native-acquisition decision. The issue does not require an in-process Xlib binding; it requires bounded, memory-only Xorg capture with no plaintext artifact. X.Org's =xwd= utility already provides the root-window dump on standard output by default, and the XWD wire/file header is a small specified structure whose integer header fields are stored MSB-first. Running a fixed =xwd -root -silent= child behind a hard process deadline gives a stronger kill boundary than a Python FFI call into a potentially blocked Xlib request.
+** Defect discovered during issue-level integration
+The first end-to-end Xorg/pipeline acceptance trace exposed a real stale-work gap outside the backend itself. =BoundedCapturePipeline.submit_raw()= acquired whatever generation was current at submission time and constructed =RawStageItem= with that permit generation. A frame captured under generation N could therefore be submitted after lock/privacy invalidation and resume to generation N+1 and be relabelled N+1 instead of being rejected as stale.
 
-The original rejection of =xwd= was therefore too broad. The relevant danger is uncontrolled shell/file/format behavior, not the mere fact that an executable is used. A fixed absolute executable, no shell, stdout-only capture, strict XWD parser, output cap, sanitized errors, and child termination on timeout/cancel satisfy the privacy and boundedness invariants more directly.
+That violates #19's requirement that a late native/captured result never become accepted downstream work after authorization invalidation. Fixing only the Xorg caller would leave the unsafe public raw-ingress API available to every future capture backend, so the smallest coherent security boundary is the pipeline submission API itself.
 
-No Iteration 1 code was preserved merely to save sunk cost. The project-owned =ApprovedCaptureRequest=, generation, =RawFrame= provenance, trusted in-memory crop, and downstream policy/redaction boundaries remain valid because they are independent of native acquisition.
+** Revised invariant
+Every raw producer must provide its immutable producer generation to =submit_raw(expected_generation=...)=. Pipeline ingress acquires the current capture permit, compares permit generation with producer generation before constructing a raw stage item, rejects mismatch with =StaleCaptureGeneration=, and scrubs all mutable raw buffers on rejection. Accepted items retain the producer generation exactly.
 
-** External evidence that changed the design
-- X.Org =xwd= documentation: output is standard output when no output file is given; =-root= selects the root window; =-silent= suppresses the bell. This allows a zero-tempfile capture path.
-- XWD =XWDFile.h=: the fixed header is 25 CARD32 fields / 100 bytes, file version 7, with explicit pixmap format, dimensions, byte order, bits-per-pixel, bytes-per-line, visual class, RGB masks, color-table count, and window geometry. Header integer fields are MSB-first. The parser can therefore reject unsupported layouts before allocating/copying normalized pixels.
-- =xrandr --listmonitors= provides monitor rectangles in the same X root coordinate space. Reading monitor layout before and after =xwd= allows topology changes during capture to fail closed rather than attaching stale geometry.
+** TDD evidence
+*** RED 7 - ingress cannot bind producer generation
+- first stale-generation test head =8340a87f4873426c35a7379a770cbd137204da8f= failed formatting and is rejected as RED;
+- mechanical formatting head =931a83b8389c2b8a9554df3b1adba91731dd9fb6=;
+- Actions run =32563123294=;
+- formatting, Ruff and ShellCheck passed;
+- strict Pyright failed specifically because =BoundedCapturePipeline.submit_raw()= had no =expected_generation= parameter at the new Xorg acceptance/regression call sites.
+This is accepted RED.
 
-** Iteration 2 chosen design
-1. =XorgCaptureBackend= remains the only public pixel-capture adapter and still requires =ApprovedCaptureRequest=.
-2. =XwdSnapshotReader= reads monitor topology, obtains one root XWD byte stream, reads topology again, rejects changes, strictly validates/decodes the XWD stream, and emits canonical packed RGB8.
-3. =FixedXwdNativeRunner= issues only two command identities: =xwd -root -silent= and =xrandr --listmonitors=. Callers cannot interpolate captured values into arguments.
-4. =BoundedNativeCommandExecutor= is isolated from capture parsing. It maps fixed command IDs to absolute executable paths, supplies a minimal X11 environment, bounds stdout/stderr, derives timeout from the immutable monotonic request deadline, and kills the child on timeout, output overflow, cancellation, or broken pipe state.
-5. No native stdout/stderr, executable path, DISPLAY value, XAUTHORITY value, pixels, or command output may appear in public errors/reprs.
-6. Focused-window mode remains root capture followed by a trusted in-memory crop. It never selects a second arbitrary drawable.
+*** GREEN 7 - stale producer work cannot be relabelled
+- production changed =submit_raw()= to require =expected_generation: CaptureGeneration=;
+- the current permit must equal that producer generation before =RawStageItem= construction;
+- mismatch raises =StaleCaptureGeneration= and existing exception cleanup zeroes the supplied raw bytearrays;
+- all existing raw-pipeline test callers were migrated to pass their known recording generation, leaving no permissive legacy path;
+- one acceptance fixture initially supplied an absolute monotonic deadline of =2_000_000_000= ns to downstream actors; the pipeline correctly treated it as expired. That was a test-clock mistake, not a production defect, and the fixture was corrected by allowing the pipeline to generate its own live deadline;
+- exact GREEN head =95ea7aeb11a74d5cfa303123957d563c54805ffc=;
+- Actions run =32563301554= completed SUCCESS;
+- canonical =./scripts/check= passed with 561 collected tests;
+- Ubuntu 22.04 and Ubuntu 24.04 checks passed;
+- unit, contract, integration, security, strict Pyright, formatting, Ruff, ShellCheck, repository security checks and failure-propagation all passed;
+- regression proves: capture under generation N -> lock invalidation -> resume under N+1 -> late N submission raises stale-generation, scrubs raw buffers, and reaches no sink.
 
-** New failure/race analysis
-- =xwd= exits non-zero or display disappears -> sanitized =display-unavailable=; no frame.
-- XWD malformed, truncated, oversized, unsupported visual/pixmap format, invalid masks/stride/dimensions -> =capture-format-invalid= before =RawFrame=.
-- monitor topology differs before/after root dump -> =display-changed=; no frame.
-- deadline already expired -> fail before process creation.
-- deadline expires while helper is active -> kill child, drain/cancel pipe tasks, fixed =capture-deadline-expired=.
-- caller cancellation while helper is active -> kill child, clean pipe tasks, re-raise cancellation; no late result.
-- stdout/stderr exceeds bound -> kill child and fixed =capture-output-too-large=; bytes never enter errors.
-- hostile process environment such as =LD_PRELOAD= or proxy variables -> excluded from the helper environment; only the minimum X11/session values plus fixed C locale are retained.
+* Issue-level verification status
+Implemented and covered:
+- full virtual-root Xorg capture through fixed =xwd= stdout with no screenshot file;
+- strict bounded XWD decoding to RGB8;
+- monitor topology before/after capture and multi-monitor/negative-origin/scaling provenance;
+- optional trusted metadata-only focused crop from one authorized root image;
+- bounded native helpers with process termination on timeout/cancellation/live overflow;
+- minimal helper environment and sanitized failures;
+- production composition boundary;
+- direct Xorg frame -> bounded in-memory processing/redaction/encryption integration;
+- structural security regression forbidding capture-module tempfile/path-write/image-encoder capability;
+- immutable producer-generation binding at raw ingress preventing stale frame relabelling;
+- Xorg operational/privacy documentation.
 
-** Iteration 2 TDD ledger
-*** RED 3 - XWD reader contract
-- Test-only head =1a252c0ae5d226e42dd7236040482c04ad6a46db=.
-- Actions run =32560048617=.
-- Formatting, Ruff, and ShellCheck passed; strict Pyright then failed because =XwdSnapshotReader= did not exist. The new tests required in-memory TrueColor decoding, exact RGB8 output, monitor topology recheck, and malformed/oversized dump rejection.
-- This is accepted RED evidence. No production reader existed.
+The =nix flake check= gate is not treated as an issue-local code gate here because #19 does not change the flake/package definition; reproducible Nix packaging and runtime dependency installation are explicitly owned by issue #40. No packaging work is invented in #19.
 
-*** GREEN 3 - strict XWD reader
-- Implementation head =68facdbb932d00c28ece523c033382f31e539f0d= implemented strict XWD parsing and topology verification but failed Ruff formatting. That head is explicitly rejected as GREEN evidence.
-- Mechanical format head =ff46e89160db241bc67279e4c702fbb4ac1a7af5=.
-- Actions run =32560201133= passed Ubuntu 22.04, Ubuntu 24.04, failure-propagation, and the canonical repository gate on that exact head. This is accepted GREEN evidence for the reader slice.
-
-*** RED 4 - fixed native command seam
-- Initial test head =457427d842c623512c2e1e8ecf102fc8a5c36c1f= failed formatting and is rejected as RED evidence.
-- Formatted test-only head =c7874d195c583917c7610e1a2efdf1a69384557c=; Actions run =32560328533=.
-- Formatting, Ruff, and ShellCheck passed; strict Pyright failed only on the deliberately missing =NativeCommandResult=, =FixedXwdNativeRunner=, and public output-bound constants. Tests require exact fixed command vectors, negative-origin xrandr parsing, sanitized nonzero failures, and malformed monitor rejection.
-- This is accepted RED evidence.
-
-*** GREEN 4 - fixed xwd/xrandr runner
-- Implementation head =49b47ed2a04ceb85e4b708516252908aaefb2e3b= added the fixed runner and parser but failed only Ruff's Python 3.14 exception-group formatting style. It is rejected as GREEN evidence.
-- Mechanical format head =6a6c5e10374c9fd1e483671d3f31bafda3a042b0= then exposed a strict-Pyright issue in the fake executor fixture, not production behavior.
-- Fixture-only correction head =c1107e1cd9f5476d9fcbba2ebea23e10fa474d51= made the fixture explicitly typed. The next test slice superseded that head before a final all-green run completed, so it is not claimed as a final GREEN checkpoint.
-
-*** RED 5 - bounded production subprocess executor
-- Test-only head =3b28753f55238c64ac2be337c2cd6d788983e594=; Actions run =32560603744=.
-- Canonical formatting and Ruff passed. Strict Pyright failed because =BoundedNativeCommandExecutor= did not yet exist; the resulting unknown-member errors all descend from that absent production type.
-- The tests require absolute executable allowlisting, a minimal environment that strips =LD_PRELOAD=/proxy variables, failure before spawn for unknown commands/expired deadlines, output-limit child kill, deadline child kill, and cancellation child kill.
-- This is accepted RED evidence.
-
-*** GREEN 5 - in progress
-- Production process-isolation module was added at =src/local_recall/capture/native.py= on head =570ff749e7a990c70f0b946681de46654a1d290d= and the executor test was adjusted to target that isolated module on head =13ddf95210bc9d161ae74a24657f4c61a1b50dea=.
-- Exact-head Actions verification is pending. Do not treat this slice as GREEN until formatting, strict typing, behavioral tests, security checks, failure propagation, and canonical gate all pass on the same head.
-
-** Remaining issue gate after Iteration 2 core work
-- finish exact-head executor GREEN and repair only evidence-backed defects;
-- provide production executable discovery/composition without shell interpolation;
-- add integration proof from approved Xorg capture into the existing in-memory redaction pipeline;
-- add structural/security regressions proving no capture module can create plaintext screenshot files and private native output is sanitized;
-- prove lifecycle/policy stale-work behavior at the integration boundary, not only the type boundary;
-- document Xorg backend limitations/provenance and operational dependency expectations;
-- run canonical =./scripts/check= and applicable =nix flake check= evidence;
-- re-read issue #19, PR discussion/reviews, complete open backlog, mergeability, and exact-head required checks before any merge.
+* Final merge gate
+Before merge:
+- exact latest head after ledger/docs reconciliation must pass the complete GitHub Actions matrix and canonical repository gate;
+- re-read issue #19 and its comments;
+- re-read PR #71 reviews, review threads and mergeability;
+- verify =main= has not advanced unexpectedly;
+- re-enumerate the complete open issue queue;
+- PR must no longer be draft and no blocking review may remain;
+- merge only under standing repository authorization and only with exact-head protection where available.
