@@ -1,9 +1,36 @@
 from __future__ import annotations
 
+import importlib
 from datetime import UTC, datetime
+from typing import Protocol, cast
 
 import local_recall.indicator as indicator
-import local_recall.indicator_views as indicator_views
+
+
+class Presentation(Protocol):
+    status: str
+    icon_name: str
+    title: str
+    tooltip: str
+
+
+class QtileView(Protocol):
+    def text(self, snapshot: indicator.IndicatorSnapshot) -> str: ...
+
+
+class StatusNotifierView(Protocol):
+    def present(self, snapshot: indicator.IndicatorSnapshot) -> Presentation: ...
+
+
+class ViewsModule(Protocol):
+    QtileIndicatorView: type[QtileView]
+    StatusNotifierItemView: type[StatusNotifierView]
+
+
+indicator_views = cast(
+    ViewsModule,
+    importlib.import_module("local_recall.indicator_views"),
+)
 
 
 def snapshot(state: indicator.IndicatorState) -> indicator.IndicatorSnapshot:
