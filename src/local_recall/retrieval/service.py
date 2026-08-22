@@ -53,7 +53,8 @@ class RetrievalQuery:
             f"RetrievalQuery(query_id={self.query_id!r}, time_range={self.time_range!r}, "
             f"application_filter={self.application is not None}, "
             f"workspace_filter={self.workspace is not None}, "
-            f"keyword_count={len(self.keywords)}, semantic_filter={self.semantic_text is not None}, "
+            f"keyword_count={len(self.keywords)}, "
+            f"semantic_filter={self.semantic_text is not None}, "
             f"limit={self.limit}, candidate_limit={self.candidate_limit})"
         )
 
