@@ -1,0 +1,35 @@
+#+title: RAGE issue 24 - post-merge closeout
+#+startup: overview
+
+* Immutable closeout
+:PROPERTIES:
+:ISSUE: 24
+:IMPLEMENTATION_PR: 77
+:IMPLEMENTATION_HEAD: f63afb9c674b1173a617b44f81d562722f58dbf4
+:MERGE_COMMIT: d212c2eed291cc1aed8db06bf0b7ad95d198fb99
+:END:
+
+This file is the immutable post-merge addendum to =rage/issue-24-time-scoped-retrieval.org=.
+
+* Merge evidence
+- PR #77, =Implement time-scoped retrieval and record provenance=, was marked ready only after exact head =f63afb9c674b1173a617b44f81d562722f58dbf4= passed the full required gate.
+- GitHub Actions CI run 530 (=32581103937=) passed on that exact head: Ubuntu 22.04 checks, Ubuntu 24.04 checks, canonical =./scripts/check=, and failure-propagation.
+- Observed suite evidence: 550 unit, 6 contract, 36 integration, and 55 security tests passed; strict Pyright reported zero errors/warnings; formatting, Ruff, ShellCheck, repository policy, Bandit/detect-secrets/security scanning, and failure-propagation passed.
+- PR #77 was squash-merged with expected-head protection. GitHub returned merge commit =d212c2eed291cc1aed8db06bf0b7ad95d198fb99=.
+- The =Closes #24= linkage closed issue #24; an explicit search of the open issue set after merge returned no open #24.
+- No flake/package/config input changed in this transaction, so the conditional Nix gate documented in the primary RAGE ledger was not triggered.
+
+* Accepted behavior
+- deterministic configured-timezone resolution for explicit dates, today/yesterday, bare weekdays, and bounded =last N= selectors;
+- DST-correct half-open local calendar ranges;
+- coarse encrypted-catalog preselection without expanding plaintext catalog leakage;
+- optional semantic narrowing against canonical storage records;
+- exact in-memory time/application/workspace/metadata/keyword filtering after decryption;
+- query and per-record policy rechecks;
+- deterministic semantic/keyword/provenance-confidence ranking;
+- record ID, capture timestamp, metadata provenance/confidence, and redaction-status traceability;
+- cancellation propagation without partial-success publication;
+- content-sanitized retrieval control representations and no pixel field in returned passages.
+
+* Transaction boundary
+Issue #24 is complete. This closeout transaction does not consume or implement #25 or any later issue. The next worker iteration must re-enumerate current remote backlog and dependencies before selecting new work.
