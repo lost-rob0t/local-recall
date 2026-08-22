@@ -12,11 +12,11 @@ from local_recall.retrieval.time import ResolvedTimeRange
 
 
 def test_retrieval_control_reprs_exclude_query_and_decrypted_content() -> None:
-    query_secret = "QUERY-SECRET-4f3c"
-    app_secret = "APP-SECRET-91d2"
-    workspace_secret = "WORKSPACE-SECRET-7aa1"
-    metadata_secret = "METADATA-SECRET-c812"
-    excerpt_secret = "OCR-SECRET-b744"
+    query_secret = "QUERY-SECRET-4f3c"  # pragma: allowlist secret
+    app_secret = "APP-SECRET-91d2"  # pragma: allowlist secret
+    workspace_secret = "WORKSPACE-SECRET-7aa1"  # pragma: allowlist secret
+    metadata_secret = "METADATA-SECRET-c812"  # pragma: allowlist secret
+    excerpt_secret = "OCR-SECRET-b744"  # pragma: allowlist secret
     time_range = ResolvedTimeRange(
         datetime(2026, 8, 22, 10, 0, tzinfo=UTC),
         datetime(2026, 8, 22, 11, 0, tzinfo=UTC),
