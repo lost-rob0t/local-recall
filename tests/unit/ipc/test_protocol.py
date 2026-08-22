@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from local_recall.cli_contract import CliCommand, CliRequest
 from local_recall.ipc import SessionToken
 from local_recall.ipc_protocol import (
-    MAX_REQUEST_PAYLOAD_BYTES,
     IpcCapability,
     IpcProtocolError,
     IpcRequestCodec,
+    MAX_REQUEST_PAYLOAD_BYTES,
 )
 
 NOW = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
@@ -18,9 +19,7 @@ def _token(byte: int) -> SessionToken:
     return SessionToken(bytes([byte]) * SessionToken.BYTE_LENGTH)
 
 
-def _expect_protocol_error(code: str, action: object) -> None:
-    if not callable(action):
-        raise AssertionError("action must be callable")
+def _expect_protocol_error(code: str, action: Callable[[], object]) -> None:
     try:
         action()
     except IpcProtocolError as exc:
