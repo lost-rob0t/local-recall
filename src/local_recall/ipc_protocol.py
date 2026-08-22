@@ -150,11 +150,12 @@ def _decode_object(frame: bytes, *, error: str) -> dict[str, object]:
         raise IpcProtocolError(error) from None
     if not isinstance(loaded, dict):
         raise IpcProtocolError(error)
+    mapping = cast(dict[object, object], loaded)
     result: dict[str, object] = {}
-    for key, value in loaded.items():
+    for key, value in mapping.items():
         if not isinstance(key, str):
             raise IpcProtocolError(error)
-        result[key] = cast(object, value)
+        result[key] = value
     return result
 
 
