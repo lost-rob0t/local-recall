@@ -113,9 +113,11 @@ def test_duplicate_frame_is_coalesced_before_downstream_admission() -> None:
 
     assert first.outcome is AdaptiveCaptureOutcome.ADMIT
     assert first.frame is not None
+    assert first.frame_decision is not None
     assert first.frame_decision.disposition is FrameDisposition.ACCEPT
     assert second.outcome is AdaptiveCaptureOutcome.COALESCE
     assert second.frame is None
+    assert second.frame_decision is not None
     assert second.frame_decision.disposition is FrameDisposition.COALESCE
     assert backend.calls == 2
 
