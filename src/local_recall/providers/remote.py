@@ -4,6 +4,7 @@ import asyncio
 import json
 import ssl
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
@@ -207,10 +208,8 @@ class RemoteHttpsTransport:
         finally:
             if writer is not None:
                 writer.close()
-                try:
+                with suppress(OSError, ssl.SSLError):
                     await writer.wait_closed()
-                except OSError, ssl.SSLError:
-                    pass
 
         try:
             decoded = json.loads(body)
