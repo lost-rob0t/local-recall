@@ -181,7 +181,9 @@ def test_reader_failure_is_sanitized() -> None:
 
 
 def test_capture_backend_rejects_unapproved_request_at_runtime() -> None:
-    backend = xorg_capture.XorgCaptureBackend(reader=FakeReader(snapshot=_snapshot()), monotonic_ns=lambda: 1)
+    backend = xorg_capture.XorgCaptureBackend(
+        reader=FakeReader(snapshot=_snapshot()), monotonic_ns=lambda: 1
+    )
     intent = capture_domain.CaptureIntent(
         job_id=uuid4(),
         generation=lifecycle_domain.CaptureGeneration(1),
