@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import cast
 from uuid import uuid4
@@ -49,6 +49,23 @@ class FakeNativeRunner:
         layout = self.layouts[min(self.layout_calls, len(self.layouts) - 1)]
         self.layout_calls += 1
         return layout
+
+
+@dataclass
+class FakeNativeExecutor:
+    results: dict[str, xorg_capture.NativeCommandResult]
+    calls: list[tuple[str, tuple[str, ...], int, int]] = field(default_factory=list)
+
+    async def run(
+        self,
+        command: str,
+        args: tuple[str, ...],
+        *,
+        deadline_monotonic_ns: int,
+        max_output_bytes: int,
+    ) -> xorg_capture.NativeCommandResult:
+        self.calls.append((command, args, deadline_monotonic_ns, max_output_bytes))
+        return self.results[command]
 
 
 def _request(
@@ -297,3 +314,71 @@ def test_native_xwd_reader_rejects_malformed_or_oversized_dump() -> None:
     reader = xorg_capture.XwdSnapshotReader(runner=oversized, now=lambda: NOW)
     with pytest.raises(xorg_capture.XorgCaptureError, match="capture-format-invalid"):
         asyncio.run(reader.capture_root(deadline_monotonic_ns=9_000_000_000))
+
+
+def test_fixed_native_runner_uses_only_xwd_root_stdout() -> None:
+    dump = _xwd_truecolor_dump()
+    executor = FakeNativeExecutor(
+        results={"xwd": xorg_capture.NativeCommandResult(return_code=0, stdout=dump)}
+    )
+    runner = xorg_capture.FixedXwdNativeRunner(executor=executor)
+
+    result = asyncio.run(runner.capture_root_dump(deadline_monotonic_ns=8_000_000_000))
+
+    assert result == dump
+    assert executor.calls == [
+        ("xwd", ("-root", "-silent"), 8_000_000_000, xorg_capture.MAX_XWD_OUTPUT_BYTES)
+    ]
+
+
+def test_fixed_native_runner_parses_xrandr_monitor_geometry() -> None:
+    output = (
+        b"Monitors: 2\n"
+        b" 0: +*DP-1 1920/344x1080/194+0+0  DP-1\n"
+        b" 1: +HDMI-1 1280/509x720/286-1280+0 HDMI-1\n"
+    )
+    executor = FakeNativeExecutor(
+        results={"xrandr": xorg_capture.NativeCommandResult(return_code=0, stdout=output)}
+    )
+    runner = xorg_capture.FixedXwdNativeRunner(executor=executor)
+
+    monitors = asyncio.run(runner.monitor_layout(deadline_monotonic_ns=8_000_000_000))
+
+    assert monitors == (
+        xorg_capture.XorgMonitor("DP-1", 0, 0, 1920, 1080),
+        xorg_capture.XorgMonitor("HDMI-1", -1280, 0, 1280, 720),
+    )
+    assert executor.calls == [
+        (
+            "xrandr",
+            ("--listmonitors",),
+            8_000_000_000,
+            xorg_capture.MAX_MONITOR_OUTPUT_BYTES,
+        )
+    ]
+
+
+def test_fixed_native_runner_sanitizes_command_failure_and_bad_layout() -> None:
+    private_value = b"DISPLAY=:77 top-secret-display-error"
+    failed = FakeNativeExecutor(
+        results={
+            "xwd": xorg_capture.NativeCommandResult(
+                return_code=1, stdout=b"", stderr=private_value
+            )
+        }
+    )
+    runner = xorg_capture.FixedXwdNativeRunner(executor=failed)
+    with pytest.raises(xorg_capture.XorgCaptureError, match="display-unavailable") as caught:
+        asyncio.run(runner.capture_root_dump(deadline_monotonic_ns=8_000_000_000))
+    assert private_value.decode() not in f"{caught.value!r} {caught.value}"
+
+    malformed = FakeNativeExecutor(
+        results={
+            "xrandr": xorg_capture.NativeCommandResult(
+                return_code=0, stdout=b"Monitors: 1\n hostile malformed payload\n"
+            )
+        }
+    )
+    runner = xorg_capture.FixedXwdNativeRunner(executor=malformed)
+    with pytest.raises(xorg_capture.XorgCaptureError, match="monitor-layout-invalid"):
+        asyncio.run(runner.monitor_layout(deadline_monotonic_ns=8_000_000_000))
