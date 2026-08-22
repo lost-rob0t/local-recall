@@ -157,6 +157,14 @@ class AdaptiveCaptureController:
         self._span_last_seen_ns: int | None = None
 
     @property
+    def base_cadence_seconds(self) -> float:
+        return self._cadence_seconds
+
+    @property
+    def change_threshold(self) -> float:
+        return self._change_threshold
+
+    @property
     def pending_change_count(self) -> int:
         return int(self._pending_change_context is not None)
 
