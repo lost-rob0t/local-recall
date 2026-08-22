@@ -10,6 +10,7 @@ from .remote import (
 )
 from .remote_client import (
     RemoteCredentialProvider,
+    RemoteProviderAudit,
     RemoteProviderClient,
     RemoteRequestExecution,
 )
@@ -23,6 +24,7 @@ def compose_remote_provider_client(
     executor: RemoteRequestExecution | None = None,
     transport_settings: RemoteTransportSettings | None = None,
     execution_settings: RemoteExecutionSettings | None = None,
+    audit: RemoteProviderAudit | None = None,
 ) -> RemoteProviderClient:
     if not settings.enabled:
         raise ValueError("remote provider is disabled")
@@ -52,4 +54,5 @@ def compose_remote_provider_client(
         credential_reference=settings.credential_reference,
         credential_provider=credential_provider,
         executor=executor,
+        audit=audit,
     )
