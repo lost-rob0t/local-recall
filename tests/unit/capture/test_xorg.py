@@ -37,7 +37,9 @@ class FakeReader:
         return self.snapshot
 
 
-def _request(*, metadata: ContextMetadata | None = None, deadline: int = 9_000_000_000) -> ApprovedCaptureRequest:
+def _request(
+    *, metadata: ContextMetadata | None = None, deadline: int = 9_000_000_000
+) -> ApprovedCaptureRequest:
     intent = CaptureIntent(
         job_id=uuid4(),
         generation=CaptureGeneration(7),
@@ -47,7 +49,9 @@ def _request(*, metadata: ContextMetadata | None = None, deadline: int = 9_000_0
     )
     decision = CaptureDecision.allow(
         policy_revision="policy-v4",
-        allowed_metadata_fields=frozenset({"window.x", "window.y", "window.width", "window.height"}),
+        allowed_metadata_fields=frozenset(
+            {"window.x", "window.y", "window.width", "window.height"}
+        ),
     )
     return ApprovedCaptureRequest.from_decision(
         intent=intent,
@@ -150,7 +154,9 @@ def test_untrusted_window_geometry_falls_back_to_full_desktop() -> None:
     reader = FakeReader(snapshot=_snapshot())
     backend = XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
-    frame = asyncio.run(backend.capture(_request(metadata=_window_metadata(source_id="unknown-source"))))
+    frame = asyncio.run(
+        backend.capture(_request(metadata=_window_metadata(source_id="unknown-source")))
+    )
 
     assert (frame.width, frame.height) == (4, 2)
     assert frame.pixels == bytes(range(24))
