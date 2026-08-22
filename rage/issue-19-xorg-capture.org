@@ -1,0 +1,96 @@
+#+title: RAGE issue 19 - Xorg screenshot capture backend
+#+startup: overview
+
+* Iteration 1
+:PROPERTIES:
+:ISSUE: 19
+:START_COMMIT: e5c6ac6cb4fc70b594fb51d5dcef40baca338560
+:START_BRANCH: main
+:WORK_BRANCH: agent/issue-19-xorg-capture-rage
+:END:
+
+** Consumed issue
+Implement =lost-rob0t/local-recall#19=: Xorg screenshot capture backend.
+
+Dependencies declared by the issue:
+- #8
+- #17
+- #18
+
+All three dependencies are treated as existing authorities rather than duplicated here. The starting =main= commit is the issue #18 merge.
+
+Acceptance criteria copied into the working gate:
+- no capture while off, paused, locked, denied, or faulted;
+- raw capture flows directly into the in-memory redaction pipeline;
+- multi-monitor and scaling fixtures are covered;
+- backend failure cannot produce a plaintext screenshot artifact.
+
+Additional issue requirements:
+- full-desktop v0.1 capture with monitor geometry;
+- optional focused-window crop only from validated metadata;
+- memory-only pixel acquisition, no temporary files;
+- preserve timestamp, dimensions, monitor geometry, and capture provenance;
+- respect lifecycle/pre-capture authorization on every invocation;
+- bounded capture duration and safe display-disconnect handling.
+
+** Research ledger
+*** Repository evidence
+- The public capture port accepts only =ApprovedCaptureRequest= and returns =RawFrame=. The Xorg backend must remain downstream of the existing lifecycle/policy authorization rather than create a second policy state machine.
+- =RawFrame= validates aware timestamps, positive dimensions, stride, pixel format, and exact byte length. Its current shape does not carry explicit monitor geometry or backend provenance, so issue #19 requires an additive project-owned capture provenance contract rather than smuggling geometry into arbitrary metadata.
+- Pipeline ingress already destroys stale/cancelled raw work and preserves generation identity. Issue #19 should compose with that machinery and must not add a competing cancellation generation.
+
+*** External evidence
+- Xlib specifies =XGetImage= as the primitive for returning drawable pixels and notes that the returned =XImage= lives in client memory. It may return NULL and can raise drawable/match/value errors. Source: X.Org Xlib C Language X Interface, current release.
+- X.Org's current concepts guide warns that core =GetImage= is slow and exposes framebuffer alignment/padding/byte ordering. That makes a thin, validated conversion boundary mandatory and argues against exposing native XImage layout to the rest of Local Recall.
+- Historical X.Org security advisories include libX11/XGetImage validation defects. Treat the X server/native image structure as an untrusted boundary: bound dimensions and byte counts before copying, and use a maintained system libX11 rather than reimplementing the X wire protocol.
+
+** Evidence-derived design
+*** Chosen direction
+Use a narrow Xlib adapter behind =CaptureBackend=, with native calls isolated in one module and an injectable reader seam for deterministic tests. Capture the root drawable for full-desktop v0.1. Obtain monitor geometry through an independently injected monitor-layout reader, normalize it into project-owned immutable types, then call Xlib for one bounded root-image acquisition. Convert the native image immediately to a canonical project pixel format before constructing =RawFrame=.
+
+The production backend owns no persistence and no temporary-file path. It receives only an =ApprovedCaptureRequest=. Deadline checks happen immediately before entering the blocking native call and immediately after it returns; native work runs through a bounded executor boundary so cancellation/timeout cannot unblock later persistence merely because the native function eventually returns.
+
+*** Rejected alternatives
+- Shelling out to ImageMagick/import, scrot, or xwd: stdout could be kept in memory, but this adds executable/version/parser variability and a larger hostile-output surface. It also makes provenance and pixel-format guarantees depend on external CLI behavior.
+- Reimplementing X11 GetImage over the wire: unnecessary protocol/security complexity when the platform already provides maintained libX11.
+- Letting the backend evaluate lifecycle, lock, or privacy state itself: duplicates #7/#17/#18 authorities and creates race-prone split-brain authorization.
+- Writing screenshot files and reopening them: directly violates the issue's plaintext-artifact invariant.
+
+*** Invariants
+1. The public production capture method requires a typed =ApprovedCaptureRequest=; no unauthenticated convenience method exists.
+2. Generation on the returned frame equals the approved request generation exactly.
+3. Backend/native errors expose fixed sanitized reason codes, never display strings, window titles, pixel bytes, native exception text, paths, or command lines.
+4. No production capture module imports filesystem/tempfile/image-file encoders or opens a path for pixel persistence.
+5. Native dimensions, stride, format, and byte counts are bounded and validated before copying into Python-owned bytes.
+6. Monitor rectangles are bounded, normalized, associated with the same virtual-root coordinate space, and retained as typed provenance.
+7. Focused-window cropping is optional and accepted only when geometry originates from already validated normalized metadata; otherwise full-desktop capture remains the safe behavior.
+8. Timeout/cancellation/stale generation never converts a late native result into accepted downstream work.
+
+*** State and ownership
+- lifecycle generation: existing lifecycle authority;
+- capture policy authorization/revision: existing policy authority;
+- lock/idle safety: existing session-safety authority;
+- X11 connection and native pixel acquisition: Xorg backend only;
+- monitor-layout parsing/normalization: Xorg monitor reader only;
+- persistence/redaction: existing downstream pipeline only.
+
+*** Failure and race analysis
+- display disconnect before/during capture -> fixed backend-unavailable/capture-failed result; no frame constructed;
+- lock/privacy transition after authorization -> existing generation/policy invalidation makes returned work stale; backend must retain request generation and downstream gates re-check it;
+- timeout while Xlib call is blocked -> caller sees bounded failure; eventual late native result is discarded and never submitted;
+- malformed native image/overflow -> fail before copying;
+- monitor topology changes between layout read and pixel read -> retain observed layout timestamp/revision and reject impossible geometry; later iteration may add a same-capture topology recheck if tests show this is necessary;
+- focused-window geometry stale or outside root -> reject crop request and fail closed to full desktop rather than reading arbitrary coordinates.
+
+*** Migration/configuration
+No persistent-data migration is intended. Frame/provenance domain types may gain additive fields. No remote-provider or network configuration changes belong to this issue.
+
+** Verification gates
+- deterministic unit tests for full-root capture, multi-monitor geometry including negative origins, scaling metadata, focused crop validation, malformed/native-overflow rejection, display disconnect, timeout, and sanitized errors;
+- integration test proving an approved raw frame crosses directly into the existing in-memory redaction path with no filesystem artifact;
+- security test proving production capture modules have no tempfile/path-write/image-encoder persistence capability and seeded private values cannot appear in failures;
+- lifecycle/policy regression proving capture reader is never invoked without an =ApprovedCaptureRequest= and stale/cancelled generations cannot be accepted downstream;
+- focused tests red before production implementation;
+- canonical =./scripts/check= green;
+- =nix flake check= when the flake gate applies;
+- exact-head GitHub Actions green before merge.
