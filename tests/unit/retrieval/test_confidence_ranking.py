@@ -17,8 +17,7 @@ def _with_confidence(record: RedactedRecord, confidence: float) -> RedactedRecor
             field.name,
             field.value,
             tuple(
-                replace(item, confidence=SourceConfidence(confidence))
-                for item in field.provenance
+                replace(item, confidence=SourceConfidence(confidence)) for item in field.provenance
             ),
         )
         for field in record.frame.metadata.fields
