@@ -7,8 +7,8 @@ from uuid import UUID
 
 import pytest
 
-from local_recall.activity.clustering import ActivityCluster
 from local_recall.activity import summaries as activity_summaries
+from local_recall.activity.clustering import ActivityCluster
 from local_recall.domain.frames import PixelFormat, RedactedFrame, RedactedRecord
 from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.domain.metadata import ContextMetadata
@@ -83,8 +83,7 @@ def _response(*claims: tuple[UUID, str]) -> str:
     return json.dumps(
         {
             "evidence": [
-                {"source_id": str(source_id), "excerpt": excerpt}
-                for source_id, excerpt in claims
+                {"source_id": str(source_id), "excerpt": excerpt} for source_id, excerpt in claims
             ]
         }
     )
@@ -102,7 +101,9 @@ def test_local_model_selects_exact_redacted_evidence_for_summary() -> None:
         _record(2, "fixed parser regression after review"),
     )
 
-    summary = asyncio.run(activity_summaries.ActivitySummarizer(provider).summarize(_cluster(), records))
+    summary = asyncio.run(
+        activity_summaries.ActivitySummarizer(provider).summarize(_cluster(), records)
+    )
 
     assert summary.text == "implemented parser tests\nfixed parser regression"
     assert summary.source_record_ids == (UUID(int=1), UUID(int=2))
@@ -117,7 +118,9 @@ def test_local_model_selects_exact_redacted_evidence_for_summary() -> None:
 def test_remote_summary_provider_is_rejected_before_content_egress() -> None:
     provider = Generator(_response((UUID(int=1), "private work")), location=ProviderLocation.REMOTE)
 
-    with pytest.raises(activity_summaries.ActivitySummaryFailure, match="local generation provider required"):
+    with pytest.raises(
+        activity_summaries.ActivitySummaryFailure, match="local generation provider required"
+    ):
         asyncio.run(
             activity_summaries.ActivitySummarizer(provider).summarize(
                 ActivityCluster(
