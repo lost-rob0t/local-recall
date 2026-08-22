@@ -11,6 +11,7 @@ from local_recall.domain import (
     GenerationRole,
     ModelCapability,
     PrivacyClass,
+    ProviderCapabilities,
     ProviderLocation,
     RoutingRequest,
 )
@@ -131,11 +132,10 @@ def _select_provider(
     provider_id: str,
     *,
     providers: tuple[GenerationProvider, ...],
-    capabilities: tuple[object, ...],
-) -> tuple[GenerationProvider, object]:
-    for provider, raw_capabilities in zip(providers, capabilities, strict=True):
-        candidate = raw_capabilities
-        if getattr(candidate, "provider_id", None) == provider_id:
+    capabilities: tuple[ProviderCapabilities, ...],
+) -> tuple[GenerationProvider, ProviderCapabilities]:
+    for provider, candidate in zip(providers, capabilities, strict=True):
+        if candidate.provider_id == provider_id:
             return provider, candidate
     raise AnsweringFailure("routed generation provider unavailable")
 
