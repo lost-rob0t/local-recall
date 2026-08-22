@@ -16,6 +16,18 @@ from local_recall.cli_contract import (
     CliResponse,
 )
 
+_LIFECYCLE_COMMANDS = frozenset(
+    {
+        CliCommand.START,
+        CliCommand.PAUSE,
+        CliCommand.RESUME,
+        CliCommand.STOP,
+        CliCommand.STATUS,
+        CliCommand.PRIVACY_ON,
+        CliCommand.PRIVACY_OFF,
+    }
+)
+
 
 class DaemonClient(Protocol):
     """Narrow client port implemented by authenticated daemon transports."""
@@ -111,6 +123,16 @@ def execute_command(
             request_id=request.request_id,
             outcome=CliOutcome.INTERNAL_FAILURE,
             reason_code="request-mismatch",
+        )
+    elif (
+        command in _LIFECYCLE_COMMANDS
+        and response.outcome is CliOutcome.SUCCESS
+        and response.lifecycle_state is None
+    ):
+        response = CliResponse.failure(
+            request_id=request.request_id,
+            outcome=CliOutcome.INTERNAL_FAILURE,
+            reason_code="lifecycle-state-missing",
         )
     elif (
         command is CliCommand.STOP
