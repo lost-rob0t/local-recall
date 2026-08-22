@@ -14,6 +14,8 @@ MAX_REASON_CODE_LENGTH = 64
 MAX_QUERY_RESULT_TEXT_LENGTH = 1_048_576
 MAX_CITATIONS = 256
 MAX_RECORD_ID_LENGTH = 128
+MAX_DIAGNOSTIC_ENTRIES = 256
+MAX_DIAGNOSTIC_FIELD_LENGTH = 128
 
 
 class CliPriority(StrEnum):
@@ -81,6 +83,14 @@ class CliLifecycleState(StrEnum):
     FAULTED = "faulted"
 
 
+class CliDiagnosticCategory(StrEnum):
+    """Closed operational diagnostic categories."""
+
+    PROVIDERS = "providers"
+    HEALTH = "health"
+    STORAGE = "storage"
+
+
 def _require_aware(value: datetime, *, field: str) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{field} must be timezone-aware")
@@ -94,6 +104,13 @@ def _validate_reason_code(reason_code: str) -> None:
         for character in reason_code
     ):
         raise ValueError("reason_code contains invalid characters")
+
+
+def _validate_diagnostic_field(value: str, *, field: str) -> None:
+    if not value or len(value) > MAX_DIAGNOSTIC_FIELD_LENGTH:
+        raise ValueError(f"{field} has invalid length")
+    if any(character in "\r\n\x00" for character in value):
+        raise ValueError(f"{field} contains invalid characters")
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -146,6 +163,58 @@ class CliQueryPayload:
 
     def __repr__(self) -> str:
         return f"CliQueryPayload(text=<content>, citation_count={len(self.citations)})"
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class CliDiagnosticEntry:
+    """One bounded, sanitized operational status field."""
+
+    name: str
+    state: str
+    value: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_diagnostic_field(self.name, field="name")
+        _validate_diagnostic_field(self.state, field="state")
+        if self.value is not None:
+            _validate_diagnostic_field(self.value, field="value")
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {"name": self.name, "state": self.state, "value": self.value}
+
+    def __repr__(self) -> str:
+        return "CliDiagnosticEntry(name=<opaque>, state=<opaque>, value=<opaque>)"
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class CliDiagnosticPayload:
+    """Closed bounded operational diagnostic response."""
+
+    category: CliDiagnosticCategory
+    entries: tuple[CliDiagnosticEntry, ...] = ()
+
+    def __post_init__(self) -> None:
+        if len(self.entries) > MAX_DIAGNOSTIC_ENTRIES:
+            raise ValueError("too many diagnostic entries")
+        names = tuple(entry.name for entry in self.entries)
+        if len(names) != len(set(names)):
+            raise ValueError("diagnostic entry names must be unique")
+
+    def to_json(self) -> str:
+        return json.dumps(
+            {
+                "category": self.category.value,
+                "entries": [entry.to_dict() for entry in self.entries],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    def __repr__(self) -> str:
+        return (
+            "CliDiagnosticPayload("
+            f"category={self.category.value!r}, entry_count={len(self.entries)})"
+        )
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -220,7 +289,7 @@ class CliRequest:
 
 @dataclass(frozen=True, slots=True, repr=False)
 class CliResponse:
-    """Sanitized envelope plus explicit user-requested query output."""
+    """Sanitized envelope plus explicit user-requested output."""
 
     protocol_version: str
     request_id: str
@@ -228,6 +297,7 @@ class CliResponse:
     reason_code: str | None = None
     lifecycle_state: CliLifecycleState | None = None
     query_payload: CliQueryPayload | None = None
+    diagnostic_payload: CliDiagnosticPayload | None = None
 
     @classmethod
     def success(
@@ -236,16 +306,21 @@ class CliResponse:
         request_id: str,
         lifecycle_state: CliLifecycleState | str | None = None,
         query_payload: CliQueryPayload | None = None,
+        diagnostic_payload: CliDiagnosticPayload | None = None,
     ) -> CliResponse:
         state = CliLifecycleState(lifecycle_state) if lifecycle_state is not None else None
-        if state is not None and query_payload is not None:
-            raise ValueError("success response cannot mix lifecycle and query payloads")
+        payload_count = sum(
+            value is not None for value in (state, query_payload, diagnostic_payload)
+        )
+        if payload_count > 1:
+            raise ValueError("success response cannot mix payload types")
         return cls(
             protocol_version=PROTOCOL_VERSION,
             request_id=request_id,
             outcome=CliOutcome.SUCCESS,
             lifecycle_state=state,
             query_payload=query_payload,
+            diagnostic_payload=diagnostic_payload,
         )
 
     @classmethod
@@ -281,6 +356,11 @@ class CliResponse:
                     if self.query_payload is not None
                     else None
                 ),
+                "diagnostic_payload": (
+                    json.loads(self.diagnostic_payload.to_json())
+                    if self.diagnostic_payload is not None
+                    else None
+                ),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -293,9 +373,14 @@ class CliResponse:
             if self.query_payload is not None
             else None
         )
+        diagnostic = (
+            f"{len(self.diagnostic_payload.entries)} entries"
+            if self.diagnostic_payload is not None
+            else None
+        )
         return (
             "CliResponse("
             f"outcome={self.outcome.value!r}, request_id={self.request_id!r}, "
             f"reason_code={self.reason_code!r}, lifecycle_state={state!r}, "
-            f"query_payload={query!r})"
+            f"query_payload={query!r}, diagnostic_payload={diagnostic!r})"
         )
