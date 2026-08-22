@@ -1,0 +1,26 @@
+#+title: RAGE issue 25 - activity clustering and summaries
+#+startup: overview
+
+* Immutable issue state
+:PROPERTIES:
+:ISSUE: 25
+:START_COMMIT: 9735063a84e2ccfe6d2acada6a4d48586d6f1e60
+:START_BRANCH: main
+:WORK_BRANCH: agent/issue-25-activity-clustering
+:END:
+
+Consumed issue: =lost-rob0t/local-recall#25=.
+
+Declared dependencies were verified closed/completed before consumption:
+- #20 adaptive scheduling, perceptual deduplication, and backpressure
+- #21 local generation provider with Ollama
+- #22 local embeddings and encrypted semantic index
+- #24 time-scoped retrieval and record provenance
+
+At consumption there were no issue comments on #25, no open pull requests, and #25 was the first open dependency-satisfied issue in the complete declared sequence. Current =main= was immutable commit =9735063a84e2ccfe6d2acada6a4d48586d6f1e60=.
+
+Issue acceptance requires grouping records using time gaps, application/workspace changes, perceptual similarity, and semantic similarity; exact source-record membership; incremental local summaries through the configured generation provider; recomputation after deletion or policy changes; encrypted summary persistence with model/version provenance; evidence-bounded summaries that do not invent actions; repetitive-frame span coalescing; conservative low-confidence separation; and deterministic tests for rapid switching, long idle gaps, and repeated use of one application for different tasks.
+
+* Iteration 1 - research and evidence-derived design
+** Status
+Research and repository inspection in progress. No production implementation has been accepted yet.
