@@ -3,10 +3,10 @@ from __future__ import annotations
 from local_recall.config import RemoteProviderSettings
 
 from .remote import (
+    RemoteHttpsTransport,
     RemoteProviderKind,
     RemoteProviderSpec,
     RemoteTransportSettings,
-    RemoteHttpsTransport,
 )
 from .remote_client import (
     RemoteCredentialProvider,
