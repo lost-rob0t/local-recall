@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -20,9 +21,9 @@ def citation(record_id: UUID = RECORD_A, captured_at: datetime = CAPTURE_A) -> A
     return AnswerCitation(record_id=record_id, captured_at=captured_at)
 
 
-def assert_value_error(callable_: object, expected: str) -> None:
+def assert_value_error(callable_: Callable[[], None], expected: str) -> None:
     try:
-        callable_()  # type: ignore[operator]
+        callable_()
     except ValueError as exc:
         assert expected in str(exc)
     else:
