@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -11,18 +12,24 @@ import typer
 from local_recall import __version__
 from local_recall.cli_contract import (
     CliCommand,
+    CliDiagnosticPayload,
     CliOutcome,
     CliQueryPayload,
     CliRequest,
     CliResponse,
 )
 from local_recall.cli_service import DaemonClient, execute_command
+from local_recall.config import ConfigurationError, load_configuration_file
 
 app = typer.Typer(
     name="local-recall",
     help="Local-first encrypted desktop activity recall.",
     no_args_is_help=True,
 )
+config_app = typer.Typer(help="Validate Local Recall configuration.")
+storage_app = typer.Typer(help="Inspect Local Recall storage status.")
+app.add_typer(config_app, name="config")
+app.add_typer(storage_app, name="storage")
 
 ClientFactory = Callable[[], DaemonClient]
 _DEFAULT_TIMEOUT = dt.timedelta(seconds=2)
@@ -68,6 +75,14 @@ def _render_query_payload(payload: CliQueryPayload) -> str:
         f"[{citation.record_id} @ {citation.captured_at.isoformat()}]"
         for citation in payload.citations
     )
+    return "\n".join(lines)
+
+
+def _render_diagnostic_payload(payload: CliDiagnosticPayload) -> str:
+    lines = [payload.category.value]
+    for entry in payload.entries:
+        suffix = f" ({entry.value})" if entry.value is not None else ""
+        lines.append(f"{entry.name}: {entry.state}{suffix}")
     return "\n".join(lines)
 
 
@@ -128,6 +143,25 @@ def _run_query_command(
         typer.echo("query-result-missing")
         raise typer.Exit(5)
     typer.echo(payload.to_json() if json_output else _render_query_payload(payload))
+
+
+def _run_diagnostic_command(command: CliCommand, *, json_output: bool) -> None:
+    now = dt.datetime.now(dt.UTC)
+    result = execute_command(
+        client=_client_factory(),
+        command=command,
+        now=now,
+        timeout=_DEFAULT_TIMEOUT,
+    )
+    if result.exit_code != 0:
+        typer.echo(_render_response(result.response))
+        raise typer.Exit(result.exit_code)
+
+    payload = result.response.diagnostic_payload
+    if payload is None:
+        typer.echo("diagnostic-result-missing")
+        raise typer.Exit(5)
+    typer.echo(payload.to_json() if json_output else _render_diagnostic_payload(payload))
 
 
 @app.callback()
@@ -231,3 +265,38 @@ def timeline(
         end=end,
         json_output=json_output,
     )
+
+
+@app.command()
+def providers(
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Show sanitized generation and embedding provider status."""
+    _run_diagnostic_command(CliCommand.PROVIDERS, json_output=json_output)
+
+
+@app.command()
+def health(
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Show sanitized daemon health status."""
+    _run_diagnostic_command(CliCommand.HEALTH, json_output=json_output)
+
+
+@storage_app.command("stats")
+def storage_stats(
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Show sanitized storage statistics."""
+    _run_diagnostic_command(CliCommand.STORAGE_STATS, json_output=json_output)
+
+
+@config_app.command("validate")
+def config_validate(path: Path) -> None:
+    """Validate one versioned configuration file without printing its values."""
+    try:
+        load_configuration_file(path, environ={})
+    except ConfigurationError:
+        typer.echo("invalid-configuration")
+        raise typer.Exit(2) from None
+    typer.echo("valid")
