@@ -1,17 +1,17 @@
-from local_recall.answering import models
+import local_recall.answering.models as answering_models
 
 
-RECORD_A = models.UUID("00000000-0000-0000-0000-000000000101")
-RECORD_B = models.UUID("00000000-0000-0000-0000-000000000102")
-CAPTURE_A = models.datetime.fromisoformat("2026-08-15T14:00:00+00:00")
-CAPTURE_B = models.datetime.fromisoformat("2026-08-15T14:05:00+00:00")
+RECORD_A = answering_models.UUID("00000000-0000-0000-0000-000000000101")
+RECORD_B = answering_models.UUID("00000000-0000-0000-0000-000000000102")
+CAPTURE_A = answering_models.datetime.fromisoformat("2026-08-15T14:00:00+00:00")
+CAPTURE_B = answering_models.datetime.fromisoformat("2026-08-15T14:05:00+00:00")
 
 
 def citation(
-    record_id: models.UUID = RECORD_A,
-    captured_at: models.datetime = CAPTURE_A,
-) -> models.AnswerCitation:
-    return models.AnswerCitation(record_id=record_id, captured_at=captured_at)
+    record_id: answering_models.UUID = RECORD_A,
+    captured_at: answering_models.datetime = CAPTURE_A,
+) -> answering_models.AnswerCitation:
+    return answering_models.AnswerCitation(record_id=record_id, captured_at=captured_at)
 
 
 def expect_value_error(callable_: object, expected: str) -> None:
@@ -27,21 +27,21 @@ def expect_value_error(callable_: object, expected: str) -> None:
 
 
 def test_claim_requires_canonical_citation() -> None:
-    claim = models.AnswerClaim(
-        kind=models.AnswerClaimKind.OBSERVED,
+    claim = answering_models.AnswerClaim(
+        kind=answering_models.AnswerClaimKind.OBSERVED,
         text="Edited the design document.",
         citations=(citation(),),
     )
 
-    assert claim.kind is models.AnswerClaimKind.OBSERVED
+    assert claim.kind is answering_models.AnswerClaimKind.OBSERVED
     assert claim.citations[0].record_id == RECORD_A
     assert "Edited the design document" not in repr(claim)
 
 
 def test_claim_rejects_duplicate_citations() -> None:
     def construct() -> None:
-        models.AnswerClaim(
-            kind=models.AnswerClaimKind.INFERENCE,
+        answering_models.AnswerClaim(
+            kind=answering_models.AnswerClaimKind.INFERENCE,
             text="The records suggest design work continued.",
             citations=(citation(), citation()),
         )
@@ -51,15 +51,15 @@ def test_claim_rejects_duplicate_citations() -> None:
 
 def test_claim_rejects_empty_citations_and_text() -> None:
     def empty_citations() -> None:
-        models.AnswerClaim(
-            kind=models.AnswerClaimKind.OBSERVED,
+        answering_models.AnswerClaim(
+            kind=answering_models.AnswerClaimKind.OBSERVED,
             text="Edited the design document.",
             citations=(),
         )
 
     def empty_text() -> None:
-        models.AnswerClaim(
-            kind=models.AnswerClaimKind.OBSERVED,
+        answering_models.AnswerClaim(
+            kind=answering_models.AnswerClaimKind.OBSERVED,
             text="   ",
             citations=(citation(),),
         )
@@ -70,25 +70,25 @@ def test_claim_rejects_empty_citations_and_text() -> None:
 
 def test_citation_requires_timezone_aware_timestamp() -> None:
     def construct() -> None:
-        models.AnswerCitation(
+        answering_models.AnswerCitation(
             record_id=RECORD_A,
-            captured_at=models.datetime(2026, 8, 15, 14, 0),
+            captured_at=answering_models.datetime(2026, 8, 15, 14, 0),
         )
 
     expect_value_error(construct, "captured_at must be timezone-aware")
 
 
 def test_cited_answer_preserves_claim_order_and_hides_content_from_repr() -> None:
-    answer = models.CitedAnswer(
-        mode=models.AnswerMode.TIMELINE,
+    answer = answering_models.CitedAnswer(
+        mode=answering_models.AnswerMode.TIMELINE,
         claims=(
-            models.AnswerClaim(
-                kind=models.AnswerClaimKind.OBSERVED,
+            answering_models.AnswerClaim(
+                kind=answering_models.AnswerClaimKind.OBSERVED,
                 text="Edited the design document.",
                 citations=(citation(),),
             ),
-            models.AnswerClaim(
-                kind=models.AnswerClaimKind.INFERENCE,
+            answering_models.AnswerClaim(
+                kind=answering_models.AnswerClaimKind.INFERENCE,
                 text="The records suggest the task continued.",
                 citations=(citation(RECORD_B, CAPTURE_B),),
             ),
@@ -98,8 +98,8 @@ def test_cited_answer_preserves_claim_order_and_hides_content_from_repr() -> Non
     )
 
     assert tuple(item.kind for item in answer.claims) == (
-        models.AnswerClaimKind.OBSERVED,
-        models.AnswerClaimKind.INFERENCE,
+        answering_models.AnswerClaimKind.OBSERVED,
+        answering_models.AnswerClaimKind.INFERENCE,
     )
     rendered = repr(answer)
     assert "design document" not in rendered
@@ -108,23 +108,23 @@ def test_cited_answer_preserves_claim_order_and_hides_content_from_repr() -> Non
 
 
 def test_cited_answer_rejects_inconsistent_evidence_state() -> None:
-    claim = models.AnswerClaim(
-        kind=models.AnswerClaimKind.OBSERVED,
+    claim = answering_models.AnswerClaim(
+        kind=answering_models.AnswerClaimKind.OBSERVED,
         text="Edited the design document.",
         citations=(citation(),),
     )
 
     def insufficient_with_claims() -> None:
-        models.CitedAnswer(
-            mode=models.AnswerMode.CONCISE,
+        answering_models.CitedAnswer(
+            mode=answering_models.AnswerMode.CONCISE,
             claims=(claim,),
             insufficient_evidence=True,
             policy_revision="policy-v7",
         )
 
     def supported_without_claims() -> None:
-        models.CitedAnswer(
-            mode=models.AnswerMode.CONCISE,
+        answering_models.CitedAnswer(
+            mode=answering_models.AnswerMode.CONCISE,
             claims=(),
             insufficient_evidence=False,
             policy_revision="policy-v7",
