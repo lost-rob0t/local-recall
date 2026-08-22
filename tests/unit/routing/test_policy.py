@@ -98,6 +98,8 @@ def test_privacy_strict_never_accepts_remote_authorization() -> None:
                 RoutingRequest(
                     capability=ModelCapability.GENERATION,
                     privacy_class=PrivacyClass.REDACTED_CONTENT,
+                    allow_remote=True,
+                    egress_authorization_id="auth-1",
                     data_classes=frozenset({EgressDataClass.REDACTED_TEXT}),
                     authorization=authorization,
                 ),
@@ -115,6 +117,7 @@ def test_remote_explicit_requires_authorization() -> None:
                 RoutingRequest(
                     capability=ModelCapability.GENERATION,
                     privacy_class=PrivacyClass.REDACTED_CONTENT,
+                    allow_remote=True,
                     data_classes=frozenset({EgressDataClass.REDACTED_TEXT}),
                 ),
                 (_provider("remote", location=ProviderLocation.REMOTE),),
@@ -140,6 +143,8 @@ def test_remote_explicit_binds_provider_and_authorized_data_classes() -> None:
             RoutingRequest(
                 capability=ModelCapability.GENERATION,
                 privacy_class=PrivacyClass.REDACTED_CONTENT,
+                allow_remote=True,
+                egress_authorization_id="auth-2",
                 data_classes=frozenset(
                     {EgressDataClass.REDACTED_TEXT, EgressDataClass.APPROVED_METADATA}
                 ),
@@ -169,6 +174,8 @@ def test_remote_image_is_denied_unless_explicitly_authorized() -> None:
                 RoutingRequest(
                     capability=ModelCapability.GENERATION,
                     privacy_class=PrivacyClass.REDACTED_CONTENT,
+                    allow_remote=True,
+                    egress_authorization_id="auth-3",
                     data_classes=frozenset({EgressDataClass.REDACTED_IMAGE}),
                     authorization=authorization,
                 ),
@@ -198,6 +205,8 @@ def test_raw_and_secret_material_are_not_remotely_routable(
                 RoutingRequest(
                     capability=ModelCapability.GENERATION,
                     privacy_class=privacy_class,
+                    allow_remote=True,
+                    egress_authorization_id="auth-4",
                     data_classes=frozenset({EgressDataClass.REDACTED_TEXT}),
                     authorization=authorization,
                 ),
