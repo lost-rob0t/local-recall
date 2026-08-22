@@ -130,9 +130,7 @@ class _RemoteWriter(Protocol):
     async def wait_closed(self) -> None: ...
 
 
-_RemoteConnector = Callable[
-    [str, int, object, str], Awaitable[tuple[_RemoteReader, _RemoteWriter]]
-]
+_RemoteConnector = Callable[[str, int, object, str], Awaitable[tuple[_RemoteReader, _RemoteWriter]]]
 
 
 async def _open_tls_connection(
@@ -211,7 +209,7 @@ class RemoteHttpsTransport:
                 writer.close()
                 try:
                     await writer.wait_closed()
-                except (OSError, ssl.SSLError):
+                except OSError, ssl.SSLError:
                     pass
 
         try:
@@ -245,9 +243,8 @@ class RemoteHttpsTransport:
     def _serialize(request: RemoteHttpRequest, host: str, port: int) -> bytes:
         if request.method != "POST":
             raise RemoteTransportError("remote-method-denied")
-        if (
-            not request.path.startswith("/")
-            or any(character in request.path for character in ("\x00", "\r", "\n"))
+        if not request.path.startswith("/") or any(
+            character in request.path for character in ("\x00", "\r", "\n")
         ):
             raise RemoteTransportError("remote-path-invalid")
         header_lines: list[str] = []
@@ -266,9 +263,7 @@ class RemoteHttpsTransport:
             f"POST {request.path} HTTP/1.1\r\n"
             f"Host: {host_header}\r\n"
             f"Content-Length: {len(request.body)}\r\n"
-            "Connection: close\r\n"
-            + "\r\n".join(header_lines)
-            + "\r\n\r\n"
+            "Connection: close\r\n" + "\r\n".join(header_lines) + "\r\n\r\n"
         ).encode("ascii")
         return prefix + request.body
 
