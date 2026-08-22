@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import stat
+from collections.abc import Callable
 from pathlib import Path
 
 from local_recall.ipc import IpcCredentialStore, IpcPaths, IpcSecurityError, SessionToken
@@ -13,9 +14,8 @@ def _paths(tmp_path: Path) -> IpcPaths:
     return IpcPaths.from_runtime_dir(runtime_dir, expected_uid=runtime_dir.stat().st_uid)
 
 
-def _expect_security_error(code: str, action: object) -> None:
+def _expect_security_error(code: str, action: Callable[[], object]) -> None:
     try:
-        assert callable(action)
         action()
     except IpcSecurityError as exc:
         assert str(exc) == code
@@ -72,7 +72,7 @@ def test_load_rejects_wrong_length_token(tmp_path: Path) -> None:
 
 
 def test_token_repr_never_contains_secret_bytes() -> None:
-    secret = b"SYNTHETIC-IPC-TOKEN-SECRET-1234"
+    secret = b"SYNTHETIC-IPC-TOKEN-SECRET-12345"
     token = SessionToken(secret)
 
     assert secret.decode() not in repr(token)
