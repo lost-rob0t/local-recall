@@ -29,6 +29,8 @@ from .messages import EventEnvelope, MessageEnvelope, MessageHeader
 from .metadata import ContextField, ContextMetadata, MetadataProvenance, SourceConfidence
 from .privacy import PrivacyClass, ProviderLocation
 from .providers import (
+    EgressAuthorization,
+    EgressDataClass,
     EmbeddingRequest,
     EmbeddingResponse,
     GenerationRequest,
@@ -66,6 +68,8 @@ __all__ = [
     "CitedAnswer",
     "ContextField",
     "ContextMetadata",
+    "EgressAuthorization",
+    "EgressDataClass",
     "EmbeddingRequest",
     "EmbeddingResponse",
     "EncryptedRecordEnvelope",
