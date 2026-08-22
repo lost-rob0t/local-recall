@@ -4,13 +4,13 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from local_recall.cli_contract import CliCommand, CliRequest
-from local_recall.ipc import SessionToken
 from local_recall.ipc_protocol import (
     IpcCapability,
     IpcProtocolError,
     IpcRequestCodec,
     MAX_REQUEST_PAYLOAD_BYTES,
 )
+from local_recall.ipc import SessionToken
 
 NOW = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
 
