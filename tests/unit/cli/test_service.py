@@ -29,9 +29,7 @@ def test_exit_codes_are_stable_by_outcome() -> None:
 
 
 def test_execute_uses_daemon_client_and_preserves_priority() -> None:
-    client = FakeClient(
-        CliResponse.success(request_id="placeholder", lifecycle_state="paused")
-    )
+    client = FakeClient(CliResponse.success(request_id="placeholder", lifecycle_state="paused"))
     now = dt.datetime(2026, 8, 22, 20, 0, tzinfo=dt.UTC)
 
     result = execute_command(
@@ -49,9 +47,7 @@ def test_execute_uses_daemon_client_and_preserves_priority() -> None:
 
 
 def test_stop_success_requires_authoritative_off_state() -> None:
-    client = FakeClient(
-        CliResponse.success(request_id="placeholder", lifecycle_state="recording")
-    )
+    client = FakeClient(CliResponse.success(request_id="placeholder", lifecycle_state="recording"))
     now = dt.datetime(2026, 8, 22, 20, 0, tzinfo=dt.UTC)
 
     result = execute_command(
