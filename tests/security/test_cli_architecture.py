@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import datetime as dt
 from pathlib import Path
 
 from local_recall.cli_contract import CliCommand, CliRequest
@@ -44,8 +45,6 @@ def test_cli_boundary_has_no_daemon_authority_implementation_imports() -> None:
 
 def test_query_content_never_enters_routing_metadata_or_repr() -> None:
     marker = "PRIVATE-CLI-QUERY-7f31"  # pragma: allowlist secret
-    import datetime as dt
-
     now = dt.datetime(2026, 8, 22, 21, 0, tzinfo=dt.UTC)
     request = CliRequest.create(
         command=CliCommand.ASK,
