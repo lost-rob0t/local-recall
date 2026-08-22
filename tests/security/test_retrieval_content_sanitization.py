@@ -5,8 +5,8 @@ from uuid import uuid4
 
 from local_recall.retrieval.service import (
     MetadataFilter,
-    RetrievedPassage,
     RetrievalQuery,
+    RetrievedPassage,
 )
 from local_recall.retrieval.time import ResolvedTimeRange
 
