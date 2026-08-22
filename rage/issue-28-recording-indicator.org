@@ -1,0 +1,43 @@
+#+title: RAGE Issue 28 - Recording Status Indicator
+#+property: header-args :results output
+
+* Transaction
+- Consumed issue :: #28 [P1] Add an always-visible recording status indicator
+- Immutable starting main :: b798ab94e2c3ccc51ba723ee7f8a36352dfea4c9
+- Branch :: agent/issue-28-recording-indicator
+- Dependencies :: #7, #27 (completed before consumption)
+- Ordering :: first open dependency-satisfied issue after #27 closeout
+
+* Acceptance criteria
+- Indicator cannot display recording unless the daemon authoritatively confirms recording.
+- Stop from the indicator routes through the daemon control boundary and therefore the hard capture gate / stop barrier.
+- Indicator recovers after daemon or Qtile restart by re-querying authoritative daemon state.
+- Notifications, tooltip/status metadata, errors, and representations contain no screenshots, OCR, titles, secrets, command lines, provider payloads, or storage paths.
+- Surface off, paused, recording, privacy mode, locked, overloaded, and faulted states.
+- Provide one-action stop and privacy controls.
+- Show content-free backend, metadata-source, and last-successful-capture information.
+- Provide both a generic Linux tray/status integration and a Qtile integration path.
+
+* Hard invariants
+- The indicator is a client/view. It does not own lifecycle, privacy, policy, capture, storage, or query state.
+- Recording is rendered only from a successful authoritative daemon observation for the current poll cycle; disconnect/error cannot preserve optimistic recording state.
+- Commands use the existing typed daemon client/service boundary; no direct lifecycle/capture imports.
+- Restart/reconnect is pull-authoritative: stale UI state is discarded and status is queried again.
+- No content-bearing value enters indicator models, notifications, labels, tooltips, object reprs, or logs.
+- #29 remains owner of authenticated ipc:// transport/server authorization. #28 must not introduce an unauthenticated interim socket.
+
+* RAGE Iteration 1
+** Research
+Pending.
+
+** Evidence-derived design
+Pending.
+
+** RED
+Pending.
+
+** GREEN
+Pending.
+
+* Verification
+Pending.
