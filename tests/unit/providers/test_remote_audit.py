@@ -26,7 +26,7 @@ class MemorySink:
     def __init__(self) -> None:
         self.events: list[AuditEvent] = []
 
-    def write(self, event: AuditEvent) -> None:
+    def emit(self, event: AuditEvent) -> None:
         self.events.append(event)
 
 
