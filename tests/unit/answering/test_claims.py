@@ -5,13 +5,7 @@ from uuid import UUID
 
 import pytest
 
-from local_recall.answering.models import (
-    AnswerCitation,
-    AnswerClaim,
-    AnswerClaimKind,
-    AnswerMode,
-    CitedAnswer,
-)
+from local_recall import answering
 
 
 RECORD_A = UUID("00000000-0000-0000-0000-000000000101")
@@ -20,42 +14,45 @@ CAPTURE_A = datetime(2026, 8, 15, 14, 0, tzinfo=UTC)
 CAPTURE_B = datetime(2026, 8, 15, 14, 5, tzinfo=UTC)
 
 
-def citation(record_id: UUID = RECORD_A, captured_at: datetime = CAPTURE_A) -> AnswerCitation:
-    return AnswerCitation(record_id=record_id, captured_at=captured_at)
+def citation(
+    record_id: UUID = RECORD_A,
+    captured_at: datetime = CAPTURE_A,
+) -> answering.AnswerCitation:
+    return answering.AnswerCitation(record_id=record_id, captured_at=captured_at)
 
 
 def test_claim_requires_canonical_citation() -> None:
-    claim = AnswerClaim(
-        kind=AnswerClaimKind.OBSERVED,
+    claim = answering.AnswerClaim(
+        kind=answering.AnswerClaimKind.OBSERVED,
         text="Edited the design document.",
         citations=(citation(),),
     )
 
-    assert claim.kind is AnswerClaimKind.OBSERVED
+    assert claim.kind is answering.AnswerClaimKind.OBSERVED
     assert claim.citations[0].record_id == RECORD_A
     assert "Edited the design document" not in repr(claim)
 
 
 def test_claim_rejects_duplicate_citations() -> None:
     with pytest.raises(ValueError, match="citations must be unique"):
-        AnswerClaim(
-            kind=AnswerClaimKind.INFERENCE,
+        answering.AnswerClaim(
+            kind=answering.AnswerClaimKind.INFERENCE,
             text="The records suggest design work continued.",
             citations=(citation(), citation()),
         )
 
 
 def test_cited_answer_preserves_claim_order_and_hides_content_from_repr() -> None:
-    answer = CitedAnswer(
-        mode=AnswerMode.TIMELINE,
+    answer = answering.CitedAnswer(
+        mode=answering.AnswerMode.TIMELINE,
         claims=(
-            AnswerClaim(
-                kind=AnswerClaimKind.OBSERVED,
+            answering.AnswerClaim(
+                kind=answering.AnswerClaimKind.OBSERVED,
                 text="Edited the design document.",
                 citations=(citation(),),
             ),
-            AnswerClaim(
-                kind=AnswerClaimKind.INFERENCE,
+            answering.AnswerClaim(
+                kind=answering.AnswerClaimKind.INFERENCE,
                 text="The records suggest the task continued.",
                 citations=(citation(RECORD_B, CAPTURE_B),),
             ),
@@ -65,8 +62,8 @@ def test_cited_answer_preserves_claim_order_and_hides_content_from_repr() -> Non
     )
 
     assert tuple(item.kind for item in answer.claims) == (
-        AnswerClaimKind.OBSERVED,
-        AnswerClaimKind.INFERENCE,
+        answering.AnswerClaimKind.OBSERVED,
+        answering.AnswerClaimKind.INFERENCE,
     )
     rendered = repr(answer)
     assert "design document" not in rendered
@@ -76,11 +73,11 @@ def test_cited_answer_preserves_claim_order_and_hides_content_from_repr() -> Non
 
 def test_cited_answer_rejects_claims_when_marked_insufficient() -> None:
     with pytest.raises(ValueError, match="insufficient answer cannot contain claims"):
-        CitedAnswer(
-            mode=AnswerMode.CONCISE,
+        answering.CitedAnswer(
+            mode=answering.AnswerMode.CONCISE,
             claims=(
-                AnswerClaim(
-                    kind=AnswerClaimKind.OBSERVED,
+                answering.AnswerClaim(
+                    kind=answering.AnswerClaimKind.OBSERVED,
                     text="Edited the design document.",
                     citations=(citation(),),
                 ),
