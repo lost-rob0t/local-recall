@@ -74,10 +74,12 @@
 - Canonical =./scripts/check= and applicable =nix flake check=; exact-head GitHub Actions must be green before merge.
 
 ** RED
-Pending test-only commit and observed CI failure.
+- Test-only head =4f7c0e2fd6d7ad4335ce8e24cde3780e54f06a83=, CI run =32594185316=, was rejected as RED because Ruff import sorting failed before static typing/tests.
+- Test-only head =799a9140b0f519df064e50bcf26e644311bf5ea0=, CI run =32594237854=, was also rejected because Ruff still classified the unresolved import block as unsorted.
+- Accepted RED: exact head =6735573ed91180685bc740aebd0bdcdfec1c2f86=, CI run =32594272226=. Formatting, Ruff, ShellCheck, and failure-propagation passed. Strict Pyright then failed specifically because =local_recall.cli_contract= did not exist, with the expected cascade of unknown contract types. No production CLI-contract code existed at this head.
 
 ** GREEN
-Pending accepted RED.
+Pending production implementation after accepted RED.
 
 * Hard invariants
 - The CLI must not become a second lifecycle, policy, retrieval, or provider authority.
