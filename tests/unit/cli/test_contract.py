@@ -55,6 +55,48 @@ def test_request_rejects_expired_deadline() -> None:
         )
 
 
+@pytest.mark.parametrize("command", [CliCommand.ASK, CliCommand.SEARCH])
+def test_text_query_commands_require_nonempty_query(command: CliCommand) -> None:
+    now = dt.datetime(2026, 8, 22, 19, 0, tzinfo=dt.UTC)
+
+    for query in (None, "", "   "):
+        with pytest.raises(ValueError, match="query"):
+            CliRequest.create(
+                command=command,
+                now=now,
+                deadline=now + dt.timedelta(seconds=2),
+                query=query,
+            )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        CliCommand.START,
+        CliCommand.PAUSE,
+        CliCommand.RESUME,
+        CliCommand.STOP,
+        CliCommand.STATUS,
+        CliCommand.PRIVACY_ON,
+        CliCommand.PRIVACY_OFF,
+        CliCommand.TIMELINE,
+        CliCommand.PROVIDERS,
+        CliCommand.HEALTH,
+        CliCommand.STORAGE_STATS,
+    ],
+)
+def test_non_text_query_commands_reject_query_payload(command: CliCommand) -> None:
+    now = dt.datetime(2026, 8, 22, 19, 0, tzinfo=dt.UTC)
+
+    with pytest.raises(ValueError, match="query"):
+        CliRequest.create(
+            command=command,
+            now=now,
+            deadline=now + dt.timedelta(seconds=2),
+            query="unexpected-query-content",
+        )
+
+
 def test_query_text_is_payload_not_routing_metadata() -> None:
     marker = "synthetic-question-marker"
     now = dt.datetime(2026, 8, 22, 19, 0, tzinfo=dt.UTC)
