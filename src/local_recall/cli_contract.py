@@ -356,6 +356,7 @@ class CliResponse:
     lifecycle_state: CliLifecycleState | None = None
     query_payload: CliQueryPayload | None = None
     diagnostic_payload: CliDiagnosticPayload | None = None
+    status_payload: CliStatusPayload | None = None
 
     @classmethod
     def success(
@@ -365,13 +366,18 @@ class CliResponse:
         lifecycle_state: CliLifecycleState | str | None = None,
         query_payload: CliQueryPayload | None = None,
         diagnostic_payload: CliDiagnosticPayload | None = None,
+        status_payload: CliStatusPayload | None = None,
     ) -> CliResponse:
         state = CliLifecycleState(lifecycle_state) if lifecycle_state is not None else None
-        payload_count = sum(
-            value is not None for value in (state, query_payload, diagnostic_payload)
+        content_payload_count = sum(
+            value is not None for value in (query_payload, diagnostic_payload, status_payload)
         )
-        if payload_count > 1:
+        if content_payload_count > 1:
             raise ValueError("success response cannot mix payload types")
+        if state is not None and (query_payload is not None or diagnostic_payload is not None):
+            raise ValueError("lifecycle state cannot accompany query or diagnostic payload")
+        if status_payload is not None and state is None:
+            raise ValueError("status payload requires lifecycle state")
         return cls(
             protocol_version=PROTOCOL_VERSION,
             request_id=request_id,
@@ -379,6 +385,7 @@ class CliResponse:
             lifecycle_state=state,
             query_payload=query_payload,
             diagnostic_payload=diagnostic_payload,
+            status_payload=status_payload,
         )
 
     @classmethod
@@ -419,6 +426,9 @@ class CliResponse:
                     if self.diagnostic_payload is not None
                     else None
                 ),
+                "status_payload": (
+                    self.status_payload.to_dict() if self.status_payload is not None else None
+                ),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -436,9 +446,11 @@ class CliResponse:
             if self.diagnostic_payload is not None
             else None
         )
+        status = "present" if self.status_payload is not None else None
         return (
             "CliResponse("
             f"outcome={self.outcome.value!r}, request_id={self.request_id!r}, "
             f"reason_code={self.reason_code!r}, lifecycle_state={state!r}, "
-            f"query_payload={query!r}, diagnostic_payload={diagnostic!r})"
+            f"query_payload={query!r}, diagnostic_payload={diagnostic!r}, "
+            f"status_payload={status!r})"
         )
