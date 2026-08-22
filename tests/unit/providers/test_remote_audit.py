@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from importlib import import_module
 from uuid import uuid4
 
 from local_recall.audit import AuditAction, AuditEvent, AuditOutcome, AuditReasonCode
+from local_recall.audit.adapters import RemoteProviderAuditAdapter
 from local_recall.audit.recorder import AuditRecorder
 from local_recall.config import CredentialReference
 from local_recall.providers.remote import (
@@ -14,12 +14,8 @@ from local_recall.providers.remote import (
     RemoteProviderSpec,
     ResolvedCredential,
 )
+from local_recall.providers.remote_client import RemoteProviderClient
 from local_recall.routing import ApprovedEgressPayload, EgressDataClass
-
-_adapters_module = import_module("local_recall.audit.adapters")
-_remote_client_module = import_module("local_recall.providers.remote_client")
-RemoteProviderAuditAdapter = vars(_adapters_module)["RemoteProviderAuditAdapter"]
-RemoteProviderClient = vars(_remote_client_module)["RemoteProviderClient"]
 
 
 class MemorySink:
