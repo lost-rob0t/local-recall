@@ -68,7 +68,9 @@ def _approved_request(generation: object) -> ApprovedCaptureRequest:
     )
 
 
-def _pipeline(gate: object, sink: RecordingSink, faults: RecordingFaultSink) -> BoundedCapturePipeline:
+def _pipeline(
+    gate: object, sink: RecordingSink, faults: RecordingFaultSink
+) -> BoundedCapturePipeline:
     from local_recall.lifecycle import CaptureGate
 
     if not isinstance(gate, CaptureGate):
