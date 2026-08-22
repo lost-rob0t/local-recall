@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from local_recall.domain.privacy import PrivacyClass, ProviderLocation
-from local_recall.domain.providers import ModelCapability, ProviderCapabilities
+from local_recall.domain import (
+    ModelCapability,
+    PrivacyClass,
+    ProviderCapabilities,
+    ProviderLocation,
+)
 from local_recall.routing import (
     EgressAuthorization,
     EgressDataClass,
