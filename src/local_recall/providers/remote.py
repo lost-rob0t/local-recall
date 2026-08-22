@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
-from collections.abc import Mapping
+import ssl
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
+from typing import Protocol, cast
 from urllib.parse import urlsplit
 
 from local_recall.routing import ApprovedEgressPayload, EgressDataClass
@@ -26,6 +29,17 @@ class RemoteRequestError(RuntimeError):
 
     def __repr__(self) -> str:
         return f"RemoteRequestError(reason_code={self.reason_code!r})"
+
+
+class RemoteTransportError(RuntimeError):
+    def __init__(self, reason_code: str) -> None:
+        if not reason_code:
+            raise ValueError("remote transport reason code must not be empty")
+        self.reason_code = reason_code
+        super().__init__(reason_code)
+
+    def __repr__(self) -> str:
+        return f"RemoteTransportError(reason_code={self.reason_code!r})"
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -67,6 +81,7 @@ class RemoteProviderSpec:
             or parsed.path == "/"
             or parsed.query
             or parsed.fragment
+            or any(character in parsed.path for character in ("\x00", "\r", "\n"))
             or (port is not None and not 1 <= port <= 65535)
         ):
             raise ValueError("remote endpoint must be a valid HTTPS URL")
@@ -79,6 +94,207 @@ class RemoteHttpRequest:
     path: str
     headers: Mapping[str, str] = field(repr=False)
     body: bytes = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class RemoteTransportSettings:
+    timeout_seconds: float = 30.0
+    max_request_bytes: int = 1024 * 1024
+    max_response_bytes: int = 1024 * 1024
+    max_header_bytes: int = 16 * 1024
+
+    def __post_init__(self) -> None:
+        if self.timeout_seconds <= 0:
+            raise ValueError("remote timeout must be positive")
+        if self.max_request_bytes <= 0:
+            raise ValueError("remote request limit must be positive")
+        if self.max_response_bytes <= 0:
+            raise ValueError("remote response limit must be positive")
+        if self.max_header_bytes <= 0:
+            raise ValueError("remote header limit must be positive")
+
+
+class _RemoteReader(Protocol):
+    async def readuntil(self, separator: bytes = b"\n") -> bytes: ...
+
+    async def readexactly(self, count: int) -> bytes: ...
+
+
+class _RemoteWriter(Protocol):
+    def write(self, data: bytes) -> None: ...
+
+    async def drain(self) -> None: ...
+
+    def close(self) -> None: ...
+
+    async def wait_closed(self) -> None: ...
+
+
+_RemoteConnector = Callable[
+    [str, int, object, str], Awaitable[tuple[_RemoteReader, _RemoteWriter]]
+]
+
+
+async def _open_tls_connection(
+    host: str, port: int, ssl_context: object, server_hostname: str
+) -> tuple[_RemoteReader, _RemoteWriter]:
+    if not isinstance(ssl_context, ssl.SSLContext):
+        raise RemoteTransportError("remote-tls-context-invalid")
+    reader, writer = await asyncio.open_connection(
+        host,
+        port,
+        ssl=ssl_context,
+        server_hostname=server_hostname,
+    )
+    return reader, writer
+
+
+class RemoteHttpsTransport:
+    def __init__(
+        self,
+        settings: RemoteTransportSettings,
+        *,
+        connector: _RemoteConnector | None = None,
+    ) -> None:
+        self._settings = settings
+        self._connector = connector or _open_tls_connection
+        self._ssl_context = ssl.create_default_context()
+
+    async def request_json(self, request: RemoteHttpRequest) -> Mapping[str, object]:
+        host, port = self._target(request)
+        wire_request = self._serialize(request, host, port)
+        if len(wire_request) > self._settings.max_request_bytes:
+            raise RemoteTransportError("remote-request-too-large")
+
+        writer: _RemoteWriter | None = None
+        try:
+            async with asyncio.timeout(self._settings.timeout_seconds):
+                reader, writer = await self._connector(
+                    host,
+                    port,
+                    self._ssl_context,
+                    host,
+                )
+                writer.write(wire_request)
+                await writer.drain()
+                header_block = await reader.readuntil(b"\r\n\r\n")
+                if len(header_block) > self._settings.max_header_bytes:
+                    raise RemoteTransportError("remote-response-headers-too-large")
+                status, headers = self._parse_headers(header_block)
+                if 300 <= status <= 399:
+                    raise RemoteTransportError("remote-redirect-denied")
+                if status != 200:
+                    raise RemoteTransportError("remote-http-error")
+                if "transfer-encoding" in headers:
+                    raise RemoteTransportError("remote-transfer-encoding-denied")
+                content_length = headers.get("content-length")
+                if content_length is None or not content_length.isdecimal():
+                    raise RemoteTransportError("remote-content-length-invalid")
+                size = int(content_length)
+                if size > self._settings.max_response_bytes:
+                    raise RemoteTransportError("remote-response-too-large")
+                body = await reader.readexactly(size)
+        except asyncio.CancelledError:
+            raise
+        except TimeoutError as exc:
+            raise RemoteTransportError("remote-timeout") from exc
+        except RemoteTransportError:
+            raise
+        except (asyncio.IncompleteReadError, asyncio.LimitOverrunError) as exc:
+            raise RemoteTransportError("remote-response-incomplete") from exc
+        except (OSError, ssl.SSLError) as exc:
+            raise RemoteTransportError("remote-connection-failed") from exc
+        except Exception as exc:
+            raise RemoteTransportError("remote-transport-failed") from exc
+        finally:
+            if writer is not None:
+                writer.close()
+                try:
+                    await writer.wait_closed()
+                except (OSError, ssl.SSLError):
+                    pass
+
+        try:
+            decoded = json.loads(body)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RemoteTransportError("remote-json-invalid") from exc
+        if not isinstance(decoded, dict):
+            raise RemoteTransportError("remote-json-envelope-invalid")
+        return cast(Mapping[str, object], decoded)
+
+    @staticmethod
+    def _target(request: RemoteHttpRequest) -> tuple[str, int]:
+        parsed = urlsplit(request.origin)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise RemoteTransportError("remote-origin-invalid")
+        try:
+            port = parsed.port or 443
+        except ValueError as exc:
+            raise RemoteTransportError("remote-origin-invalid") from exc
+        return parsed.hostname, port
+
+    @staticmethod
+    def _serialize(request: RemoteHttpRequest, host: str, port: int) -> bytes:
+        if request.method != "POST":
+            raise RemoteTransportError("remote-method-denied")
+        if (
+            not request.path.startswith("/")
+            or any(character in request.path for character in ("\x00", "\r", "\n"))
+        ):
+            raise RemoteTransportError("remote-path-invalid")
+        header_lines: list[str] = []
+        for name, value in request.headers.items():
+            normalized = name.lower()
+            if (
+                not normalized
+                or not all(character.isalnum() or character == "-" for character in normalized)
+                or any(character in value for character in ("\x00", "\r", "\n"))
+                or normalized in {"host", "content-length", "connection"}
+            ):
+                raise RemoteTransportError("remote-header-invalid")
+            header_lines.append(f"{normalized}: {value}")
+        host_header = host if port == 443 else f"{host}:{port}"
+        prefix = (
+            f"POST {request.path} HTTP/1.1\r\n"
+            f"Host: {host_header}\r\n"
+            f"Content-Length: {len(request.body)}\r\n"
+            "Connection: close\r\n"
+            + "\r\n".join(header_lines)
+            + "\r\n\r\n"
+        ).encode("ascii")
+        return prefix + request.body
+
+    @staticmethod
+    def _parse_headers(block: bytes) -> tuple[int, Mapping[str, str]]:
+        try:
+            text = block.decode("iso-8859-1")
+            lines = text.split("\r\n")
+            status_parts = lines[0].split(" ", 2)
+            if len(status_parts) < 2 or status_parts[0] != "HTTP/1.1":
+                raise ValueError
+            status = int(status_parts[1])
+        except (UnicodeDecodeError, ValueError, IndexError) as exc:
+            raise RemoteTransportError("remote-response-headers-invalid") from exc
+        headers: dict[str, str] = {}
+        for line in lines[1:]:
+            if not line:
+                continue
+            if ":" not in line:
+                raise RemoteTransportError("remote-response-headers-invalid")
+            name, value = line.split(":", 1)
+            normalized = name.strip().lower()
+            if not normalized or normalized in headers:
+                raise RemoteTransportError("remote-response-headers-invalid")
+            headers[normalized] = value.strip()
+        return status, MappingProxyType(headers)
 
 
 class RemoteRequestBuilder:
