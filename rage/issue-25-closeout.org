@@ -1,0 +1,36 @@
+#+title: RAGE issue 25 closeout
+#+startup: overview
+
+* Final state
+:PROPERTIES:
+:ISSUE: 25
+:START_COMMIT: 9735063a84e2ccfe6d2acada6a4d48586d6f1e60
+:IMPLEMENTATION_PR: 79
+:FINAL_HEAD: 340d0d07b46916b8f4ec60ace4056ecde9b5dacf
+:MERGE_COMMIT: 892ce753b6d658373eb31536be862ea47e99ef80
+:END:
+
+Issue #25 was completed by pull request #79, =Cluster captures into evidence-grounded activity sessions=.
+
+* Final verification
+- Exact implementation head =340d0d07b46916b8f4ec60ace4056ecde9b5dacf= passed CI run =32584400941= (#565).
+- Canonical =./scripts/check= passed on that exact head.
+- Ubuntu 22.04 and Ubuntu 24.04 matrices passed formatting, Ruff lint, ShellCheck, strict Pyright, unit tests, contract tests, integration tests, security tests, and repository security checks.
+- Failure-propagation verification passed.
+- No package or flake inputs changed, so =nix flake check= was not an applicable additional issue gate.
+- Immediately before merge, PR #79 was open, non-draft, mergeable, had no comments, no submitted reviews, and no unresolved review threads.
+- Squash merge used expected-head protection for =340d0d07...= and produced signed =main= commit =892ce753b6d658373eb31536be862ea47e99ef80=.
+- GitHub closed issue #25 with state reason =completed= at the merge.
+
+* Acceptance closure
+- Contiguous deterministic activity segmentation uses time gaps, workspace/application continuity, issue #20 perceptual dHash, and local semantic embeddings.
+- Exact ordered source-record membership is retained for every activity.
+- Low-confidence and policy-boundary transitions split conservatively rather than being aggressively merged.
+- Local-only model summarization accepts only validated exact redacted evidence spans tied to cluster source IDs; fabricated or foreign evidence is rejected.
+- Derived clusters and summaries are stored in an owner-only XChaCha20-Poly1305 encrypted snapshot with provider/model and policy provenance.
+- Full reconciliation from canonical redacted records removes deleted membership, regenerates affected summaries on policy/content changes, reuses unchanged summaries, and preserves the prior authoritative snapshot on invalid generation output.
+- Temporary local generation unavailability preserves deterministic clusters with no fabricated summary.
+- Documentation landed in =docs/activity-clustering.md= and the README design index.
+
+* Transaction boundary
+No later issue is consumed by this closeout. The next RAGE iteration must re-enumerate live GitHub state and choose the first dependency-satisfied open issue from the repository sequence.
