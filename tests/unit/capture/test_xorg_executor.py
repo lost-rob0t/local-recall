@@ -145,8 +145,8 @@ def test_bounded_executor_rejects_unknown_command_and_expired_deadline_before_sp
     assert spawner.calls == []
 
 
-def test_bounded_executor_kills_process_on_output_limit() -> None:
-    process = FakeProcess(stdout=b"123456")
+def test_bounded_executor_kills_live_process_on_output_limit() -> None:
+    process = FakeProcess(stdout=b"123456", block=True)
     executor, _ = _executor(process)
 
     with pytest.raises(xorg_capture.XorgCaptureError, match="capture-output-too-large"):
