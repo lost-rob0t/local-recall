@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from local_recall.domain.lifecycle import CaptureGeneration, TransitionReason
 from local_recall.lifecycle.messages import LifecycleAuditEvent
 from local_recall.pipeline.models import (
@@ -10,7 +12,7 @@ from local_recall.pipeline.models import (
     SubmissionStatus,
 )
 
-from .models import AuditReasonCode
+from .models import AuditEvent, AuditReasonCode
 from .recorder import AuditRecorder
 
 _REASON_MAP: dict[TransitionReason, AuditReasonCode] = {
@@ -77,6 +79,39 @@ class PipelineAuditAdapter:
             record_id=event.record_id,
             generation=generation.value,
             reason=_pipeline_fault_reason(event),
+        )
+
+
+class RemoteProviderAuditAdapter:
+    def __init__(self, recorder: AuditRecorder) -> None:
+        self._recorder = recorder
+
+    def authorized(
+        self,
+        *,
+        provider_id: str,
+        correlation_id: UUID | None = None,
+    ) -> AuditEvent:
+        return self._recorder.provider_selection(
+            provider_id=provider_id,
+            remote=True,
+            authorized=True,
+            reason=AuditReasonCode.PROVIDER_REMOTE_AUTHORIZED,
+            correlation_id=correlation_id,
+        )
+
+    def rejected(
+        self,
+        *,
+        provider_id: str,
+        correlation_id: UUID | None = None,
+    ) -> AuditEvent:
+        return self._recorder.provider_selection(
+            provider_id=provider_id,
+            remote=True,
+            authorized=False,
+            reason=AuditReasonCode.PROVIDER_REJECTED,
+            correlation_id=correlation_id,
         )
 
 

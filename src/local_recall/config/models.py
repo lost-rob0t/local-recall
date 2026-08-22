@@ -447,12 +447,52 @@ class RetentionSettings(FrozenModel):
 class RemoteProviderSettings(FrozenModel):
     provider_id: str = Field(min_length=1, max_length=128)
     enabled: bool = False
+    kind: Literal["openai-compatible", "openrouter", "anthropic", "google"] | None = None
+    endpoint: str | None = Field(default=None, min_length=1, max_length=2048, repr=False)
+    model_id: str | None = Field(default=None, min_length=1, max_length=256)
     credential_reference: CredentialReference | None = None
 
+    @field_validator("endpoint")
+    @classmethod
+    def validate_endpoint(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            parsed = urlsplit(value)
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError("remote provider endpoint must be a valid HTTPS URL") from exc
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or not parsed.path.startswith("/")
+            or parsed.path == "/"
+            or parsed.query
+            or parsed.fragment
+            or any(character in parsed.path for character in ("\x00", "\r", "\n"))
+            or (port is not None and not 1 <= port <= 65535)
+        ):
+            raise ValueError("remote provider endpoint must be a valid HTTPS URL")
+        return value
+
     @model_validator(mode="after")
-    def require_credential_reference(self) -> RemoteProviderSettings:
-        if self.enabled and self.credential_reference is None:
-            raise ValueError("enabled remote provider requires credential_reference")
+    def require_executable_configuration(self) -> RemoteProviderSettings:
+        if not self.enabled:
+            return self
+        missing = [
+            name
+            for name, value in (
+                ("kind", self.kind),
+                ("endpoint", self.endpoint),
+                ("model_id", self.model_id),
+                ("credential_reference", self.credential_reference),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError("enabled remote provider requires " + ", ".join(missing))
         return self
 
 

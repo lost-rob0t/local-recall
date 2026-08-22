@@ -39,6 +39,20 @@ def enabled_capture_config(**overrides: object) -> dict[str, object]:
     return data
 
 
+def enabled_remote_provider() -> RemoteProviderSettings:
+    return RemoteProviderSettings(
+        provider_id="remote",
+        enabled=True,
+        kind="openai-compatible",
+        endpoint="https://api.example.test/v1/chat/completions",
+        model_id="model-1",
+        credential_reference=CredentialReference(
+            provider_id="keyring",
+            reference="remote-api",
+        ),
+    )
+
+
 def test_safe_default_records_nothing() -> None:
     configuration = LocalRecallConfig.safe_default()
 
@@ -70,16 +84,7 @@ def test_privacy_strict_forbids_remote_providers() -> None:
             profile=PrivacyProfile.PRIVACY_STRICT,
             models=ModelSettings(
                 remote_enabled=True,
-                remote_providers=(
-                    RemoteProviderSettings(
-                        provider_id="remote",
-                        enabled=True,
-                        credential_reference=CredentialReference(
-                            provider_id="keyring",
-                            reference="remote-api",
-                        ),
-                    ),
-                ),
+                remote_providers=(enabled_remote_provider(),),
             ),
         )
 
@@ -90,16 +95,7 @@ def test_local_only_forbids_remote_providers() -> None:
             profile=PrivacyProfile.LOCAL_ONLY,
             models=ModelSettings(
                 remote_enabled=True,
-                remote_providers=(
-                    RemoteProviderSettings(
-                        provider_id="remote",
-                        enabled=True,
-                        credential_reference=CredentialReference(
-                            provider_id="keyring",
-                            reference="remote-api",
-                        ),
-                    ),
-                ),
+                remote_providers=(enabled_remote_provider(),),
             ),
         )
 
@@ -109,16 +105,7 @@ def test_local_first_allows_explicit_remote_provider() -> None:
         profile=PrivacyProfile.LOCAL_FIRST,
         models=ModelSettings(
             remote_enabled=True,
-            remote_providers=(
-                RemoteProviderSettings(
-                    provider_id="remote",
-                    enabled=True,
-                    credential_reference=CredentialReference(
-                        provider_id="keyring",
-                        reference="remote-api",
-                    ),
-                ),
-            ),
+            remote_providers=(enabled_remote_provider(),),
         ),
     )
 

@@ -1,0 +1,167 @@
+#+title: RAGE issue 23 - model routing policies and optional remote providers
+#+startup: overview
+
+* Immutable issue state
+:PROPERTIES:
+:ISSUE: 23
+:START_COMMIT: 14db91804a6233bf676a1820e04c29db2abfd2fd
+:START_BRANCH: main
+:WORK_BRANCH: agent/issue-23-model-routing-egress
+:END:
+
+Consumed issue: =lost-rob0t/local-recall#23=.
+
+Declared dependencies were verified closed/completed before consumption:
+- #6 validated configuration and privacy profiles
+- #9 local OCR and pre-persistence secret redaction
+- #21 local Ollama generation provider
+- #22 local embeddings and encrypted semantic index
+
+At consumption there were no open pull requests, no issue comments, and no competing transaction. #23 was the first open dependency-satisfied issue in declared sequence.
+
+Issue acceptance requires four routing modes (=local-only=, =local-first=, =remote-explicit=, =privacy-strict=), remote providers disabled by default, no remote selection merely because local inference fails, separate egress gates for redacted text/approved metadata/images with images denied by default, payload inspection and deterministic secret re-scan, bounded payloads, credential references, optional explicit per-query authorization/preview, mock transport coverage, cancellation/retry coverage, and no less-private fallback after provider errors.
+
+* Iteration 1 - routing and egress authority before HTTP adapters
+** Repository evidence
+- =domain.providers= already has provider capabilities and a =RoutingDecision= invariant requiring an egress authorization ID for remote decisions.
+- =ports.routing.ModelRoutingPolicy= already defines the strategy seam but had no concrete production routing policy.
+- =PrivacyClass= separates public, operational metadata, redacted content, encrypted content, raw capture, and secret material. Raw capture and secret material are never remotely eligible.
+- =ModelSettings.remote_enabled= and per-provider =enabled= default false. Remote provider settings require a =CredentialReference= rather than an embedded credential.
+- Threat-model TB-08 requires explicit enablement by data class, deterministic re-scan, payload preview/limits, TLS, and no silent fallback. It explicitly states that local failure cannot silently select a remote provider.
+- Existing Ollama transport remains the local provider path; issue #23 must compose with it rather than weaken its boundary.
+- =DeterministicSecretDetector= provides deterministic text secret detection plus sensitive metadata-name detection and is reused by the new egress gate.
+
+** External primary-source research
+- OpenAI current API uses HTTPS bearer-authenticated API requests; adapter/protocol details must remain behind the provider port because the endpoint surface changes independently of routing/privacy semantics. Source: https://platform.openai.com/
+- OpenRouter exposes OpenAI-compatible chat completions and documents provider/router fallback. Local Recall must not accept implicit upstream fallback as a substitute for explicit egress authorization. Sources: https://openrouter.ai/docs/quickstart and https://openrouter.ai/docs/guides/features/router-metadata
+- Google Gemini exposes =models.generateContent= plus API-key authentication, while Google is evolving newer interaction surfaces. Provider protocol churn therefore stays behind project-owned adapters. Sources: https://ai.google.dev/api/generate-content and https://ai.google.dev/gemini-api/docs/api-key
+
+** Evidence-derived design
+1. Routing authority and egress authority are separate. A routing policy may select a remote candidate only when the request already carries explicit egress authorization; provider adapters cannot mint authorization.
+2. =local-only= and =privacy-strict= are hard local-only modes.
+3. =local-first= prefers a suitable local provider but does not convert local failure into remote permission. Local unavailability returns a sanitized failure.
+4. =remote-explicit= is the only mode that may select remote. Selection requires explicit authorization, an exact authorized provider, capability/privacy compatibility, and authorized data classes.
+5. Closed egress classes are =redacted-text=, =approved-metadata=, and =redacted-image=. Images require explicit image authorization.
+6. =EgressAuthorization= is immutable control data: authorization ID, exact provider ID, allowed data classes, and maximum payload bytes. It contains no prompt/content.
+7. =EgressPayload= is passed through =EgressGate= before any network adapter. The gate re-scans text/metadata, rejects sensitive metadata names, verifies every present modality is explicitly authorized, computes a canonical digest/byte count, and enforces the authorization byte ceiling.
+8. Only =ApprovedEgressPayload= may cross into future remote-provider adapters; its content fields are excluded from repr/control metadata.
+9. No adapter-level cross-provider fallback. Any retries must remain on the same authorized provider/endpoint, bounded by deadline/cancellation, and only for explicitly classified transient failures.
+10. Credentials are resolved from a reference immediately at the transport boundary and never retained in config, repr, audit, errors, or response metadata.
+
+** Rejected alternatives
+- automatic local-first -> remote fallback: violates issue acceptance and TB-08;
+- provider adapters deciding privacy eligibility: duplicates/bypasses central policy;
+- =PrivacyClass= alone for modality authorization: cannot express image-denied-by-default cleanly;
+- raw =GenerationRequest= directly into remote adapters: bypass risk around re-scan/preview/size validation;
+- embedded API keys or arbitrary user-supplied auth headers: widens secret/log injection surface;
+- OpenRouter implicit multi-provider fallback: one Local Recall authorization could reach an unapproved upstream provider;
+- cross-provider retries: changes privacy route under an availability failure.
+
+** Security/privacy invariants
+- routing decisions contain no captured content;
+- no remote decision without an explicit authorization ID;
+- raw capture and secret material cannot be remotely routed;
+- images require explicit image authorization;
+- local provider failure never changes routing mode or authorization state;
+- remote provider failure never triggers a different provider automatically;
+- network adapters may receive only already-approved bounded payloads;
+- seeded secrets and sensitive metadata must fail before transport;
+- prompt/OCR/title/image bytes, credentials, headers, and provider bodies are absent from repr/audit/error control surfaces.
+
+** Failure/race analysis
+- local provider disappears after discovery -> sanitized local unavailable, no remote reconsideration;
+- authorization revoked/changed before send -> transport consumes only a provider-bound =ApprovedEgressPayload= and cannot widen the selected provider/data classes;
+- payload changes after preview -> immutable approved payload digest/byte count prevents silently widening the authorized content;
+- secret re-scan fails/detects content -> no transport;
+- redirect -> reject rather than follow to an unapproved origin;
+- 429/5xx -> no route change; retries are same-provider and only for explicitly classified transport failures;
+- cancellation/deadline expiry -> close/fail the same request and do not retry elsewhere;
+- malformed/oversized provider response -> sanitized provider failure without body logging.
+
+* TDD evidence
+** Routing contract
+Rejected as invalid RED evidence:
+- =728204b74b184904370aaa86db3ba00dd88a58a9= / CI #429: formatting failed before behavior.
+- =5b0946434bf745980799aed416b220ef583572b7= / CI #430: Ruff import sorting failed before behavior.
+- =3608ff1e783e25e3e2deff8bef808bd3af972fa3= / CI #431: Ruff import sorting still failed before behavior.
+
+Accepted RED:
+- =406a8c1833ef2ef4a756b26719b21a8c81af6a49= / CI #432.
+- Ruff format, Ruff lint, ShellCheck, and strict Pyright all passed.
+- Unit collection then failed specifically with =ModuleNotFoundError: No module named 'local_recall.routing'=.
+- Failure-propagation verification remained green.
+
+GREEN:
+- Routing production was added, then the test harness was corrected to the repository's existing =asyncio.run= pattern rather than adding an undeclared pytest-asyncio marker.
+- Exact head =e6d560533d998708ff5d113d06b3334c3de45b57= / CI #434 passed the complete workflow including canonical =./scripts/check=, both Ubuntu matrices, formatting/lint/type, all populated test layers, security scans, and failure propagation.
+
+** Egress approval boundary
+Accepted RED:
+- =e7c3bb1e8d95bcf7e1f43d9596539b5c8b66d257= / CI #435.
+- Formatting, Ruff, ShellCheck, and strict Pyright passed.
+- Unit collection failed specifically because =local_recall.routing= lacked =EgressDeniedError=/=EgressGate=/=EgressPayload=.
+
+Production implementation:
+- =e41604ed48f7be7baaea0aad9aa56ee73929e3b3= added the fail-closed egress gate.
+- CI #436 passed 495 unit tests, 6 contract tests, 35 integration tests, 54 security tests, strict typing, formatting/linting, and failure-propagation.
+- The only remaining failure was detect-secrets flagging the intentionally synthetic secret regression fixture. This was not accepted as a behavioral failure and the baseline was not weakened.
+- The scanner-supported inline allowlist pragma was applied only to that intentional synthetic fixture; subsequent exact-head gates passed.
+
+* Iteration 2 - provider protocol and transport boundary
+** Implemented contracts
+- Provider strategies now exist for =openai-compatible=, =openrouter=, =anthropic=, and =google= behind project-owned request builders.
+- Remote provider configuration remains globally and individually disabled by default. Enabled providers require kind, HTTPS endpoint, model ID, and credential reference.
+- OpenRouter request construction explicitly disables upstream provider fallback so one Local Recall authorization cannot silently fan out to another provider.
+- Google model identity is bound into its configured =models/<model>:generateContent= request path rather than accepted from arbitrary request data.
+- Credential resolution occurs immediately before request construction through the =os-keyring= provider seam. Credential values are repr-hidden, validated, and never returned in control results.
+- The built-in transport opens a direct TLS connection with hostname/certificate verification, does not consume proxy routing, does not follow redirects, fixes method/transport-owned headers, rejects header injection, and bounds headers, request bytes, response bytes, and total request time.
+- Responses must be HTTP/1.1 200 with one valid Content-Length. Transfer encoding, redirects, malformed/duplicate headers, truncation, oversized bodies, invalid JSON, TLS/connection errors, and timeouts map to fixed sanitized failures without response-body disclosure.
+- The executor retries only explicitly classified transient transport failures, against the same already-authorized request/provider, under a bounded attempt count and total deadline. Cancellation propagates immediately.
+- Provider builders currently accept approved redacted text only. Central egress can authorize metadata/images, but provider encoders deliberately reject those modalities until a specific reviewed wire encoding is implemented; this prevents a generic authorization from becoming an accidental image-upload capability.
+
+** Verification coverage
+- Mock/injected transport fixtures verify auth/header construction, provider request shapes, OpenRouter no-fallback behavior, redirect denial, response bounds, sanitized errors, timeout, cancellation, retry exhaustion, and same-provider execution.
+- Routing tests prove =local-only= and =privacy-strict= cannot select remote, =local-first= never converts a local failure into remote permission, and provider errors do not select a less-private route.
+- Egress tests prove exact provider/data-class binding, images denied unless explicit, deterministic secret re-scan, sensitive-metadata rejection, canonical byte limits/digest, and content-redacted representations.
+- Credential tests use synthetic/injected backends and never contact a real keyring or provider.
+
+* Iteration 3 - sanitized audit acceptance gap
+Repository audit during final acceptance review found that privacy-safe errors/reprs were present but issue #23 explicitly requires sanitized audit records. Existing =AuditRecorder.provider_selection= already had the correct closed control-only event shape, but the remote client did not emit it. This was treated as a real acceptance gap rather than relabeling sanitized exceptions as auditing.
+
+** Rejected RED attempts
+- =d915041657631f2b2b529c7eb48470438998fb1e= / CI #481: Ruff rejected the test harness before behavior; invalid RED.
+- =fd196b657ce69a18978b7c5b32c6ad3ca7410a5f= / CI #482: Ruff still rejected the dynamic missing-symbol harness; invalid RED.
+- =2a68ecc3b5cb8547652feaf76b9b964652e50ca7= / CI #483: formatting, Ruff, and ShellCheck passed, but strict Pyright found the synthetic sink did not implement the existing =AuditSink.emit= protocol; invalid RED because behavior was not reached.
+
+** Accepted RED
+- =1321b4a7adb806bcbb39a39736efd6c8ec71719e= / CI #484.
+- Formatting, Ruff, ShellCheck, strict Pyright, and failure-propagation all passed.
+- Unit collection then failed specifically because =RemoteProviderAuditAdapter= did not exist (=KeyError: 'RemoteProviderAuditAdapter'=), proving the missing remote-audit behavior after all hygiene/type gates.
+
+** GREEN
+- =RemoteProviderAuditAdapter= now maps remote authorization and rejection to the existing closed =PROVIDER_SELECTION= audit event with only provider ID, correlation ID, and boolean =remote=/=authorized= control attributes.
+- =RemoteProviderClient= accepts an optional typed audit boundary. Provider mismatch is audited as rejected before credential resolution/transport. A provider-bound approved payload is audited as authorized before credential resolution/request construction. Payload text, metadata, image bytes, credentials, headers, request bodies, and provider responses are never passed to the audit adapter.
+- =compose_remote_provider_client= accepts the same optional audit boundary so production composition can use it without importing payload content into audit code.
+- Exact implementation head =3143ff859c5eec08b2733902c790a8f80b2ff7d5= / CI #487 passed both Ubuntu matrices, formatting, Ruff, ShellCheck, strict Pyright, unit/contract/integration/security suites, repository security scans, canonical =./scripts/check=, and failure-propagation.
+- Test-only dynamic missing-symbol lookup was then refactored back to canonical direct imports while green.
+
+* Documentation and acceptance mapping
+- =docs/remote-providers.md= documents the routing modes, explicit authorization/data classes, egress inspection, provider configuration, credential boundary, HTTPS transport, request shapes, retry/cancellation semantics, audit/privacy behavior, and no-fallback invariants.
+- =README.md= links the remote-provider security contract.
+
+Acceptance mapping:
+- four routing modes: implemented and tested;
+- remote disabled by default: configuration invariant and tests;
+- no local-failure -> remote fallback: routing invariant and regression tests;
+- text/metadata/image permission separation: closed egress data classes; images explicit-only;
+- payload inspection/size/secret scan: =EgressGate=;
+- sanitized audit: control-only remote provider audit adapter/client integration;
+- credentials through key provider: =CredentialReference= + =os-keyring= resolver seam;
+- explicit per-query confirmation/preview basis: immutable provider-bound authorization plus approved payload digest/byte count; UI confirmation is intentionally left to later CLI/UI issues rather than making the provider transport an authority;
+- OpenAI-compatible/OpenRouter/Anthropic/Google strategies: implemented where practical;
+- remote calls only from approved redacted payload: provider builders accept =ApprovedEgressPayload= only and currently encode approved text only;
+- headers/filtering/retry/cancellation: synthetic transport/provider coverage;
+- provider failure cannot select a less-private route: no cross-provider fallback or retry path.
+
+* Final gate
+The issue changes no Nix inputs, packages, or flake outputs; the repository flake remains a development-shell-only flake. The issue's applicable authoritative merge gates are the canonical =./scripts/check= workflow, both supported Ubuntu CI matrices, repository security scans, and failure-propagation. After the final documentation/test refactor commit, those gates must pass again on the exact PR head before merge.
