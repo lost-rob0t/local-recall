@@ -6,10 +6,7 @@ from uuid import UUID
 
 import pytest
 
-from local_recall.activity.features import (
-    ActivityFeatureExtractor,
-    ActivityFeatureFailure,
-)
+from local_recall.activity import features as activity_features
 from local_recall.domain.frames import PixelFormat, RedactedFrame, RedactedRecord
 from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.domain.metadata import ContextField, ContextMetadata
@@ -77,7 +74,7 @@ def test_extracts_features_only_from_redacted_records_with_one_local_embedding_b
     provider = Embeddings()
     records = (_record(1, "fix parser"), _record(2, "review parser", application="firefox"))
 
-    features = asyncio.run(ActivityFeatureExtractor(provider).extract(records))
+    features = asyncio.run(activity_features.ActivityFeatureExtractor(provider).extract(records))
 
     assert tuple(item.record_id for item in features) == (UUID(int=1), UUID(int=2))
     assert tuple(item.application for item in features) == ("emacs", "firefox")
@@ -95,15 +92,18 @@ def test_extracts_features_only_from_redacted_records_with_one_local_embedding_b
 def test_remote_embedding_provider_is_rejected_before_content_egress() -> None:
     provider = Embeddings(location=ProviderLocation.REMOTE)
 
-    with pytest.raises(ActivityFeatureFailure, match="local embedding provider required"):
-        asyncio.run(ActivityFeatureExtractor(provider).extract((_record(1, "private text"),)))
+    with pytest.raises(
+        activity_features.ActivityFeatureFailure,
+        match="local embedding provider required",
+    ):
+        asyncio.run(activity_features.ActivityFeatureExtractor(provider).extract((_record(1, "private text"),)))
 
     assert provider.requests == []
 
 
 def test_feature_extractor_repr_does_not_contain_record_content() -> None:
     provider = Embeddings()
-    extractor = ActivityFeatureExtractor(provider)
+    extractor = activity_features.ActivityFeatureExtractor(provider)
 
     rendered = repr(extractor)
 
