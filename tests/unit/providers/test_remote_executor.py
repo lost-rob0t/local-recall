@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from importlib import import_module
+from typing import cast
 
 import pytest
 
@@ -36,7 +37,7 @@ class FakeTransport:
         if isinstance(outcome, BaseException):
             raise outcome
         assert isinstance(outcome, dict)
-        return outcome
+        return cast(Mapping[str, object], outcome)
 
 
 def test_transient_failure_retries_same_immutable_request_only() -> None:
