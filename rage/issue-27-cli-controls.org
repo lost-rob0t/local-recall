@@ -116,6 +116,14 @@
 - Completion privacy: static shell completion constructs no daemon client and exposes no captured/history values.
 - IPC/authentication boundary: #27 defines and tests the client contract; #29 remains the explicit owner of authenticated owner-only IPC/server implementation.
 
+* Merge closeout
+- Final implementation head: =05edb545891e155b03e12cb36b860016492724d4=.
+- Exact-head CI: run =32598782209= passed Ubuntu 22.04, Ubuntu 24.04, canonical repository gate, and failure-propagation.
+- Implementation PR: #83, squash-merged into =main=.
+- Merge commit: =2e6ec23ad04384b04c5e02024d2866be3968daa5=.
+- Issue #27 was verified closed with state reason =completed= after the merge.
+- This closeout transaction records immutable merge evidence only and consumes no subsequent issue.
+
 * Hard invariants
 - The CLI must not become a second lifecycle, policy, retrieval, or provider authority.
 - Stop/privacy control must remain higher priority than ordinary query work.
