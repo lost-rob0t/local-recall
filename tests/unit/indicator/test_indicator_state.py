@@ -147,9 +147,7 @@ def test_snapshot_repr_never_contains_operational_identifiers() -> None:
         responses=[status_response(CliLifecycleState.RECORDING)],
         requests=[],
     )
-    snapshot = IndicatorController(
-        client=client, timeout=timedelta(seconds=2)
-    ).refresh(now=now)
+    snapshot = IndicatorController(client=client, timeout=timedelta(seconds=2)).refresh(now=now)
 
     assert "xorg" not in repr(snapshot)
     assert "qtile" not in repr(snapshot)
