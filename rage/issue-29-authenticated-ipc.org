@@ -44,7 +44,7 @@
 - Listener hardening: explicit ROUTER socket options, finite HWM/send/receive timeouts, =LINGER= 0, and Linux UID filtering when supported. After bind, verify the socket node is a socket, owned by the daemon UID, and mode 0600; cleanup only the exact validated socket node owned by the daemon.
 - Protocol authentication: issue an owner-only random session token in the runtime directory, mode 0600, generated at daemon startup and rotated on restart. Requests carry token material in a dedicated non-logged frame; routing JSON stays content-free. Token comparison is constant-time. Filesystem/UID controls are defense in depth; the token is the protocol authentication authority.
 - Authorization: map the closed =CliCommand= set to capabilities: lifecycle/control, query, diagnostics; future export/delete capabilities remain distinct. A client session is authorized per command, never by arbitrary method strings.
-- Framing: versioned multipart message with bounded routing frame, authentication frame, and optional bounded content frame. No pickle or arbitrary Python objects. Unknown frame count, oversized frames, malformed UTF-8/JSON, protocol mismatch, priority mismatch, expired deadline, or invalid command fail with fixed sanitized reason codes.
+- Framing: versioned multipart message with bounded routing frame, authentication frame, and bounded content frame. No pickle or arbitrary Python objects. Unknown frame count, oversized frames, malformed UTF-8/JSON, protocol mismatch, priority mismatch, expired deadline, or invalid command fail with fixed sanitized reason codes.
 - Scheduling: urgent stop/privacy requests enter a dedicated bounded urgent lane serviced before ordinary control/query lanes; no unbounded retry or hidden queue. Query concurrency is separately bounded.
 - Audit: accepted/rejected authentication, authorization, overload, timeout, malformed request, and completion produce fixed event/reason/capability metadata only. Request text, response text, token bytes, endpoint paths, usernames, titles, and provider payloads are forbidden from audit events.
 - CLI/indicator: default client factory becomes the authenticated IPC client; both keep depending only on =DaemonClient= / typed CLI contracts and never import daemon internals.
@@ -64,10 +64,34 @@
 - Query saturation cannot starve STOP/privacy: separate urgent bounded lane and explicit priority validation.
 
 ** RED
-Pending. First test slice will require a project-owned IPC endpoint/authentication module that does not yet exist.
+*** Slice 1 — owner-only IPC paths
+- Invalid attempts: CI #721 and #722 failed import/lint ordering before exercising the intended missing production seam; both rejected as RED evidence.
+- Valid RED: test-only head =4c473d1fddfef5848ce655a9aa8da37d896c215b=, CI #723. Formatting, Ruff, and ShellCheck passed; strict Pyright then failed specifically because =local_recall.ipc= / =IpcPaths= did not exist.
+
+*** Slice 2 — rotating session credentials
+- Valid RED: test-only head =e1f88f5949cbe83a928d7d8e0daa7d3d98fb027a=, CI #726. Preceding formatting/lint/shell gates passed; strict Pyright failed specifically because =SessionToken= and =IpcCredentialStore= did not exist.
+
+*** Slice 3 — bounded authenticated request protocol
+- Invalid attempts: CI #728 through #731 failed import-order/lint noise and were rejected as RED evidence.
+- Valid RED: test-only head =3a59993cae35c6f0dbcc8533a45c2a8319734a92=, CI #732. Formatting, Ruff, and ShellCheck passed; strict Pyright then failed specifically because =local_recall.ipc_protocol= did not exist.
 
 ** GREEN
-Pending.
+*** Slice 1
+- Production head =3f8438355c917c0a42db785556da5e2035f55d4a=, CI #724: fully green on both Ubuntu matrices, canonical =./scripts/check=, security checks, and failure-propagation.
+- Added absolute/no-symlink/owner/mode-0700 runtime-dir validation and private path representation.
+
+*** Slice 2
+- Production head =f5a28c9b51f51924533c91a10ea27315868f1610=, CI #727: fully green.
+- Added 32-byte rotating random session tokens, constant-time comparison, service-dir 0700, token 0600, no-follow open, inode/device replacement checks, exact owner/type/mode validation, and content-free reprs.
+
+*** Slice 3
+- Initial production heads exposed only formatting and strict-typing defects; these were repaired without changing the test oracle.
+- Final production head =3130e9ea0fc7c5bc45c37a8a92e19e854729d095=, CI #735: fully green on both Ubuntu matrices, canonical gate, security checks, and failure-propagation.
+- Added three-frame request protocol: content-free routing metadata, dedicated secret token frame, and bounded content payload. Authentication occurs before payload parsing. Closed command capabilities enforce control/query/diagnostic separation; priority spoofing, oversized payloads, invalid protocol/request IDs/deadlines, and malformed routing/payload fail with fixed sanitized errors.
+
+** Current implementation state
+- Complete and green: secure runtime endpoint path model, rotating owner-only daemon-session credential store, authenticated/versioned request codec, capability authorization, request-size/deadline/priority validation.
+- Still issue-owned and not yet complete: actual ZeroMQ ROUTER/DEALER transport, post-bind socket owner/type/mode verification and UID filter, response framing/decoding, bounded concurrency and urgent dispatch, sanitized IPC audit events, real synthetic integration/fuzz tests, CLI default-client wiring, indicator transport construction path, documentation, and final exact-head merge gate.
 
 ** Verification gates
 - Focused unit/security/contract tests for endpoint validation, token handling, frame limits, UID filter/socket options, authorization, malformed input, timeout/cancellation, and priority behavior.
