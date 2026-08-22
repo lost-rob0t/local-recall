@@ -9,6 +9,7 @@ from uuid import UUID
 import pykka
 import zmq
 
+from local_recall.capture.adaptive import AdaptiveCaptureController
 from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.lifecycle.actor import LifecycleActor
 from local_recall.lifecycle.errors import StaleCaptureGeneration
@@ -25,6 +26,7 @@ from .models import (
     PipelineStage,
     RawStageItem,
     SubmissionResult,
+    SubmissionStatus,
 )
 from .ports import (
     AnalysisStageProcessor,
@@ -53,6 +55,20 @@ class PipelineStats:
     redacted_credits: int
     encrypted_credits: int
     coalesced: bool
+
+
+def apply_submission_feedback(
+    controller: AdaptiveCaptureController,
+    result: SubmissionResult,
+) -> None:
+    """Adapt capture cadence from the existing bounded pipeline outcome only."""
+    if result.status is SubmissionStatus.ACCEPTED:
+        controller.note_success()
+        return
+    if result.status in {SubmissionStatus.DROPPED, SubmissionStatus.COALESCED}:
+        controller.note_overload()
+        return
+    raise ValueError("unsupported pipeline submission status")
 
 
 class BoundedCapturePipeline:
