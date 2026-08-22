@@ -3,26 +3,21 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
+import local_recall.ipc as ipc
+import local_recall.ipc_protocol as ipc_protocol
 from local_recall.cli_contract import CliCommand, CliRequest
-from local_recall.ipc_protocol import (
-    IpcCapability,
-    IpcProtocolError,
-    IpcRequestCodec,
-    MAX_REQUEST_PAYLOAD_BYTES,
-)
-from local_recall.ipc import SessionToken
 
 NOW = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
 
 
-def _token(byte: int) -> SessionToken:
-    return SessionToken(bytes([byte]) * SessionToken.BYTE_LENGTH)
+def _token(byte: int) -> ipc.SessionToken:
+    return ipc.SessionToken(bytes([byte]) * ipc.SessionToken.BYTE_LENGTH)
 
 
 def _expect_protocol_error(code: str, action: Callable[[], object]) -> None:
     try:
         action()
-    except IpcProtocolError as exc:
+    except ipc_protocol.IpcProtocolError as exc:
         assert str(exc) == code
     else:
         raise AssertionError(f"expected {code}")
@@ -30,9 +25,9 @@ def _expect_protocol_error(code: str, action: Callable[[], object]) -> None:
 
 def test_query_round_trip_keeps_content_out_of_routing_frame() -> None:
     token = _token(1)
-    codec = IpcRequestCodec(
+    codec = ipc_protocol.IpcRequestCodec(
         token=token,
-        capabilities=frozenset({IpcCapability.QUERY}),
+        capabilities=frozenset({ipc_protocol.IpcCapability.QUERY}),
     )
     request = CliRequest.create(
         command=CliCommand.ASK,
@@ -58,13 +53,13 @@ def test_query_round_trip_keeps_content_out_of_routing_frame() -> None:
 
 
 def test_wrong_session_token_is_rejected_before_payload_decode() -> None:
-    server = IpcRequestCodec(
+    server = ipc_protocol.IpcRequestCodec(
         token=_token(2),
-        capabilities=frozenset({IpcCapability.CONTROL}),
+        capabilities=frozenset({ipc_protocol.IpcCapability.CONTROL}),
     )
-    client = IpcRequestCodec(
+    client = ipc_protocol.IpcRequestCodec(
         token=_token(3),
-        capabilities=frozenset({IpcCapability.CONTROL}),
+        capabilities=frozenset({ipc_protocol.IpcCapability.CONTROL}),
     )
     request = CliRequest.create(
         command=CliCommand.STOP,
@@ -79,13 +74,13 @@ def test_wrong_session_token_is_rejected_before_payload_decode() -> None:
 
 def test_query_capability_cannot_be_used_by_control_only_session() -> None:
     token = _token(4)
-    client = IpcRequestCodec(
+    client = ipc_protocol.IpcRequestCodec(
         token=token,
-        capabilities=frozenset({IpcCapability.QUERY}),
+        capabilities=frozenset({ipc_protocol.IpcCapability.QUERY}),
     )
-    server = IpcRequestCodec(
+    server = ipc_protocol.IpcRequestCodec(
         token=token,
-        capabilities=frozenset({IpcCapability.CONTROL}),
+        capabilities=frozenset({ipc_protocol.IpcCapability.CONTROL}),
     )
     request = CliRequest.create(
         command=CliCommand.SEARCH,
@@ -102,9 +97,9 @@ def test_query_capability_cannot_be_used_by_control_only_session() -> None:
 
 def test_priority_spoof_is_rejected() -> None:
     token = _token(5)
-    codec = IpcRequestCodec(
+    codec = ipc_protocol.IpcRequestCodec(
         token=token,
-        capabilities=frozenset({IpcCapability.CONTROL}),
+        capabilities=frozenset({ipc_protocol.IpcCapability.CONTROL}),
     )
     request = CliRequest.create(
         command=CliCommand.STATUS,
@@ -119,9 +114,9 @@ def test_priority_spoof_is_rejected() -> None:
 
 def test_oversized_payload_is_rejected_without_decoding() -> None:
     token = _token(6)
-    codec = IpcRequestCodec(
+    codec = ipc_protocol.IpcRequestCodec(
         token=token,
-        capabilities=frozenset({IpcCapability.CONTROL}),
+        capabilities=frozenset({ipc_protocol.IpcCapability.CONTROL}),
     )
     request = CliRequest.create(
         command=CliCommand.STATUS,
@@ -129,6 +124,6 @@ def test_oversized_payload_is_rejected_without_decoding() -> None:
         deadline=NOW + timedelta(seconds=2),
     )
     frames = list(codec.encode(request))
-    frames[2] = b"x" * (MAX_REQUEST_PAYLOAD_BYTES + 1)
+    frames[2] = b"x" * (ipc_protocol.MAX_REQUEST_PAYLOAD_BYTES + 1)
 
     _expect_protocol_error("payload-too-large", lambda: codec.decode(tuple(frames), now=NOW))
