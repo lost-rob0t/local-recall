@@ -8,7 +8,13 @@ from collections.abc import Callable
 import typer
 
 from local_recall import __version__
-from local_recall.cli_contract import CliCommand, CliOutcome, CliRequest, CliResponse
+from local_recall.cli_contract import (
+    CliCommand,
+    CliOutcome,
+    CliQueryPayload,
+    CliRequest,
+    CliResponse,
+)
 from local_recall.cli_service import DaemonClient, execute_command
 
 app = typer.Typer(
@@ -55,6 +61,15 @@ def _render_response(response: CliResponse) -> str:
     return response.reason_code or response.outcome.value
 
 
+def _render_query_payload(payload: CliQueryPayload) -> str:
+    lines = [payload.text]
+    lines.extend(
+        f"[{citation.record_id} @ {citation.captured_at.isoformat()}]"
+        for citation in payload.citations
+    )
+    return "\n".join(lines)
+
+
 def _run_daemon_command(command: CliCommand) -> None:
     now = dt.datetime.now(dt.UTC)
     result = execute_command(
@@ -66,6 +81,38 @@ def _run_daemon_command(command: CliCommand) -> None:
     typer.echo(_render_response(result.response))
     if result.exit_code != 0:
         raise typer.Exit(result.exit_code)
+
+
+def _run_query_command(
+    command: CliCommand,
+    *,
+    query: str | None,
+    start: dt.datetime | None,
+    end: dt.datetime | None,
+    json_output: bool,
+) -> None:
+    if (start is None) is not (end is None):
+        raise typer.BadParameter("start and end must be supplied together")
+
+    now = dt.datetime.now(dt.UTC)
+    result = execute_command(
+        client=_client_factory(),
+        command=command,
+        now=now,
+        timeout=_DEFAULT_TIMEOUT,
+        query=query,
+        start=start,
+        end=end,
+    )
+    if result.exit_code != 0:
+        typer.echo(_render_response(result.response))
+        raise typer.Exit(result.exit_code)
+
+    payload = result.response.query_payload
+    if payload is None:
+        typer.echo("query-result-missing")
+        raise typer.Exit(5)
+    typer.echo(payload.to_json() if json_output else _render_query_payload(payload))
 
 
 @app.callback()
@@ -119,3 +166,53 @@ def privacy_on() -> None:
 def privacy_off() -> None:
     """Disable privacy mode through the daemon."""
     _run_daemon_command(CliCommand.PRIVACY_OFF)
+
+
+@app.command()
+def ask(
+    question: str,
+    start: dt.datetime | None = typer.Option(None),
+    end: dt.datetime | None = typer.Option(None),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Ask a question over retained activity with citations."""
+    _run_query_command(
+        CliCommand.ASK,
+        query=question,
+        start=start,
+        end=end,
+        json_output=json_output,
+    )
+
+
+@app.command()
+def search(
+    query: str,
+    start: dt.datetime | None = typer.Option(None),
+    end: dt.datetime | None = typer.Option(None),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Search retained activity with optional explicit time bounds."""
+    _run_query_command(
+        CliCommand.SEARCH,
+        query=query,
+        start=start,
+        end=end,
+        json_output=json_output,
+    )
+
+
+@app.command()
+def timeline(
+    start: dt.datetime | None = typer.Option(None),
+    end: dt.datetime | None = typer.Option(None),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Render a bounded activity timeline."""
+    _run_query_command(
+        CliCommand.TIMELINE,
+        query=None,
+        start=start,
+        end=end,
+        json_output=json_output,
+    )
