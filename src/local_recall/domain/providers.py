@@ -134,7 +134,7 @@ class GenerationResponse:
 class RoutingRequest:
     capability: ModelCapability
     privacy_class: PrivacyClass
-    allow_remote: bool
+    allow_remote: bool = False
     egress_authorization_id: str | None = None
     data_classes: frozenset[EgressDataClass] = frozenset()
     authorization: EgressAuthorization | None = None
