@@ -75,7 +75,10 @@ def _require_aware(value: datetime, *, field: str) -> None:
 def _validate_reason_code(reason_code: str) -> None:
     if not reason_code or len(reason_code) > MAX_REASON_CODE_LENGTH:
         raise ValueError("reason_code has invalid length")
-    if any(not (character.isascii() and (character.isalnum() or character in "-_")) for character in reason_code):
+    if any(
+        not (character.isascii() and (character.isalnum() or character in "-_"))
+        for character in reason_code
+    ):
         raise ValueError("reason_code contains invalid characters")
 
 
