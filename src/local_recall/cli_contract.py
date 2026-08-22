@@ -158,6 +158,8 @@ class CliRequest:
     priority: CliPriority
     deadline: datetime
     query: str | None = None
+    start: datetime | None = None
+    end: datetime | None = None
 
     @classmethod
     def create(
@@ -167,11 +169,22 @@ class CliRequest:
         now: datetime,
         deadline: datetime,
         query: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
     ) -> CliRequest:
         _require_aware(now, field="now")
         _require_aware(deadline, field="deadline")
         if deadline <= now or deadline - now > MAX_DEADLINE:
             raise ValueError("deadline must be in the future and within the request budget")
+        if (start is None) is not (end is None):
+            raise ValueError("time filter requires both start and end")
+        if start is not None and end is not None:
+            if command not in {CliCommand.ASK, CliCommand.TIMELINE, CliCommand.SEARCH}:
+                raise ValueError("time filter is only valid for query commands")
+            _require_aware(start, field="start")
+            _require_aware(end, field="end")
+            if start >= end:
+                raise ValueError("time filter start must precede end")
         return cls(
             protocol_version=PROTOCOL_VERSION,
             request_id=uuid.uuid4().hex,
@@ -179,6 +192,8 @@ class CliRequest:
             priority=command.priority,
             deadline=deadline,
             query=query,
+            start=start,
+            end=end,
         )
 
     def routing_json(self) -> str:
