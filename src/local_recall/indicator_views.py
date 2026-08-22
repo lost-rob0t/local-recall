@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
-from local_recall.indicator import IndicatorSnapshot, IndicatorState
+from local_recall.indicator import IndicatorController, IndicatorSnapshot, IndicatorState
 
 _QTILE_TEXT = {
     IndicatorState.OFF: "LR:OFF",
@@ -74,3 +75,22 @@ class StatusNotifierItemView:
             title="Local Recall",
             tooltip=tooltip,
         )
+
+
+@dataclass(slots=True)
+class IndicatorSurface:
+    """One-action desktop controls that always re-query daemon authority."""
+
+    controller: IndicatorController
+
+    def poll(self, *, now: datetime) -> IndicatorSnapshot:
+        return self.controller.refresh(now=now)
+
+    def stop(self, *, now: datetime) -> IndicatorSnapshot:
+        return self.controller.stop(now=now)
+
+    def privacy_on(self, *, now: datetime) -> IndicatorSnapshot:
+        return self.controller.privacy_on(now=now)
+
+    def privacy_off(self, *, now: datetime) -> IndicatorSnapshot:
+        return self.controller.privacy_off(now=now)
