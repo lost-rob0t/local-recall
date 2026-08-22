@@ -84,7 +84,11 @@ class AnsweringService:
                 policy_revision=batch.policy_revision,
             )
 
-        capabilities = tuple(await provider.capabilities() for provider in self._local_providers)
+        capabilities_list: list[ProviderCapabilities] = []
+        for provider in self._local_providers:
+            capabilities_list.append(await provider.capabilities())
+        capabilities = tuple(capabilities_list)
+
         decision = await self._routing.route(
             RoutingRequest(
                 capability=ModelCapability.GENERATION,
@@ -103,14 +107,17 @@ class AnsweringService:
         if not provider_capabilities.supports_structured_output:
             raise AnsweringFailure("structured generation output required")
 
+        prompt = _generation_prompt(mode)
         context = _generation_context(table)
-        total_input_bytes = sum(len(item.encode("utf-8")) for item in context)
+        total_input_bytes = len(prompt.encode("utf-8")) + sum(
+            len(item.encode("utf-8")) for item in context
+        )
         if total_input_bytes > provider_capabilities.max_input_bytes:
             raise AnsweringFailure("answering input exceeds provider limit")
 
         response = await provider.generate(
             GenerationRequest(
-                prompt=_generation_prompt(mode),
+                prompt=prompt,
                 context=context,
                 privacy_class=PrivacyClass.REDACTED_CONTENT,
                 max_output_tokens=_MAX_OUTPUT_TOKENS,
