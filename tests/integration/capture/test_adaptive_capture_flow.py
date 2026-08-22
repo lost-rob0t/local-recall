@@ -6,8 +6,12 @@ from uuid import UUID
 
 import pytest
 
-from local_recall.capture.adaptive import AdaptiveCaptureController, FrameDisposition
-from local_recall.capture.flow import AdaptiveCaptureFlow, AdaptiveCaptureOutcome
+from local_recall.capture.adaptive import (
+    AdaptiveCaptureController,
+    AdaptiveCaptureFlow,
+    AdaptiveCaptureOutcome,
+    FrameDisposition,
+)
 from local_recall.domain.capture import ApprovedCaptureRequest, CaptureAuthorization, CaptureIntent
 from local_recall.domain.frames import PixelFormat, RawFrame
 from local_recall.domain.lifecycle import CaptureGeneration
