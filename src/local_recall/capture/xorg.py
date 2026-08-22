@@ -129,7 +129,9 @@ class XorgCaptureBackend:
 
         region = _trusted_window_region(request, snapshot)
         if region is None:
-            region = CaptureRegion(snapshot.root_x, snapshot.root_y, snapshot.width, snapshot.height)
+            region = CaptureRegion(
+                snapshot.root_x, snapshot.root_y, snapshot.width, snapshot.height
+            )
             pixels = snapshot.pixels
             stride = snapshot.stride
         else:
