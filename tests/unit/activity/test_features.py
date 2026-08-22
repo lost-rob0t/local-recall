@@ -9,7 +9,12 @@ import pytest
 from local_recall.activity import features as activity_features
 from local_recall.domain.frames import PixelFormat, RedactedFrame, RedactedRecord
 from local_recall.domain.lifecycle import CaptureGeneration
-from local_recall.domain.metadata import ContextField, ContextMetadata
+from local_recall.domain.metadata import (
+    ContextField,
+    ContextMetadata,
+    MetadataProvenance,
+    SourceConfidence,
+)
 from local_recall.domain.privacy import PrivacyClass, ProviderLocation
 from local_recall.domain.providers import (
     EmbeddingRequest,
@@ -45,11 +50,19 @@ class Embeddings:
 
 def _record(value: int, text: str, *, application: str = "emacs") -> RedactedRecord:
     captured_at = datetime(2026, 8, 22, 12, value, tzinfo=UTC)
+    provenance = (
+        MetadataProvenance(
+            source_id="synthetic",
+            observed_at=captured_at,
+            confidence=SourceConfidence(1.0),
+            adapter_revision="test-v1",
+        ),
+    )
     metadata = ContextMetadata(
         observed_at=captured_at,
         fields=(
-            ContextField("application", application),
-            ContextField("workspace", "dev"),
+            ContextField("application", application, provenance),
+            ContextField("workspace", "dev", provenance),
         ),
     )
     pixels = bytes((value, value, value) * 81)
