@@ -130,12 +130,12 @@ def _record_text(record: RedactedRecord) -> str:
 def _summary_prompt(source_ids: tuple[UUID, ...]) -> str:
     mapping = ",".join(str(source_id) for source_id in source_ids)
     return (
-        "Select only evidence explicitly present in the corresponding redacted context. "
+        "Use only evidence explicitly present in the corresponding redacted context. "
         "Return JSON with exactly one top-level key named evidence. evidence must be a non-empty "
         "array of objects with exactly source_id and excerpt. source_id must be one of these IDs "
         f"in the same order as the supplied context: {mapping}. excerpt must be a non-empty exact "
-        "contiguous substring copied verbatim from that source context. Do not infer, paraphrase, "
-        "combine, reconstruct, or invent actions."
+        "contiguous substring copied verbatim out of that source context. Do not infer, "
+        "paraphrase, combine, reconstruct, or invent actions."
     )
 
 
