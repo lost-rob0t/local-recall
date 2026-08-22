@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import ast
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import UUID
 
-from local_recall.answering.models import AnswerClaim, AnswerClaimKind, AnswerMode, CitedAnswer
-from local_recall.answering.service import AnsweringService
-from local_recall.routing import RoutingMode, RoutingPolicy
+from local_recall.answering.models import (
+    AnswerCitation,
+    AnswerClaim,
+    AnswerClaimKind,
+    AnswerMode,
+    CitedAnswer,
+)
+from local_recall.answering.planner import plan_answer_query
 
 _ANSWERING_ROOT = Path("src/local_recall/answering")
 _FORBIDDEN_PREFIXES = (
@@ -37,12 +44,22 @@ def test_answering_source_has_no_capture_lifecycle_storage_or_remote_transport_i
 
 
 def test_answering_reprs_do_not_expose_question_or_generated_claim_text() -> None:
-    secret_question = "what happened with PRIVATE-QUESTION-9f2c?"
+    secret_question = "What was I doing Saturday with PRIVATE-QUESTION-9f2c?"
     secret_claim = "PRIVATE-CLAIM-6d31"
+    planned = plan_answer_query(
+        secret_question,
+        now=datetime(2026, 8, 24, 15, 30, tzinfo=UTC),
+        timezone="America/New_York",
+    )
     claim = AnswerClaim(
         kind=AnswerClaimKind.INFERENCE,
         text=secret_claim,
-        citations=(),
+        citations=(
+            AnswerCitation(
+                record_id=UUID("00000000-0000-0000-0000-000000000501"),
+                captured_at=datetime(2026, 8, 22, 14, 0, tzinfo=UTC),
+            ),
+        ),
     )
     answer = CitedAnswer(
         mode=AnswerMode.CONCISE,
@@ -51,17 +68,6 @@ def test_answering_reprs_do_not_expose_question_or_generated_claim_text() -> Non
         policy_revision="policy-v1",
     )
 
-    class Retrieval:
-        async def retrieve(self, query: object) -> object:
-            del query
-            raise AssertionError(secret_question)
-
-    service = AnsweringService(
-        retrieval=Retrieval(),  # type: ignore[arg-type]
-        routing=RoutingPolicy(RoutingMode.LOCAL_ONLY),
-        local_providers=(object(),),  # type: ignore[arg-type]
-    )
-
-    rendered = repr(answer) + repr(claim) + repr(service)
-    assert secret_question not in rendered
+    rendered = repr(planned) + repr(answer) + repr(claim)
+    assert "PRIVATE-QUESTION-9f2c" not in rendered
     assert secret_claim not in rendered
