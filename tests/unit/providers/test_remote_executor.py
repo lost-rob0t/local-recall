@@ -41,9 +41,7 @@ class FakeTransport:
 
 def test_transient_failure_retries_same_immutable_request_only() -> None:
     request = _request()
-    transport = FakeTransport(
-        [RemoteTransportError("remote-timeout"), {"ok": True}]
-    )
+    transport = FakeTransport([RemoteTransportError("remote-timeout"), {"ok": True}])
 
     async def scenario() -> None:
         executor = RemoteRequestExecutor(
