@@ -8,11 +8,11 @@ from uuid import uuid4
 
 import pytest
 
-from local_recall.capture import xorg as xorg_capture
-from local_recall.domain import capture as capture_domain
-from local_recall.domain import frames as frame_domain
-from local_recall.domain import lifecycle as lifecycle_domain
-from local_recall.domain import metadata as metadata_domain
+import local_recall.capture.xorg as xorg_capture
+import local_recall.domain.capture as capture_domain
+import local_recall.domain.frames as frame_domain
+import local_recall.domain.lifecycle as lifecycle_domain
+import local_recall.domain.metadata as metadata_domain
 
 NOW = datetime(2026, 8, 22, 6, 0, tzinfo=UTC)
 
