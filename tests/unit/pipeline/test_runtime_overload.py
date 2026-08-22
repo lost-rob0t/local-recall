@@ -22,7 +22,7 @@ from .support import (
 
 
 def test_drop_newest_overload_never_exceeds_raw_credit() -> None:
-    gate, _ = recording_gate()
+    gate, generation = recording_gate()
     blocker = BlockingRawProcessor()
     sink = RecordingSink()
     pipeline = BoundedCapturePipeline(
@@ -42,11 +42,19 @@ def test_drop_newest_overload_never_exceeds_raw_credit() -> None:
 
     try:
         assert (
-            pipeline.submit_raw(record_id=first_id, frames=(first,)).status
+            pipeline.submit_raw(
+                record_id=first_id,
+                frames=(first,),
+                expected_generation=generation,
+            ).status
             is SubmissionStatus.ACCEPTED
         )
         assert blocker.started.wait(1)
-        result = pipeline.submit_raw(record_id=uuid4(), frames=(second,))
+        result = pipeline.submit_raw(
+            record_id=uuid4(),
+            frames=(second,),
+            expected_generation=generation,
+        )
 
         assert result.status is SubmissionStatus.DROPPED
         assert second == bytearray(len(second))
@@ -61,7 +69,7 @@ def test_drop_newest_overload_never_exceeds_raw_credit() -> None:
 
 
 def test_coalesce_latest_keeps_only_one_pending_raw_item() -> None:
-    gate, _ = recording_gate()
+    gate, generation = recording_gate()
     blocker = BlockingRawProcessor()
     sink = RecordingSink()
     pipeline = BoundedCapturePipeline(
@@ -82,15 +90,27 @@ def test_coalesce_latest_keeps_only_one_pending_raw_item() -> None:
 
     try:
         assert (
-            pipeline.submit_raw(record_id=first_id, frames=(bytearray(b"first"),)).status
+            pipeline.submit_raw(
+                record_id=first_id,
+                frames=(bytearray(b"first"),),
+                expected_generation=generation,
+            ).status
             is SubmissionStatus.ACCEPTED
         )
         assert blocker.started.wait(1)
         assert (
-            pipeline.submit_raw(record_id=second_id, frames=(second,)).status
+            pipeline.submit_raw(
+                record_id=second_id,
+                frames=(second,),
+                expected_generation=generation,
+            ).status
             is SubmissionStatus.COALESCED
         )
-        replacement = pipeline.submit_raw(record_id=third_id, frames=(third,))
+        replacement = pipeline.submit_raw(
+            record_id=third_id,
+            frames=(third,),
+            expected_generation=generation,
+        )
 
         assert replacement.status is SubmissionStatus.COALESCED
         assert replacement.replaced_record_id == second_id
