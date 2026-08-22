@@ -27,6 +27,10 @@ class ActivitySummaryFailure(RuntimeError):
     """Sanitized failure while deriving an activity summary."""
 
 
+class ActivitySummaryUnavailable(ActivitySummaryFailure):
+    """The configured local generation provider is temporarily unavailable."""
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class ActivitySummary:
     text: str
@@ -70,7 +74,7 @@ class ActivitySummarizer:
         if capabilities.location is not ProviderLocation.LOCAL:
             raise ActivitySummaryFailure("local generation provider required")
         if not capabilities.available:
-            raise ActivitySummaryFailure("local generation provider unavailable")
+            raise ActivitySummaryUnavailable("local generation provider unavailable")
         if ModelCapability.GENERATION not in capabilities.capabilities:
             raise ActivitySummaryFailure("generation capability required")
         if not capabilities.accepts(PrivacyClass.REDACTED_CONTENT):
