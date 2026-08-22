@@ -168,7 +168,7 @@ class FixedXwdNativeRunner:
             raise XorgCaptureError("display-unavailable", private_detail=result.stderr)
         try:
             return _parse_monitor_layout(result.stdout)
-        except (UnicodeDecodeError, ValueError):
+        except UnicodeDecodeError, ValueError:
             raise XorgCaptureError("monitor-layout-invalid") from None
 
 
