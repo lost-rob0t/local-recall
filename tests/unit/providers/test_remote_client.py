@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from importlib import import_module
 
 import pytest
 
@@ -13,8 +14,10 @@ from local_recall.providers.remote import (
     RemoteRequestError,
     ResolvedCredential,
 )
-from local_recall.providers.remote_client import RemoteProviderClient
 from local_recall.routing import ApprovedEgressPayload, EgressDataClass
+
+remote_client = import_module("local_recall.providers.remote_client")
+RemoteProviderClient = remote_client.RemoteProviderClient
 
 
 class FakeCredentialProvider:
