@@ -215,3 +215,12 @@ Before merge:
 - re-enumerate the complete open issue queue;
 - PR must no longer be draft and no blocking review may remain;
 - merge only under standing repository authorization and only with exact-head protection where available.
+
+* Closeout
+- final implementation head before merge: =fa19b6f56e9353c9d43b039350f6feda8390d274=;
+- final Actions run =32563418623= completed SUCCESS on that exact head: Ubuntu 22.04, Ubuntu 24.04, canonical repository gate and failure-propagation all green;
+- immediately before merge, issue #19 was still open with zero comments; PR #71 had no reviews or review threads and was mergeable; =main= was still =e5c6ac6cb4fc70b594fb51d5dcef40baca338560=; the complete open queue still placed #19 before dependent #20;
+- PR #71 was marked ready for review only after those gates passed;
+- PR #71 was squash-merged with expected-head protection;
+- merge commit on =main=: =88d9dd77244bfb0a2e28e6f48977f425650bd752=;
+- issue implementation is complete. This closeout record is documentation-only and does not alter the accepted implementation architecture or test evidence.
