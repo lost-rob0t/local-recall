@@ -1,13 +1,9 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-import local_recall.activity.clustering
-import local_recall.answering.models
-import local_recall.answering.rendering
-
-clustering = local_recall.activity.clustering
-models = local_recall.answering.models
-rendering = local_recall.answering.rendering
+import local_recall.activity.clustering as clustering
+import local_recall.answering.models as models
+import local_recall.answering.rendering as rendering
 
 RECORD_A = UUID("00000000-0000-0000-0000-000000000401")
 RECORD_B = UUID("00000000-0000-0000-0000-000000000402")
