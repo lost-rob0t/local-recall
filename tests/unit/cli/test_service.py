@@ -5,10 +5,14 @@ from local_recall.cli_contract import CliCommand, CliOutcome, CliRequest, CliRes
 from local_recall.cli_service import DaemonClient, execute_command, exit_code_for
 
 
+def _requests() -> list[CliRequest]:
+    return []
+
+
 @dataclass
 class FakeClient(DaemonClient):
     response: CliResponse
-    requests: list[CliRequest] = field(default_factory=list)
+    requests: list[CliRequest] = field(default_factory=_requests)
 
     def request(self, request: CliRequest) -> CliResponse:
         self.requests.append(request)
