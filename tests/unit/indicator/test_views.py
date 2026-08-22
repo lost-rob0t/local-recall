@@ -41,10 +41,34 @@ class SurfaceFactory(Protocol):
     def __call__(self, controller: indicator.IndicatorController) -> Surface: ...
 
 
+class QtileAdapter(Protocol):
+    def poll_text(self, *, now: datetime) -> str: ...
+    def stop(self, *, now: datetime) -> str: ...
+    def privacy_on(self, *, now: datetime) -> str: ...
+    def privacy_off(self, *, now: datetime) -> str: ...
+
+
+class QtileAdapterFactory(Protocol):
+    def __call__(self, surface: Surface) -> QtileAdapter: ...
+
+
+class StatusNotifierAdapter(Protocol):
+    def poll(self, *, now: datetime) -> Presentation: ...
+    def stop(self, *, now: datetime) -> Presentation: ...
+    def privacy_on(self, *, now: datetime) -> Presentation: ...
+    def privacy_off(self, *, now: datetime) -> Presentation: ...
+
+
+class StatusNotifierAdapterFactory(Protocol):
+    def __call__(self, surface: Surface) -> StatusNotifierAdapter: ...
+
+
 class ViewsModule(Protocol):
     QtileIndicatorView: type[QtileView]
     StatusNotifierItemView: type[StatusNotifierView]
     IndicatorSurface: SurfaceFactory
+    QtileIndicatorAdapter: QtileAdapterFactory
+    StatusNotifierItemAdapter: StatusNotifierAdapterFactory
 
 
 indicator_views = cast(
@@ -139,7 +163,7 @@ def test_tooltip_contains_only_bounded_operational_status() -> None:
     assert "qtile" not in repr(presentation)
 
 
-def test_surface_exposes_one_action_controls_and_always_refreshes() -> None:
+def make_surface() -> tuple[Surface, FakeClient, datetime]:
     now = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
     client = FakeClient(
         responses=[
@@ -154,12 +178,54 @@ def test_surface_exposes_one_action_controls_and_always_refreshes() -> None:
         requests=[],
     )
     controller = indicator.IndicatorController(client=client, timeout=timedelta(seconds=2))
-    surface = indicator_views.IndicatorSurface(controller)
+    return indicator_views.IndicatorSurface(controller), client, now
+
+
+def test_surface_exposes_one_action_controls_and_always_refreshes() -> None:
+    surface, client, now = make_surface()
 
     assert surface.poll(now=now).state is indicator.IndicatorState.RECORDING
     assert surface.stop(now=now).state is indicator.IndicatorState.OFF
     assert surface.privacy_on(now=now).state is indicator.IndicatorState.PRIVACY
     assert surface.privacy_off(now=now).state is indicator.IndicatorState.PAUSED
+    assert [request.command.value for request in client.requests] == [
+        "status",
+        "stop",
+        "status",
+        "privacy-on",
+        "status",
+        "privacy-off",
+        "status",
+    ]
+
+
+def test_qtile_adapter_is_directly_usable_by_polling_widget_callbacks() -> None:
+    surface, client, now = make_surface()
+    adapter = indicator_views.QtileIndicatorAdapter(surface)
+
+    assert adapter.poll_text(now=now) == "LR:REC"
+    assert adapter.stop(now=now) == "LR:OFF"
+    assert adapter.privacy_on(now=now) == "LR:PRIV"
+    assert adapter.privacy_off(now=now) == "LR:PAUSE"
+    assert [request.command.value for request in client.requests] == [
+        "status",
+        "stop",
+        "status",
+        "privacy-on",
+        "status",
+        "privacy-off",
+        "status",
+    ]
+
+
+def test_status_notifier_adapter_exposes_generic_tray_actions() -> None:
+    surface, client, now = make_surface()
+    adapter = indicator_views.StatusNotifierItemAdapter(surface)
+
+    assert adapter.poll(now=now).status == "NeedsAttention"
+    assert adapter.stop(now=now).icon_name == "local-recall-off"
+    assert adapter.privacy_on(now=now).icon_name == "local-recall-privacy"
+    assert adapter.privacy_off(now=now).icon_name == "local-recall-paused"
     assert [request.command.value for request in client.requests] == [
         "status",
         "stop",
