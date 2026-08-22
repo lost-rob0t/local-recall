@@ -40,7 +40,7 @@
 3. =IndicatorController= polls authoritative STATUS through the existing =DaemonClient=. Any unavailable/invalid/faulted response discards previous recording display and renders a safe disconnected/faulted state. It never carries recording across a failed poll.
 4. One-action stop/privacy methods send existing typed STOP/PRIVACY commands. UI state is not changed optimistically; a successful command is followed by a status refresh.
 5. Generic Linux integration targets StatusNotifierItem semantics. Keep protocol formatting/actions behind a small adapter so D-Bus transport can be injected/tested and packaging can supply the concrete session-bus dependency without contaminating the indicator authority.
-6. Qtile integration is a pure adapter returning bounded text/tooltip/action callbacks suitable for =GenPollText= or a tiny downstream widget wrapper. It does not shell out and does not inspect desktop content.
+6. Qtile integration is a pure adapter returning bounded text/action callbacks suitable for =GenPollText= or a tiny downstream widget wrapper. It does not shell out and does not inspect desktop content.
 7. Sanitized status events may trigger an immediate refresh later, but are never authoritative.
 
 *** Rejected alternatives
@@ -62,21 +62,29 @@
 *** Migration/config
 - Additive API only; no storage/config schema migration in this slice.
 - No new network listener or TCP endpoint.
-- Generic StatusNotifier transport dependency must remain optional until packaged; core and Qtile adapter require no GUI dependency.
+- Generic StatusNotifier transport dependency remains optional until packaging; core and Qtile adapter require no GUI dependency.
 
 *** Verification gates
 - RED first for authoritative snapshot/control semantics.
 - Unit tests: all lifecycle states; privacy; failed poll after recording; malformed/sensitive metadata rejection; timezone validation; stop/privacy refresh behavior; object representations.
 - Integration/security: fake daemon restart; stale-status discard; secret/title/OCR sentinel absence; no lifecycle/capture/storage/provider imports from indicator package.
 - Qtile adapter contract tests and generic StatusNotifier model/action tests.
-- canonical ./scripts/check; nix flake check if Nix inputs are modified.
+- canonical ./scripts/check; nix flake check only if Nix inputs are modified.
 - exact-head Actions green before merge.
 
 ** RED
-Pending.
+- Initial issue-consumption RED established the missing indicator contracts before production implementation.
+- Acceptance audit on head =a9650970dbdb804e89b089c828fc23fd782574ac= found a remaining design gap: presentation views existed, but there was no concrete Qtile polling/action adapter or generic StatusNotifier action adapter.
+- Test-only commit =2447933e46b6f3053ebecec9e5d3459732b160ee= added those required adapter contracts.
+- CI run 710 observed the intended RED: formatting, Ruff, ShellCheck, strict Pyright, and failure-propagation passed; unit tests failed on both Ubuntu 22.04 and 24.04 because the adapter implementations were absent. Contract/integration/security jobs were skipped after the unit failure. This is accepted behavioral RED evidence.
 
 ** GREEN
-Pending.
+- Production commit =90311a3e2eeb272f702f8b9e9ea7cc2cd6effa4d= added =QtileIndicatorAdapter= and =StatusNotifierItemAdapter= over the existing authoritative =IndicatorSurface= without adding lifecycle/capture/storage/provider/transport authority.
+- Integration coverage now verifies recording -> daemon unavailable -> recovered paused state, action-driven refresh after stop/privacy commands, and stale metadata discard.
+- Security coverage injects recognizable secret/title/OCR/provider sentinel text into daemon failure reasons and verifies it never reaches tray presentation; structural tests reject indicator imports of capture/storage/provider/policy/lifecycle/subprocess/socket/zmq authority.
+- =docs/indicator.md= documents authority boundaries, closed states, content minimization, controls, Qtile integration, generic StatusNotifier integration, and restart behavior.
+- Final exact-head CI remains the merge gate and must be recorded below before completion.
 
 * Verification
-Pending.
+- No Nix inputs changed, so no new Nix dependency gate is introduced by this issue.
+- PR must remain unmerged until exact final head passes canonical =./scripts/check=, both Ubuntu matrices, security checks, failure-propagation, and review/mergeability inspection.
