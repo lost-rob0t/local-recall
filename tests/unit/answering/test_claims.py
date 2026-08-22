@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
-
 from local_recall.answering import (
     AnswerCitation,
     AnswerClaim,
