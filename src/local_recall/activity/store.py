@@ -179,7 +179,9 @@ def _encode_snapshot(snapshot: ActivitySnapshot) -> bytes:
             {
                 "cluster": {
                     "ended_at": entry.cluster.ended_at.isoformat(),
-                    "source_record_ids": [str(source_id) for source_id in entry.cluster.source_record_ids],
+                    "source_record_ids": [
+                        str(source_id) for source_id in entry.cluster.source_record_ids
+                    ],
                     "started_at": entry.cluster.started_at.isoformat(),
                 },
                 "policy_revisions": entry.policy_revisions,
@@ -190,7 +192,9 @@ def _encode_snapshot(snapshot: ActivitySnapshot) -> bytes:
                     else {
                         "model_id": entry.summary.model_id,
                         "provider_id": entry.summary.provider_id,
-                        "source_record_ids": [str(source_id) for source_id in entry.summary.source_record_ids],
+                        "source_record_ids": [
+                            str(source_id) for source_id in entry.summary.source_record_ids
+                        ],
                         "text": entry.summary.text,
                     }
                 ),
@@ -220,7 +224,9 @@ def _decode_entry(raw: dict[str, Any]) -> ActivityEntry:
     if set(raw_cluster) != {"ended_at", "source_record_ids", "started_at"}:
         raise ValueError
     cluster = ActivityCluster(
-        source_record_ids=tuple(UUID(value) for value in cast(list[str], raw_cluster["source_record_ids"])),
+        source_record_ids=tuple(
+            UUID(value) for value in cast(list[str], raw_cluster["source_record_ids"])
+        ),
         started_at=datetime.fromisoformat(cast(str, raw_cluster["started_at"])),
         ended_at=datetime.fromisoformat(cast(str, raw_cluster["ended_at"])),
     )
