@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from local_recall.indicator import IndicatorController, IndicatorSnapshot, IndicatorState
@@ -94,3 +94,43 @@ class IndicatorSurface:
 
     def privacy_off(self, *, now: datetime) -> IndicatorSnapshot:
         return self.controller.privacy_off(now=now)
+
+
+@dataclass(slots=True)
+class QtileIndicatorAdapter:
+    """Polling/callback adapter directly consumable by a Qtile text widget."""
+
+    surface: IndicatorSurface
+    view: QtileIndicatorView = field(default_factory=QtileIndicatorView)
+
+    def poll_text(self, *, now: datetime) -> str:
+        return self.view.text(self.surface.poll(now=now))
+
+    def stop(self, *, now: datetime) -> str:
+        return self.view.text(self.surface.stop(now=now))
+
+    def privacy_on(self, *, now: datetime) -> str:
+        return self.view.text(self.surface.privacy_on(now=now))
+
+    def privacy_off(self, *, now: datetime) -> str:
+        return self.view.text(self.surface.privacy_off(now=now))
+
+
+@dataclass(slots=True)
+class StatusNotifierItemAdapter:
+    """Generic tray action adapter over StatusNotifierItem presentation semantics."""
+
+    surface: IndicatorSurface
+    view: StatusNotifierItemView = field(default_factory=StatusNotifierItemView)
+
+    def poll(self, *, now: datetime) -> StatusNotifierPresentation:
+        return self.view.present(self.surface.poll(now=now))
+
+    def stop(self, *, now: datetime) -> StatusNotifierPresentation:
+        return self.view.present(self.surface.stop(now=now))
+
+    def privacy_on(self, *, now: datetime) -> StatusNotifierPresentation:
+        return self.view.present(self.surface.privacy_on(now=now))
+
+    def privacy_off(self, *, now: datetime) -> StatusNotifierPresentation:
+        return self.view.present(self.surface.privacy_off(now=now))
