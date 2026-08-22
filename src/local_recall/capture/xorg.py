@@ -107,7 +107,7 @@ class XorgCaptureBackend:
     def backend_id(self) -> str:
         return "xorg"
 
-    def validate_request(self, request: ApprovedCaptureRequest) -> None:
+    def validate_request(self, request: object) -> None:
         if not isinstance(request, ApprovedCaptureRequest):
             raise TypeError("approved capture request required")
 
