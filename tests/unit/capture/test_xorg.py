@@ -8,11 +8,8 @@ from uuid import uuid4
 
 import pytest
 
-import local_recall.capture.xorg as xorg_capture
-import local_recall.domain.capture as capture_domain
-import local_recall.domain.frames as frame_domain
-import local_recall.domain.lifecycle as lifecycle_domain
-import local_recall.domain.metadata as metadata_domain
+from local_recall import domain
+from local_recall.capture import xorg as xorg_capture
 
 NOW = datetime(2026, 8, 22, 6, 0, tzinfo=UTC)
 
@@ -33,24 +30,24 @@ class FakeReader:
 
 
 def _request(
-    *, metadata: metadata_domain.ContextMetadata | None = None, deadline: int = 9_000_000_000
-) -> capture_domain.ApprovedCaptureRequest:
-    intent = capture_domain.CaptureIntent(
+    *, metadata: domain.ContextMetadata | None = None, deadline: int = 9_000_000_000
+) -> domain.ApprovedCaptureRequest:
+    intent = domain.CaptureIntent(
         job_id=uuid4(),
-        generation=lifecycle_domain.CaptureGeneration(7),
+        generation=domain.CaptureGeneration(7),
         requested_at=NOW,
         deadline_monotonic_ns=deadline,
         configuration_revision="config-v1",
     )
-    decision = capture_domain.CaptureDecision.allow(
+    decision = domain.CaptureDecision.allow(
         policy_revision="policy-v4",
         allowed_metadata_fields=frozenset(
             {"window.x", "window.y", "window.width", "window.height"}
         ),
     )
-    return capture_domain.ApprovedCaptureRequest.from_decision(
+    return domain.ApprovedCaptureRequest.from_decision(
         intent=intent,
-        metadata=metadata or metadata_domain.ContextMetadata(observed_at=NOW, fields=()),
+        metadata=metadata or domain.ContextMetadata(observed_at=NOW, fields=()),
         decision=decision,
     )
 
@@ -63,7 +60,7 @@ def _snapshot() -> xorg_capture.XorgSnapshot:
         width=4,
         height=2,
         stride=12,
-        pixel_format=frame_domain.PixelFormat.RGB8,
+        pixel_format=domain.PixelFormat.RGB8,
         pixels=bytes(range(24)),
         monitors=(
             xorg_capture.XorgSnapshot.Monitor(
@@ -89,22 +86,22 @@ def _snapshot() -> xorg_capture.XorgSnapshot:
     )
 
 
-def _window_metadata(*, source_id: str = "xorg-generic") -> metadata_domain.ContextMetadata:
+def _window_metadata(*, source_id: str = "xorg-generic") -> domain.ContextMetadata:
     provenance = (
-        metadata_domain.MetadataProvenance(
+        domain.MetadataProvenance(
             source_id=source_id,
             observed_at=NOW,
-            confidence=metadata_domain.SourceConfidence(0.99),
+            confidence=domain.SourceConfidence(0.99),
             adapter_revision="fixture-v1",
         ),
     )
-    return metadata_domain.ContextMetadata(
+    return domain.ContextMetadata(
         observed_at=NOW,
         fields=(
-            metadata_domain.ContextField(name="window.x", value=0, provenance=provenance),
-            metadata_domain.ContextField(name="window.y", value=0, provenance=provenance),
-            metadata_domain.ContextField(name="window.width", value=2, provenance=provenance),
-            metadata_domain.ContextField(name="window.height", value=2, provenance=provenance),
+            domain.ContextField(name="window.x", value=0, provenance=provenance),
+            domain.ContextField(name="window.y", value=0, provenance=provenance),
+            domain.ContextField(name="window.width", value=2, provenance=provenance),
+            domain.ContextField(name="window.height", value=2, provenance=provenance),
         ),
     )
 
@@ -116,7 +113,7 @@ def test_full_desktop_capture_preserves_generation_and_monitor_provenance() -> N
     frame = asyncio.run(backend.capture(_request()))
 
     assert reader.calls == 1
-    assert frame.generation == lifecycle_domain.CaptureGeneration(7)
+    assert frame.generation == domain.CaptureGeneration(7)
     assert frame.width == 4
     assert frame.height == 2
     assert frame.pixels == bytes(range(24))
@@ -184,13 +181,13 @@ def test_capture_backend_rejects_unapproved_request_at_runtime() -> None:
     backend = xorg_capture.XorgCaptureBackend(
         reader=FakeReader(snapshot=_snapshot()), monotonic_ns=lambda: 1
     )
-    intent = capture_domain.CaptureIntent(
+    intent = domain.CaptureIntent(
         job_id=uuid4(),
-        generation=lifecycle_domain.CaptureGeneration(1),
+        generation=domain.CaptureGeneration(1),
         requested_at=NOW,
         deadline_monotonic_ns=2,
         configuration_revision="config-v1",
     )
 
     with pytest.raises(TypeError, match="approved capture request required"):
-        backend.validate_request(cast(capture_domain.ApprovedCaptureRequest, intent))
+        backend.validate_request(cast(domain.ApprovedCaptureRequest, intent))
