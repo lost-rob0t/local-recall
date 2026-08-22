@@ -8,27 +8,22 @@ from uuid import uuid4
 
 import pytest
 
-from local_recall.capture.xorg import XorgCaptureBackend, XorgCaptureError, XorgSnapshot
-from local_recall.domain.capture import ApprovedCaptureRequest, CaptureDecision, CaptureIntent
-from local_recall.domain.frames import PixelFormat
-from local_recall.domain.lifecycle import CaptureGeneration
-from local_recall.domain.metadata import (
-    ContextField,
-    ContextMetadata,
-    MetadataProvenance,
-    SourceConfidence,
-)
+from local_recall.capture import xorg as xorg_capture
+from local_recall.domain import capture as capture_domain
+from local_recall.domain import frames as frame_domain
+from local_recall.domain import lifecycle as lifecycle_domain
+from local_recall.domain import metadata as metadata_domain
 
 NOW = datetime(2026, 8, 22, 6, 0, tzinfo=UTC)
 
 
 @dataclass
 class FakeReader:
-    snapshot: XorgSnapshot | None = None
-    error: XorgCaptureError | None = None
+    snapshot: xorg_capture.XorgSnapshot | None = None
+    error: xorg_capture.XorgCaptureError | None = None
     calls: int = 0
 
-    async def capture_root(self, *, deadline_monotonic_ns: int) -> XorgSnapshot:
+    async def capture_root(self, *, deadline_monotonic_ns: int) -> xorg_capture.XorgSnapshot:
         assert deadline_monotonic_ns > 0
         self.calls += 1
         if self.error is not None:
@@ -38,41 +33,40 @@ class FakeReader:
 
 
 def _request(
-    *, metadata: ContextMetadata | None = None, deadline: int = 9_000_000_000
-) -> ApprovedCaptureRequest:
-    intent = CaptureIntent(
+    *, metadata: metadata_domain.ContextMetadata | None = None, deadline: int = 9_000_000_000
+) -> capture_domain.ApprovedCaptureRequest:
+    intent = capture_domain.CaptureIntent(
         job_id=uuid4(),
-        generation=CaptureGeneration(7),
+        generation=lifecycle_domain.CaptureGeneration(7),
         requested_at=NOW,
         deadline_monotonic_ns=deadline,
         configuration_revision="config-v1",
     )
-    decision = CaptureDecision.allow(
+    decision = capture_domain.CaptureDecision.allow(
         policy_revision="policy-v4",
         allowed_metadata_fields=frozenset(
             {"window.x", "window.y", "window.width", "window.height"}
         ),
     )
-    return ApprovedCaptureRequest.from_decision(
+    return capture_domain.ApprovedCaptureRequest.from_decision(
         intent=intent,
-        metadata=metadata or ContextMetadata(observed_at=NOW, fields=()),
+        metadata=metadata or metadata_domain.ContextMetadata(observed_at=NOW, fields=()),
         decision=decision,
     )
 
 
-def _snapshot() -> XorgSnapshot:
-    # 4x2 RGB image, row-major. Distinct pixels make crop assertions deterministic.
-    return XorgSnapshot(
+def _snapshot() -> xorg_capture.XorgSnapshot:
+    return xorg_capture.XorgSnapshot(
         captured_at=NOW,
         root_x=-2,
         root_y=0,
         width=4,
         height=2,
         stride=12,
-        pixel_format=PixelFormat.RGB8,
+        pixel_format=frame_domain.PixelFormat.RGB8,
         pixels=bytes(range(24)),
         monitors=(
-            XorgSnapshot.Monitor(
+            xorg_capture.XorgSnapshot.Monitor(
                 monitor_id="left",
                 x=-2,
                 y=0,
@@ -81,7 +75,7 @@ def _snapshot() -> XorgSnapshot:
                 scale_x=1.0,
                 scale_y=1.0,
             ),
-            XorgSnapshot.Monitor(
+            xorg_capture.XorgSnapshot.Monitor(
                 monitor_id="right",
                 x=0,
                 y=0,
@@ -95,34 +89,34 @@ def _snapshot() -> XorgSnapshot:
     )
 
 
-def _window_metadata(*, source_id: str = "xorg-generic") -> ContextMetadata:
+def _window_metadata(*, source_id: str = "xorg-generic") -> metadata_domain.ContextMetadata:
     provenance = (
-        MetadataProvenance(
+        metadata_domain.MetadataProvenance(
             source_id=source_id,
             observed_at=NOW,
-            confidence=SourceConfidence(0.99),
+            confidence=metadata_domain.SourceConfidence(0.99),
             adapter_revision="fixture-v1",
         ),
     )
-    return ContextMetadata(
+    return metadata_domain.ContextMetadata(
         observed_at=NOW,
         fields=(
-            ContextField(name="window.x", value=0, provenance=provenance),
-            ContextField(name="window.y", value=0, provenance=provenance),
-            ContextField(name="window.width", value=2, provenance=provenance),
-            ContextField(name="window.height", value=2, provenance=provenance),
+            metadata_domain.ContextField(name="window.x", value=0, provenance=provenance),
+            metadata_domain.ContextField(name="window.y", value=0, provenance=provenance),
+            metadata_domain.ContextField(name="window.width", value=2, provenance=provenance),
+            metadata_domain.ContextField(name="window.height", value=2, provenance=provenance),
         ),
     )
 
 
 def test_full_desktop_capture_preserves_generation_and_monitor_provenance() -> None:
     reader = FakeReader(snapshot=_snapshot())
-    backend = XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
+    backend = xorg_capture.XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
     frame = asyncio.run(backend.capture(_request()))
 
     assert reader.calls == 1
-    assert frame.generation == CaptureGeneration(7)
+    assert frame.generation == lifecycle_domain.CaptureGeneration(7)
     assert frame.width == 4
     assert frame.height == 2
     assert frame.pixels == bytes(range(24))
@@ -137,13 +131,12 @@ def test_full_desktop_capture_preserves_generation_and_monitor_provenance() -> N
 
 def test_validated_window_geometry_crops_only_after_root_capture() -> None:
     reader = FakeReader(snapshot=_snapshot())
-    backend = XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
+    backend = xorg_capture.XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
     frame = asyncio.run(backend.capture(_request(metadata=_window_metadata())))
 
     assert reader.calls == 1
     assert (frame.width, frame.height, frame.stride) == (2, 2, 6)
-    # Root origin is -2. Window x=0 therefore selects source columns 2..3.
     assert frame.pixels == bytes([6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22, 23])
     assert frame.capture_provenance is not None
     assert frame.capture_provenance.region.x == 0
@@ -152,7 +145,7 @@ def test_validated_window_geometry_crops_only_after_root_capture() -> None:
 
 def test_untrusted_window_geometry_falls_back_to_full_desktop() -> None:
     reader = FakeReader(snapshot=_snapshot())
-    backend = XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
+    backend = xorg_capture.XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
     frame = asyncio.run(
         backend.capture(_request(metadata=_window_metadata(source_id="unknown-source")))
@@ -164,9 +157,9 @@ def test_untrusted_window_geometry_falls_back_to_full_desktop() -> None:
 
 def test_expired_deadline_fails_before_reader_is_invoked() -> None:
     reader = FakeReader(snapshot=_snapshot())
-    backend = XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 10_000_000_000)
+    backend = xorg_capture.XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 10_000_000_000)
 
-    with pytest.raises(XorgCaptureError, match="capture-deadline-expired"):
+    with pytest.raises(xorg_capture.XorgCaptureError, match="capture-deadline-expired"):
         asyncio.run(backend.capture(_request(deadline=9_000_000_000)))
 
     assert reader.calls == 0
@@ -174,10 +167,12 @@ def test_expired_deadline_fails_before_reader_is_invoked() -> None:
 
 def test_reader_failure_is_sanitized() -> None:
     private_value = "DISPLAY=:77 secret-window-title"
-    reader = FakeReader(error=XorgCaptureError("capture-failed", private_detail=private_value))
-    backend = XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
+    reader = FakeReader(
+        error=xorg_capture.XorgCaptureError("capture-failed", private_detail=private_value)
+    )
+    backend = xorg_capture.XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
-    with pytest.raises(XorgCaptureError) as caught:
+    with pytest.raises(xorg_capture.XorgCaptureError) as caught:
         asyncio.run(backend.capture(_request()))
 
     rendered = f"{caught.value!r} {caught.value}"
@@ -186,15 +181,14 @@ def test_reader_failure_is_sanitized() -> None:
 
 
 def test_capture_backend_rejects_unapproved_request_at_runtime() -> None:
-    backend = XorgCaptureBackend(reader=FakeReader(snapshot=_snapshot()), monotonic_ns=lambda: 1)
-    intent = CaptureIntent(
+    backend = xorg_capture.XorgCaptureBackend(reader=FakeReader(snapshot=_snapshot()), monotonic_ns=lambda: 1)
+    intent = capture_domain.CaptureIntent(
         job_id=uuid4(),
-        generation=CaptureGeneration(1),
+        generation=lifecycle_domain.CaptureGeneration(1),
         requested_at=NOW,
         deadline_monotonic_ns=2,
         configuration_revision="config-v1",
     )
 
     with pytest.raises(TypeError, match="approved capture request required"):
-        # Deliberately cross the runtime boundary with the wrong typed object.
-        backend.validate_request(cast(ApprovedCaptureRequest, intent))
+        backend.validate_request(cast(capture_domain.ApprovedCaptureRequest, intent))
