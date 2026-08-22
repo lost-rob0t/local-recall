@@ -17,6 +17,7 @@ MAX_CITATIONS = 256
 MAX_RECORD_ID_LENGTH = 128
 MAX_DIAGNOSTIC_ENTRIES = 256
 MAX_DIAGNOSTIC_FIELD_LENGTH = 128
+MAX_STATUS_IDENTIFIER_LENGTH = 128
 
 
 class CliPriority(StrEnum):
@@ -111,6 +112,16 @@ def _validate_diagnostic_field(value: str, *, field: str) -> None:
     if not value or len(value) > MAX_DIAGNOSTIC_FIELD_LENGTH:
         raise ValueError(f"{field} has invalid length")
     if any(character in "\r\n\x00" for character in value):
+        raise ValueError(f"{field} contains invalid characters")
+
+
+def _validate_status_identifier(value: str, *, field: str) -> None:
+    if not value or len(value) > MAX_STATUS_IDENTIFIER_LENGTH:
+        raise ValueError(f"{field} has invalid length")
+    if any(
+        not (character.isascii() and (character.isalnum() or character in "-_."))
+        for character in value
+    ):
         raise ValueError(f"{field} contains invalid characters")
 
 
@@ -225,6 +236,41 @@ class CliDiagnosticPayload:
         return (
             "CliDiagnosticPayload("
             f"category={self.category.value!r}, entry_count={len(self.entries)})"
+        )
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class CliStatusPayload:
+    """Content-free authoritative status details intended for status indicators."""
+
+    privacy_mode: bool
+    capture_backend: str | None = None
+    metadata_source: str | None = None
+    last_capture_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if self.capture_backend is not None:
+            _validate_status_identifier(self.capture_backend, field="capture_backend")
+        if self.metadata_source is not None:
+            _validate_status_identifier(self.metadata_source, field="metadata_source")
+        if self.last_capture_at is not None:
+            _require_aware(self.last_capture_at, field="last_capture_at")
+
+    def to_dict(self) -> dict[str, bool | str | None]:
+        return {
+            "privacy_mode": self.privacy_mode,
+            "capture_backend": self.capture_backend,
+            "metadata_source": self.metadata_source,
+            "last_capture_at": (
+                self.last_capture_at.isoformat() if self.last_capture_at is not None else None
+            ),
+        }
+
+    def __repr__(self) -> str:
+        return (
+            "CliStatusPayload("
+            f"privacy_mode={self.privacy_mode}, capture_backend=<opaque>, "
+            "metadata_source=<opaque>, last_capture_at=<timestamp>)"
         )
 
 
