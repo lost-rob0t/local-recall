@@ -97,6 +97,18 @@ No persistent-data migration is intended. Frame/provenance domain types may gain
 - Expected failure: =tests/unit/capture/test_xorg.py::test_xorg_capture_backend_module_exists= raised =ModuleNotFoundError: No module named 'local_recall.capture'=.
 - This is accepted RED evidence because the failure is the missing production API, not formatting/lint/plumbing noise. Earlier format/import-order failures were explicitly rejected as invalid RED evidence and are not implementation justification.
 
+*** GREEN 1 - package/type boundary exists
+- Production head =f2f4bfee631131ab6c7f761b12c28403d9461e61= added only =local_recall.capture= and =XorgCaptureBackend=.
+- CI advanced successfully through formatting, Ruff, ShellCheck, strict Pyright, unit, contract, integration, and security tests before the next RED batch was introduced. This is an incremental green checkpoint, not the final issue gate.
+
+*** RED 2 - authorized capture behavior absent
+- Test head: =1467c4ed3606b694431b5f1d398f46bac55f1e21=.
+- GitHub Actions run: =32557836459=; Ubuntu 22.04 job =96994741888=.
+- Formatting, Ruff, and ShellCheck passed.
+- Strict Pyright then failed specifically on the newly required behavior: missing =XorgSnapshot=, =XorgMonitor=, =XorgCaptureError=; missing injected reader/clock constructor; missing =backend_id=, =capture=, and =validate_request=; and missing typed frame capture provenance.
+- 102 static errors are all consequences of the deliberately absent production contract, including exact call-site failures for =reader= / =monotonic_ns= and unknown capture/provenance members.
+- Earlier formatting failure on head =44b601c86eeacacde41e6b9e0d234ed2be5dcffb= was rejected as invalid RED evidence and corrected before this run.
+
 ** Verification gates
 - deterministic unit tests for full-root capture, multi-monitor geometry including negative origins, scaling metadata, focused crop validation, malformed/native-overflow rejection, display disconnect, timeout, and sanitized errors;
 - integration test proving an approved raw frame crosses directly into the existing in-memory redaction path with no filesystem artifact;
