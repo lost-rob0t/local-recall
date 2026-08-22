@@ -57,6 +57,8 @@ def execute_command(
     now: datetime,
     timeout: timedelta,
     query: str | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
 ) -> CliExecutionResult:
     """Execute one CLI command without taking ownership of daemon behavior."""
     if timeout <= timedelta(0) or timeout > MAX_DEADLINE:
@@ -67,12 +69,23 @@ def execute_command(
         )
         return CliExecutionResult(response=response, exit_code=exit_code_for(response.outcome))
 
-    request = CliRequest.create(
-        command=command,
-        now=now,
-        deadline=now + timeout,
-        query=query,
-    )
+    try:
+        request = CliRequest.create(
+            command=command,
+            now=now,
+            deadline=now + timeout,
+            query=query,
+            start=start,
+            end=end,
+        )
+    except ValueError:
+        response = CliResponse.failure(
+            request_id="invalid-request",
+            outcome=CliOutcome.INVALID,
+            reason_code="invalid-request",
+        )
+        return CliExecutionResult(response=response, exit_code=exit_code_for(response.outcome))
+
     try:
         response = client.request(request)
     except Exception:
@@ -97,6 +110,16 @@ def execute_command(
             request_id=request.request_id,
             outcome=CliOutcome.INTERNAL_FAILURE,
             reason_code="stop-not-quiescent",
+        )
+    elif (
+        command in {CliCommand.ASK, CliCommand.TIMELINE, CliCommand.SEARCH}
+        and response.outcome is CliOutcome.SUCCESS
+        and response.query_payload is None
+    ):
+        response = CliResponse.failure(
+            request_id=request.request_id,
+            outcome=CliOutcome.INTERNAL_FAILURE,
+            reason_code="query-result-missing",
         )
 
     return CliExecutionResult(response=response, exit_code=exit_code_for(response.outcome))
