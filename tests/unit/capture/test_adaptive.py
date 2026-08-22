@@ -38,9 +38,7 @@ def _gradient_rgb(*, changed_pixel: bool = False) -> bytearray:
 
 def test_perceptual_hash_is_stable_for_tiny_rgb8_change() -> None:
     original = adaptive.perceptual_dhash_rgb8(_gradient_rgb(), width=18, height=16)
-    near_duplicate = adaptive.perceptual_dhash_rgb8(
-        _gradient_rgb(changed_pixel=True), width=18, height=16
-    )
+    near_duplicate = adaptive.perceptual_dhash_rgb8(_gradient_rgb(changed_pixel=True), width=18, height=16)
 
     assert original.bit_length() <= 64
     assert (original ^ near_duplicate).bit_count() <= 2
@@ -94,9 +92,7 @@ def test_near_duplicate_extends_span_only_inside_same_privacy_context() -> None:
     )
     context = _context()
     fingerprint = adaptive.perceptual_dhash_rgb8(_gradient_rgb(), width=18, height=16)
-    nearby = adaptive.perceptual_dhash_rgb8(
-        _gradient_rgb(changed_pixel=True), width=18, height=16
-    )
+    nearby = adaptive.perceptual_dhash_rgb8(_gradient_rgb(changed_pixel=True), width=18, height=16)
 
     first = controller.classify_frame(
         context=context,
