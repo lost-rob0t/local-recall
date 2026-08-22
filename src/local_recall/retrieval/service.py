@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Protocol, runtime_checkable
@@ -7,6 +8,7 @@ from uuid import UUID, uuid4
 
 from local_recall.domain._validation import require_aware, require_nonempty
 from local_recall.domain.frames import RedactedRecord
+from local_recall.domain.metadata import MetadataScalar
 from local_recall.ports.encryption import DecryptionRequest, EncryptionProvider
 from local_recall.ports.storage import CatalogRecord, DayRangeQuery, QueryableStorageBackend
 
@@ -15,6 +17,20 @@ from .time import ResolvedTimeRange
 _MAX_RESULT_LIMIT = 1000
 _MAX_CANDIDATE_LIMIT = 10_000
 _MAX_EXCERPT_CHARS = 4096
+_METADATA_FIELD_NAME = re.compile(r"^[a-z][a-z0-9_.-]{0,127}$")
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class MetadataFilter:
+    field_name: str
+    value: MetadataScalar = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if not _METADATA_FIELD_NAME.fullmatch(self.field_name):
+            raise ValueError("metadata filter field name is invalid")
+
+    def __repr__(self) -> str:
+        return f"MetadataFilter(field_name={self.field_name!r}, value=<redacted>)"
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -24,6 +40,7 @@ class RetrievalQuery:
     workspace: str | None = field(default=None, repr=False)
     keywords: tuple[str, ...] = field(default=(), repr=False)
     semantic_text: str | None = field(default=None, repr=False)
+    metadata_filters: tuple[MetadataFilter, ...] = field(default=(), repr=False)
     limit: int = 100
     candidate_limit: int = 1024
     query_id: UUID = field(default_factory=uuid4)
@@ -40,6 +57,9 @@ class RetrievalQuery:
             raise ValueError("retrieval keywords must not be empty")
         if len(set(normalized_keywords)) != len(normalized_keywords):
             raise ValueError("retrieval keywords must be unique")
+        filter_names = tuple(item.field_name for item in self.metadata_filters)
+        if len(filter_names) != len(set(filter_names)):
+            raise ValueError("retrieval metadata filter fields must be unique")
         if not 1 <= self.limit <= _MAX_RESULT_LIMIT:
             raise ValueError("retrieval limit is invalid")
         if not 1 <= self.candidate_limit <= _MAX_CANDIDATE_LIMIT:
@@ -55,6 +75,7 @@ class RetrievalQuery:
             f"workspace_filter={self.workspace is not None}, "
             f"keyword_count={len(self.keywords)}, "
             f"semantic_filter={self.semantic_text is not None}, "
+            f"metadata_filter_count={len(self.metadata_filters)}, "
             f"limit={self.limit}, candidate_limit={self.candidate_limit})"
         )
 
@@ -279,6 +300,8 @@ def _matches(query: RetrievalQuery, record: RedactedRecord) -> bool:
         return False
     if query.workspace is not None and not _metadata_matches(record, "workspace", query.workspace):
         return False
+    if any(not _metadata_filter_matches(record, item) for item in query.metadata_filters):
+        return False
     if query.keywords:
         haystack = "\n".join(record.frame.ocr_text).casefold()
         if any(keyword not in haystack for keyword in query.keywords):
@@ -289,6 +312,16 @@ def _matches(query: RetrievalQuery, record: RedactedRecord) -> bool:
 def _metadata_matches(record: RedactedRecord, field_name: str, expected: str) -> bool:
     value = record.frame.metadata.get(field_name)
     return isinstance(value, str) and value.casefold() == expected.casefold()
+
+
+def _metadata_filter_matches(record: RedactedRecord, metadata_filter: MetadataFilter) -> bool:
+    for context_field in record.frame.metadata.fields:
+        if context_field.name != metadata_filter.field_name:
+            continue
+        actual = context_field.value
+        expected = metadata_filter.value
+        return type(actual) is type(expected) and actual == expected
+    return False
 
 
 def _passage(
