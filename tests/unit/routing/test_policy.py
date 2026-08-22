@@ -117,9 +117,7 @@ async def test_remote_explicit_binds_provider_and_authorized_data_classes() -> N
     authorization = EgressAuthorization(
         authorization_id="auth-2",
         provider_id="openrouter",
-        data_classes=frozenset(
-            {EgressDataClass.REDACTED_TEXT, EgressDataClass.APPROVED_METADATA}
-        ),
+        data_classes=frozenset({EgressDataClass.REDACTED_TEXT, EgressDataClass.APPROVED_METADATA}),
         max_payload_bytes=8192,
     )
     providers = (
