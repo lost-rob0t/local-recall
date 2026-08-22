@@ -65,12 +65,14 @@ def unavailable() -> CliResponse:
 def test_indicator_discards_recording_across_daemon_restart_then_recovers() -> None:
     now = datetime(2026, 8, 22, 20, 1, tzinfo=UTC)
     client = RestartingDaemonClient(
-        responses=[status(CliLifecycleState.RECORDING), unavailable(), status(CliLifecycleState.PAUSED)],
+        responses=[
+            status(CliLifecycleState.RECORDING),
+            unavailable(),
+            status(CliLifecycleState.PAUSED),
+        ],
         requests=[],
     )
-    surface = IndicatorSurface(
-        IndicatorController(client=client, timeout=timedelta(seconds=2))
-    )
+    surface = IndicatorSurface(IndicatorController(client=client, timeout=timedelta(seconds=2)))
     qtile = QtileIndicatorAdapter(surface)
 
     assert qtile.poll_text(now=now) == "LR:REC"
