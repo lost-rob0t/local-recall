@@ -11,6 +11,7 @@ import zmq
 
 from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.lifecycle.actor import LifecycleActor
+from local_recall.lifecycle.errors import StaleCaptureGeneration
 from local_recall.lifecycle.gate import CaptureGate
 from local_recall.lifecycle.messages import FaultCapture, LifecycleFaultCode
 
@@ -177,6 +178,7 @@ class BoundedCapturePipeline:
         *,
         record_id: UUID,
         frames: tuple[bytearray, ...],
+        expected_generation: CaptureGeneration,
         deadline_monotonic_ns: int | None = None,
     ) -> SubmissionResult:
         self._assert_owner()
@@ -188,9 +190,11 @@ class BoundedCapturePipeline:
             typed_permit = permit
             if not isinstance(typed_permit, CaptureWorkPermit):
                 raise TypeError("capture gate returned an invalid permit")
+            if typed_permit.generation != expected_generation:
+                raise StaleCaptureGeneration("captured frame generation is stale")
             item = RawStageItem(
                 record_id=record_id,
-                generation=typed_permit.generation,
+                generation=expected_generation,
                 configuration_revision=typed_permit.configuration_revision,
                 deadline_monotonic_ns=deadline,
                 frames=frames,
