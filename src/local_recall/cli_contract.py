@@ -11,6 +11,7 @@ from enum import StrEnum
 PROTOCOL_VERSION = "local-recall-cli-v1"
 MAX_DEADLINE = timedelta(seconds=30)
 MAX_REASON_CODE_LENGTH = 64
+MAX_QUERY_TEXT_LENGTH = 65_536
 MAX_QUERY_RESULT_TEXT_LENGTH = 1_048_576
 MAX_CITATIONS = 256
 MAX_RECORD_ID_LENGTH = 128
@@ -111,6 +112,16 @@ def _validate_diagnostic_field(value: str, *, field: str) -> None:
         raise ValueError(f"{field} has invalid length")
     if any(character in "\r\n\x00" for character in value):
         raise ValueError(f"{field} contains invalid characters")
+
+
+def _validate_command_query(command: CliCommand, query: str | None) -> None:
+    text_query_commands = {CliCommand.ASK, CliCommand.SEARCH}
+    if command in text_query_commands:
+        if query is None or not query.strip() or len(query) > MAX_QUERY_TEXT_LENGTH:
+            raise ValueError("query has invalid length or content")
+        return
+    if query is not None:
+        raise ValueError("query is not valid for this command")
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -245,6 +256,7 @@ class CliRequest:
         _require_aware(deadline, field="deadline")
         if deadline <= now or deadline - now > MAX_DEADLINE:
             raise ValueError("deadline must be in the future and within the request budget")
+        _validate_command_query(command, query)
         if (start is None) is not (end is None):
             raise ValueError("time filter requires both start and end")
         if start is not None and end is not None:
