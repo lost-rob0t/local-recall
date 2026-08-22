@@ -21,7 +21,7 @@ CAPTURE_B = datetime(2026, 8, 15, 14, 5, tzinfo=UTC)
 
 def render_answer(answer: CitedAnswer, *, clusters: tuple[ActivityCluster, ...]) -> str:
     module = importlib.import_module("local_recall.answering.rendering")
-    renderer = cast(Callable[..., str], getattr(module, "render_answer"))
+    renderer = cast(Callable[..., str], module.__dict__["render_answer"])
     return renderer(answer, clusters=clusters)
 
 
