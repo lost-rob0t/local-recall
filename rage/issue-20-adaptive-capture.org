@@ -86,4 +86,22 @@ Issue acceptance gate:
 - final canonical =./scripts/check= and exact-head GitHub Actions.
 
 * TDD evidence
-Pending. The first RED slice will define the project-owned adaptive controller and perceptual-fingerprint contract before production implementation.
+** Rejected RED candidates
+- =ee63286f35bab420bbe670b29baa3aa258896321= / CI run 403: rejected because Ruff formatting failed before the behavioral contract was evaluated.
+- =d5a941a305f800fcad6b6a604df76cdf79156ee5= / CI run 404: rejected because Ruff import sorting failed before static types/tests.
+- =e3a1b0573770ceae0bde19c48bac8bcd3e01656d= / CI run 405: rejected because one remaining Ruff formatting diff still prevented the behavioral gate.
+
+These are repository hygiene failures, not evidence that the missing #20 behavior is RED.
+
+** Accepted RED
+Test-only head =2460ae320cc6efd52250fa1e7a04133cbb71b2a4=, CI run 407:
+- formatting: passed;
+- Ruff lint: passed;
+- ShellCheck: passed;
+- strict Pyright: failed specifically because =local_recall.capture.adaptive= and its typed controller/hash contract did not exist (=adaptive is unknown import symbol=, followed by the expected unknown members/types);
+- unit/integration layers were not reached because strict typing correctly blocked the missing production boundary.
+
+This is the accepted behavioral RED for Iteration 1. Production implementation begins only after this observed failure.
+
+** Production implementation
+Head =604f268cad4972d51281399f0d874e0595454e06= adds the project-owned standard-library-only adaptive controller and deterministic RGB8 dHash seam. Green verification pending.
