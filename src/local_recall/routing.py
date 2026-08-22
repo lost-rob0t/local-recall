@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from local_recall.domain import (
@@ -10,6 +11,7 @@ from local_recall.domain import (
     ProviderLocation,
     RoutingDecision,
 )
+from local_recall.redaction.detector import DeterministicSecretDetector
 
 
 class RoutingMode(StrEnum):
@@ -31,6 +33,17 @@ class NoRouteError(RuntimeError):
             raise ValueError("routing reason code must not be empty")
         self.reason_code = reason_code
         super().__init__(reason_code)
+
+
+class EgressDeniedError(RuntimeError):
+    def __init__(self, reason_code: str) -> None:
+        if not reason_code:
+            raise ValueError("egress reason code must not be empty")
+        self.reason_code = reason_code
+        super().__init__(reason_code)
+
+    def __repr__(self) -> str:
+        return f"EgressDeniedError(reason_code={self.reason_code!r})"
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +74,105 @@ class RoutingRequest:
     def __post_init__(self) -> None:
         if not self.data_classes:
             raise ValueError("routing request requires data classes")
+
+
+@dataclass(frozen=True, slots=True)
+class EgressPayload:
+    text: str = field(default="", repr=False)
+    metadata: tuple[tuple[str, str], ...] = field(default=(), repr=False)
+    image: bytes = field(default=b"", repr=False)
+
+    def __post_init__(self) -> None:
+        if not self.text and not self.metadata and not self.image:
+            raise ValueError("egress payload must not be empty")
+        names = [name for name, _ in self.metadata]
+        if any(not name for name in names):
+            raise ValueError("metadata names must not be empty")
+        if len(names) != len(set(names)):
+            raise ValueError("metadata names must be unique")
+
+    @property
+    def data_classes(self) -> frozenset[EgressDataClass]:
+        classes: set[EgressDataClass] = set()
+        if self.text:
+            classes.add(EgressDataClass.REDACTED_TEXT)
+        if self.metadata:
+            classes.add(EgressDataClass.APPROVED_METADATA)
+        if self.image:
+            classes.add(EgressDataClass.REDACTED_IMAGE)
+        return frozenset(classes)
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovedEgressPayload:
+    authorization_id: str
+    provider_id: str
+    data_classes: frozenset[EgressDataClass]
+    payload_bytes: int
+    payload_sha256: str
+    text: str = field(default="", repr=False)
+    metadata: tuple[tuple[str, str], ...] = field(default=(), repr=False)
+    image: bytes = field(default=b"", repr=False)
+
+
+class EgressGate:
+    def __init__(self, detector: DeterministicSecretDetector | None = None) -> None:
+        self._detector = detector or DeterministicSecretDetector()
+
+    def approve(
+        self,
+        payload: EgressPayload,
+        authorization: EgressAuthorization,
+    ) -> ApprovedEgressPayload:
+        data_classes = payload.data_classes
+        if not data_classes.issubset(authorization.data_classes):
+            raise EgressDeniedError("egress-data-class-denied")
+
+        self._scan_text(payload.text)
+        for name, value in payload.metadata:
+            if self._detector.sensitive_metadata_name(name) is not None:
+                raise EgressDeniedError("sensitive-metadata")
+            self._scan_text(value)
+
+        payload_bytes, payload_sha256 = self._measure(payload)
+        if payload_bytes > authorization.max_payload_bytes:
+            raise EgressDeniedError("payload-too-large")
+
+        return ApprovedEgressPayload(
+            authorization_id=authorization.authorization_id,
+            provider_id=authorization.provider_id,
+            data_classes=data_classes,
+            payload_bytes=payload_bytes,
+            payload_sha256=payload_sha256,
+            text=payload.text,
+            metadata=payload.metadata,
+            image=payload.image,
+        )
+
+    def _scan_text(self, text: str) -> None:
+        if text and self._detector.scan(text).matches:
+            raise EgressDeniedError("secret-detected")
+
+    @staticmethod
+    def _measure(payload: EgressPayload) -> tuple[int, str]:
+        digest = hashlib.sha256()
+        size = 0
+
+        def add(kind: bytes, content: bytes) -> None:
+            nonlocal size
+            size += len(content)
+            digest.update(kind)
+            digest.update(len(content).to_bytes(8, "big"))
+            digest.update(content)
+
+        if payload.text:
+            add(b"text", payload.text.encode("utf-8"))
+        for name, value in sorted(payload.metadata):
+            add(b"metadata-name", name.encode("utf-8"))
+            add(b"metadata-value", value.encode("utf-8"))
+        if payload.image:
+            add(b"image", payload.image)
+        return size, digest.hexdigest()
 
 
 _REMOTE_PRIVACY_CLASSES = frozenset(
