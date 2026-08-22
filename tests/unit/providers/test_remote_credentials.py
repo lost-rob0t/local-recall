@@ -76,7 +76,9 @@ def test_keyring_backend_failure_is_sanitized() -> None:
 
     provider = OSKeyringCredentialProvider(BrokenBackend())
 
-    with pytest.raises(CredentialResolutionError, match="credential-provider-unavailable") as captured:
+    with pytest.raises(
+        CredentialResolutionError, match="credential-provider-unavailable"
+    ) as captured:
         provider.resolve(
             CredentialReference(provider_id="os-keyring", reference="private-reference-name")
         )
