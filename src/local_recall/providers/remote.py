@@ -245,7 +245,5 @@ class RemoteRequestBuilder:
                     "x-goog-api-key": credential.value,
                 }
             ),
-            body=cls._json_body(
-                {"contents": [{"parts": [{"text": approved.text}]}]}
-            ),
+            body=cls._json_body({"contents": [{"parts": [{"text": approved.text}]}]}),
         )
