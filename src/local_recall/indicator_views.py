@@ -17,9 +17,7 @@ _QTILE_TEXT = {
     IndicatorState.UNAVAILABLE: "LR:?",
 }
 
-_ICON_NAME = {
-    state: f"local-recall-{state.value}" for state in IndicatorState
-}
+_ICON_NAME = {state: f"local-recall-{state.value}" for state in IndicatorState}
 
 
 @dataclass(frozen=True, slots=True, repr=False)
