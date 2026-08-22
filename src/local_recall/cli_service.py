@@ -9,6 +9,7 @@ from typing import Protocol
 from local_recall.cli_contract import (
     MAX_DEADLINE,
     CliCommand,
+    CliDiagnosticCategory,
     CliLifecycleState,
     CliOutcome,
     CliRequest,
@@ -48,6 +49,16 @@ def exit_code_for(outcome: CliOutcome) -> int:
     if outcome in {CliOutcome.FAULTED, CliOutcome.INTERNAL_FAILURE}:
         return 5
     return 130
+
+
+def _expected_diagnostic_category(command: CliCommand) -> CliDiagnosticCategory | None:
+    if command is CliCommand.PROVIDERS:
+        return CliDiagnosticCategory.PROVIDERS
+    if command is CliCommand.HEALTH:
+        return CliDiagnosticCategory.HEALTH
+    if command is CliCommand.STORAGE_STATS:
+        return CliDiagnosticCategory.STORAGE
+    return None
 
 
 def execute_command(
@@ -121,5 +132,21 @@ def execute_command(
             outcome=CliOutcome.INTERNAL_FAILURE,
             reason_code="query-result-missing",
         )
+    elif response.outcome is CliOutcome.SUCCESS:
+        expected_category = _expected_diagnostic_category(command)
+        if expected_category is not None:
+            payload = response.diagnostic_payload
+            if payload is None:
+                response = CliResponse.failure(
+                    request_id=request.request_id,
+                    outcome=CliOutcome.INTERNAL_FAILURE,
+                    reason_code="diagnostic-result-missing",
+                )
+            elif payload.category is not expected_category:
+                response = CliResponse.failure(
+                    request_id=request.request_id,
+                    outcome=CliOutcome.INTERNAL_FAILURE,
+                    reason_code="diagnostic-category-mismatch",
+                )
 
     return CliExecutionResult(response=response, exit_code=exit_code_for(response.outcome))
