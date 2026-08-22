@@ -1,8 +1,3 @@
-from __future__ import annotations
-
-from importlib import import_module
-
-
 EXPECTED_SYMBOLS = (
     "AnswerCitation",
     "AnswerClaim",
@@ -13,7 +8,7 @@ EXPECTED_SYMBOLS = (
 
 
 def test_answering_models_expose_typed_claim_contract() -> None:
-    module = import_module("local_recall.answering.models")
+    module = __import__("local_recall.answering.models", fromlist=("*",))
 
     missing = tuple(name for name in EXPECTED_SYMBOLS if not hasattr(module, name))
     assert missing == ()
