@@ -362,9 +362,7 @@ def test_fixed_native_runner_sanitizes_command_failure_and_bad_layout() -> None:
     private_value = b"DISPLAY=:77 top-secret-display-error"
     failed = FakeNativeExecutor(
         results={
-            "xwd": xorg_capture.NativeCommandResult(
-                return_code=1, stdout=b"", stderr=private_value
-            )
+            "xwd": xorg_capture.NativeCommandResult(return_code=1, stdout=b"", stderr=private_value)
         }
     )
     runner = xorg_capture.FixedXwdNativeRunner(executor=failed)
