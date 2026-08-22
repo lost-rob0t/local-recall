@@ -141,9 +141,10 @@ def test_concurrent_control_requests_remain_independent() -> None:
     assert pause_result[0] == 0
     assert stop_result[1] != pause_result[1]
     assert {request.command for request in requests} == {CliCommand.STOP, CliCommand.PAUSE}
-    assert next(
-        request for request in requests if request.command is CliCommand.STOP
-    ).priority.value == "urgent-control"
+    assert (
+        next(request for request in requests if request.command is CliCommand.STOP).priority.value
+        == "urgent-control"
+    )
 
 
 def test_mismatched_response_id_fails_closed() -> None:
