@@ -7,7 +7,11 @@ from uuid import UUID
 from local_recall.domain._validation import require_nonempty
 from local_recall.domain.frames import RedactedRecord
 from local_recall.domain.privacy import PrivacyClass, ProviderLocation
-from local_recall.domain.providers import GenerationRequest, GenerationRole, ModelCapability
+from local_recall.domain.providers import (
+    GenerationRequest,
+    GenerationRole,
+    ModelCapability,
+)
 from local_recall.ports.providers import GenerationProvider
 
 from .clustering import ActivityCluster
