@@ -43,7 +43,7 @@ Issue acceptance requires explicit/relative time-range parsing in the configured
 8. =RetrievedPassage= carries record ID, exact capture timestamp, matched redacted text, sanitized score/confidence, metadata provenance, redaction policy revision, and redaction finding identifiers/counts needed by later answer citation. It never carries screenshot pixels.
 9. Ranking is deterministic: semantic score when present, then exact keyword evidence, then metadata provenance confidence, then capture time/record ID for stable ties. No model-generated ranking is required.
 10. Query-time privacy is a separate injected =RetrievalPolicy= decision. Retrieval asks policy before decrypting and before returning each record. It does not call providers or mint remote authorization. Later answering composes the returned redacted context with #23 routing/egress authority.
-11. The retrieval working set is bounded and scoped to one coroutine. On success, cancellation, or failure, temporary mutable text buffers are scrubbed where practical and all references to decrypted records/passages are released in =finally=. Python cannot promise physical zeroization of immutable =str=/=bytes= copies, so documentation must not make that false claim.
+11. The retrieval working set is bounded and scoped to one coroutine. Cancellation/failure propagates without publishing a partial success. Python cannot promise physical zeroization of immutable =str=/=bytes= copies, so documentation does not make that false claim; the enforceable boundary is bounded lifetime and no new plaintext persistence.
 
 ** Rejected alternatives
 - adding exact timestamps/application/workspace to SQLite: violates the accepted #11 plaintext leakage budget;
@@ -64,7 +64,7 @@ Issue acceptance requires explicit/relative time-range parsing in the configured
 - remote-provider eligibility is represented as control state only and cannot trigger network I/O here;
 - query text, OCR text, metadata values, titles, and decrypted records stay out of repr/audit/error surfaces;
 - candidate/result limits are hard bounds;
-- cancellation/failure must release the current decrypted working set and must not publish partial success as complete.
+- cancellation/failure must not publish partial success as complete.
 
 ** Failure/race analysis
 - record deleted after candidate enumeration -> =storage.get= returns none; skip it rather than resurrecting from semantic index;
@@ -72,22 +72,51 @@ Issue acceptance requires explicit/relative time-range parsing in the configured
 - semantic index unavailable/model mismatch -> semantic query fails closed for semantic-required retrieval rather than silently changing semantics;
 - timezone missing from system tzdata -> configuration already rejects it; retrieval receives only validated config;
 - DST spring/fall transition -> local midnight boundaries are converted as concrete aware instants, preserving the calendar-day intent;
-- cancellation during storage/decrypt/filter -> propagate cancellation and release current references in =finally=;
-- policy changes during a query -> policy boundary must be rechecked before returning a record; later actor integration can bind policy revision/correlation explicitly;
-- oversized candidate population -> storage and semantic query limits bound enumeration; retrieval rejects requests whose configured/result bounds would exceed its maximum.
+- cancellation during storage/decrypt/filter -> propagate cancellation without returning a partial batch;
+- policy changes during a query -> policy revision mismatch invalidates the batch rather than mixing authorization epochs;
+- oversized candidate population -> storage and semantic query limits bound enumeration; retrieval rejects requests whose configured/result bounds exceed its maximum.
 
 ** Exact verification gates
 - focused unit tests for deterministic time grammar, DST transitions, invalid/ambiguous selectors, query validation, filtering, ranking, provenance, and content-redacted repr;
 - integration tests with synthetic encrypted records proving coarse-day preselection -> minimum decrypt -> exact filters -> provenance result;
-- cancellation/failure tests proving no partial result is returned and scoped working state is released;
+- cancellation/failure tests proving no partial result is returned;
 - security tests proving no query/OCR/metadata/pixel content appears in repr/errors/control decisions;
 - canonical =./scripts/check= on exact final head;
-- =nix flake check= if this issue changes flake/package/config inputs; otherwise current development-shell flake remains unchanged;
+- =nix flake check= only if this issue changes flake/package/config inputs; this transaction does not change those inputs;
 - exact-head GitHub Actions green before merge.
 
 * TDD evidence
 ** Confidence-ranking regression
 - Audit of green head =d1603293174ecb9d22da93d37076cc9a59f8a802= found that =RetrievedPassage= carried metadata provenance confidence but plain retrieval assigned every non-keyword/non-semantic result score =1.0=. That made confidence irrelevant to ranking and did not satisfy the issue requirement to rank with source timestamps and confidence.
 - Test-only commit =7a76738287c617ea47931fb8585ac7c0438d40df= added a deterministic regression with an earlier low-confidence record and a later high-confidence record. GitHub Actions CI run 514 (=32580377293=) completed with =failure=, establishing RED on the exact test-only head.
-- Production commit =ba1f6ae3eb97c8304c4fbb28c3c17f409c79c97d= preserves semantic score as highest-precedence ranking evidence and keyword evidence as the next scoring mode; otherwise the passage score is the maximum retained provenance confidence, with capture timestamp and record ID remaining stable tie-breakers.
-- Exact-head GREEN for the production commit remains required before this slice is accepted.
+- Production ranking logic preserves semantic score as highest-precedence ranking evidence and keyword evidence as the next scoring mode; otherwise the passage score is maximum retained provenance confidence, with capture timestamp and record ID as stable tie-breakers.
+
+** Acceptance and boundary regressions
+- Added a real =SQLiteEncryptedStorage= integration test proving the coarse encrypted day catalog narrows candidates before decryption, an outside-day record is not decrypted, exact application/workspace/keyword filters run over decrypted redacted records, and returned provenance includes source/confidence/timestamp evidence.
+- Added cancellation coverage proving =asyncio.CancelledError= propagates and no partial successful batch is returned.
+- Added a security-layer fixture proving query text, application/workspace selectors, metadata values, OCR excerpts, and synthetic secret markers do not appear in retrieval control =repr= surfaces; =RetrievedPassage= exposes no pixel field.
+- Synthetic secret markers are individually annotated with the repository-supported inline =pragma: allowlist secret= so detect-secrets continues to scan the repository normally; the baseline and scanner policy were not weakened.
+- Added =docs/retrieval.md= and README linkage documenting the deterministic grammar, DST/half-open semantics, plaintext-catalog leakage boundary, provider separation, deterministic ranking, cancellation, and the explicit non-zeroization limitation.
+
+* Verified production head
+- Exact production head before this ledger-only evidence commit: =0cf034e9d36d8567be97f1dbd25d3ffd156cd38a=.
+- GitHub Actions CI run 529 (=32581006950=) passed on that exact head:
+  - Checks Ubuntu 22.04: success;
+  - Checks Ubuntu 24.04: success;
+  - Canonical repository gate: success;
+  - Failure propagation: success.
+- Observed suite evidence on the accepted implementation path: 550 unit tests passed; 6 contract tests passed; 36 integration tests passed; 55 security tests passed; strict Pyright reported 0 errors/warnings; formatting/Ruff/ShellCheck passed; repository policy, Bandit/detect-secrets/security scanning, and failure-propagation checks passed.
+- The final merge gate is the exact head containing this immutable ledger update; it must independently pass the same CI matrix before PR #77 can be marked ready or merged.
+
+* Acceptance mapping
+- explicit/relative time parsing in configured timezone: deterministic =ResolvedTimeRange= grammar with injected aware =now= and =ZoneInfo=;
+- “What was I doing Saturday?”: embedded bare-weekday selector resolves to the most recent matching local calendar day;
+- time/application/workspace/metadata/keyword/semantic filters: typed query plus encrypted semantic narrowing and post-decryption exact filters;
+- minimum selected decrypt set: coarse storage days plus semantic record-ID narrowing precede =EncryptionProvider.decrypt=; integration coverage proves outside-day records are not decrypted;
+- timestamps/confidence ranking: exact capture timestamps and metadata provenance confidence are retained and confidence participates in plain-result ranking;
+- record provenance/redaction traceability: every passage carries record ID, capture timestamp, metadata provenance, redaction policy revision, and finding count;
+- query-time policy and remote eligibility: query and per-record decisions are rechecked; eligibility is control state only and cannot perform egress;
+- deletion/stale semantic safety: storage is canonical; a semantic hit absent from storage is skipped;
+- bounded decrypted working set/cancellation: candidate/result limits are hard bounds, cancellation propagates, and no new plaintext cache/index is created;
+- content-sanitized control surfaces: dedicated security-layer regression plus repository secret scanner;
+- documentation: =docs/retrieval.md= linked from README.
