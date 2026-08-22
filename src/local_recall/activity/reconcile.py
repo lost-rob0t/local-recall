@@ -57,7 +57,9 @@ class ActivityReconciler:
             previous_entries = _previous_entries(previous)
             entries: list[ActivityEntry] = []
             for cluster in clusters:
-                cluster_records = tuple(record_by_id[source_id] for source_id in cluster.source_record_ids)
+                cluster_records = tuple(
+                    record_by_id[source_id] for source_id in cluster.source_record_ids
+                )
                 fingerprint = _source_fingerprint(cluster_records)
                 policy_revisions = _policy_revisions(cluster_records)
                 prior = previous_entries.get((cluster.source_record_ids, fingerprint))
@@ -96,7 +98,8 @@ def _previous_entries(
     if snapshot is None:
         return {}
     return {
-        (entry.cluster.source_record_ids, entry.source_fingerprint): entry for entry in snapshot.entries
+        (entry.cluster.source_record_ids, entry.source_fingerprint): entry
+        for entry in snapshot.entries
     }
 
 
