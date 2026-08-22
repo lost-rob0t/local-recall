@@ -77,9 +77,7 @@ def test_recording_requires_current_authoritative_status() -> None:
 def test_privacy_mode_is_authoritative_and_not_inferred_from_pause() -> None:
     now = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
     client = FakeClient(
-        responses=[
-            status_response(cli_contract.CliLifecycleState.PAUSED, privacy_mode=True)
-        ],
+        responses=[status_response(cli_contract.CliLifecycleState.PAUSED, privacy_mode=True)],
         requests=[],
     )
     controller = indicator.IndicatorController(client=client, timeout=timedelta(seconds=2))
