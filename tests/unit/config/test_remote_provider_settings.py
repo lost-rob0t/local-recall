@@ -24,10 +24,11 @@ def _enabled_provider(**overrides: object) -> dict[str, object]:
 
 def test_enabled_remote_provider_declares_strategy_endpoint_and_model() -> None:
     provider = RemoteProviderSettings.model_validate(_enabled_provider())
+    rendered = provider.model_dump()
 
-    assert provider.kind == "openrouter"
-    assert provider.endpoint == "https://openrouter.ai/api/v1/chat/completions"
-    assert provider.model_id == "anthropic/claude-sonnet-4.6"
+    assert rendered["kind"] == "openrouter"
+    assert rendered["endpoint"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert rendered["model_id"] == "anthropic/claude-sonnet-4.6"
 
 
 @pytest.mark.parametrize("field", ["kind", "endpoint", "model_id"])
