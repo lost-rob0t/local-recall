@@ -166,15 +166,12 @@ def _trusted_window_region(
     if not set(_GEOMETRY_FIELDS).issubset(request.authorization.allowed_metadata_fields):
         return None
     fields = {field.name: field for field in request.metadata.fields}
-    selected = [fields.get(name) for name in _GEOMETRY_FIELDS]
-    if any(field is None or not _trusted_geometry_field(field) for field in selected):
+    x = _trusted_geometry_value(fields.get("window.x"))
+    y = _trusted_geometry_value(fields.get("window.y"))
+    width = _trusted_geometry_value(fields.get("window.width"))
+    height = _trusted_geometry_value(fields.get("window.height"))
+    if x is None or y is None or width is None or height is None:
         return None
-    values = [field.value for field in selected if field is not None]
-    if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
-        return None
-    x, y, width, height = values
-    assert isinstance(x, int) and isinstance(y, int)
-    assert isinstance(width, int) and isinstance(height, int)
     if width <= 0 or height <= 0:
         return None
     if x < snapshot.root_x or y < snapshot.root_y:
@@ -184,6 +181,15 @@ def _trusted_window_region(
     if y + height > snapshot.root_y + snapshot.height:
         return None
     return CaptureRegion(x=x, y=y, width=width, height=height)
+
+
+def _trusted_geometry_value(field: ContextField | None) -> int | None:
+    if field is None or not _trusted_geometry_field(field):
+        return None
+    value = field.value
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
 
 
 def _trusted_geometry_field(field: ContextField) -> bool:
