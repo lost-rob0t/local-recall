@@ -6,7 +6,10 @@ from uuid import UUID
 
 import pytest
 
-from local_recall.activity.features import ActivityFeatureExtractor, ActivityFeatureFailure
+from local_recall.activity.features import (
+    ActivityFeatureExtractor,
+    ActivityFeatureFailure,
+)
 from local_recall.domain.frames import PixelFormat, RedactedFrame, RedactedRecord
 from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.domain.metadata import ContextField, ContextMetadata
