@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from importlib import import_module
 
 import pytest
@@ -39,38 +40,15 @@ def _provider(
     )
 
 
-@pytest.mark.asyncio
-async def test_local_only_selects_local_and_never_remote() -> None:
+def test_local_only_selects_local_and_never_remote() -> None:
     policy = RoutingPolicy(RoutingMode.LOCAL_ONLY)
     providers = (
         _provider("remote", location=ProviderLocation.REMOTE),
         _provider("ollama", location=ProviderLocation.LOCAL),
     )
 
-    decision = await policy.route(
-        RoutingRequest(
-            capability=ModelCapability.GENERATION,
-            privacy_class=PrivacyClass.REDACTED_CONTENT,
-            data_classes=frozenset({EgressDataClass.REDACTED_TEXT}),
-        ),
-        providers,
-    )
-
-    assert decision.provider_id == "ollama"
-    assert decision.location is ProviderLocation.LOCAL
-    assert decision.egress_authorization_id is None
-
-
-@pytest.mark.asyncio
-async def test_local_first_does_not_turn_local_failure_into_remote_permission() -> None:
-    policy = RoutingPolicy(RoutingMode.LOCAL_FIRST)
-    providers = (
-        _provider("ollama", location=ProviderLocation.LOCAL, available=False),
-        _provider("remote", location=ProviderLocation.REMOTE),
-    )
-
-    with pytest.raises(NoRouteError, match="local-unavailable"):
-        await policy.route(
+    decision = asyncio.run(
+        policy.route(
             RoutingRequest(
                 capability=ModelCapability.GENERATION,
                 privacy_class=PrivacyClass.REDACTED_CONTENT,
@@ -78,10 +56,34 @@ async def test_local_first_does_not_turn_local_failure_into_remote_permission() 
             ),
             providers,
         )
+    )
+
+    assert decision.provider_id == "ollama"
+    assert decision.location is ProviderLocation.LOCAL
+    assert decision.egress_authorization_id is None
 
 
-@pytest.mark.asyncio
-async def test_privacy_strict_never_accepts_remote_authorization() -> None:
+def test_local_first_does_not_turn_local_failure_into_remote_permission() -> None:
+    policy = RoutingPolicy(RoutingMode.LOCAL_FIRST)
+    providers = (
+        _provider("ollama", location=ProviderLocation.LOCAL, available=False),
+        _provider("remote", location=ProviderLocation.REMOTE),
+    )
+
+    with pytest.raises(NoRouteError, match="local-unavailable"):
+        asyncio.run(
+            policy.route(
+                RoutingRequest(
+                    capability=ModelCapability.GENERATION,
+                    privacy_class=PrivacyClass.REDACTED_CONTENT,
+                    data_classes=frozenset({EgressDataClass.REDACTED_TEXT}),
+                ),
+                providers,
+            )
+        )
+
+
+def test_privacy_strict_never_accepts_remote_authorization() -> None:
     policy = RoutingPolicy(RoutingMode.PRIVACY_STRICT)
     authorization = EgressAuthorization(
         authorization_id="auth-1",
@@ -91,34 +93,36 @@ async def test_privacy_strict_never_accepts_remote_authorization() -> None:
     )
 
     with pytest.raises(NoRouteError, match="privacy-strict-local-only"):
-        await policy.route(
-            RoutingRequest(
-                capability=ModelCapability.GENERATION,
-                privacy_class=PrivacyClass.REDACTED_CONTENT,
-                data_classes=frozenset({EgressDataClass.REDACTED_TEXT}),
-                authorization=authorization,
-            ),
-            (_provider("remote", location=ProviderLocation.REMOTE),),
+        asyncio.run(
+            policy.route(
+                RoutingRequest(
+                    capability=ModelCapability.GENERATION,
+                    privacy_class=PrivacyClass.REDACTED_CONTENT,
+                    data_classes=frozenset({EgressDataClass.REDACTED_TEXT}),
+                    authorization=authorization,
+                ),
+                (_provider("remote", location=ProviderLocation.REMOTE),),
+            )
         )
 
 
-@pytest.mark.asyncio
-async def test_remote_explicit_requires_authorization() -> None:
+def test_remote_explicit_requires_authorization() -> None:
     policy = RoutingPolicy(RoutingMode.REMOTE_EXPLICIT)
 
     with pytest.raises(NoRouteError, match="egress-authorization-required"):
-        await policy.route(
-            RoutingRequest(
-                capability=ModelCapability.GENERATION,
-                privacy_class=PrivacyClass.REDACTED_CONTENT,
-                data_classes=frozenset({EgressDataClass.REDACTED_TEXT}),
-            ),
-            (_provider("remote", location=ProviderLocation.REMOTE),),
+        asyncio.run(
+            policy.route(
+                RoutingRequest(
+                    capability=ModelCapability.GENERATION,
+                    privacy_class=PrivacyClass.REDACTED_CONTENT,
+                    data_classes=frozenset({EgressDataClass.REDACTED_TEXT}),
+                ),
+                (_provider("remote", location=ProviderLocation.REMOTE),),
+            )
         )
 
 
-@pytest.mark.asyncio
-async def test_remote_explicit_binds_provider_and_authorized_data_classes() -> None:
+def test_remote_explicit_binds_provider_and_authorized_data_classes() -> None:
     policy = RoutingPolicy(RoutingMode.REMOTE_EXPLICIT)
     authorization = EgressAuthorization(
         authorization_id="auth-2",
@@ -131,16 +135,18 @@ async def test_remote_explicit_binds_provider_and_authorized_data_classes() -> N
         _provider("openrouter", location=ProviderLocation.REMOTE),
     )
 
-    decision = await policy.route(
-        RoutingRequest(
-            capability=ModelCapability.GENERATION,
-            privacy_class=PrivacyClass.REDACTED_CONTENT,
-            data_classes=frozenset(
-                {EgressDataClass.REDACTED_TEXT, EgressDataClass.APPROVED_METADATA}
+    decision = asyncio.run(
+        policy.route(
+            RoutingRequest(
+                capability=ModelCapability.GENERATION,
+                privacy_class=PrivacyClass.REDACTED_CONTENT,
+                data_classes=frozenset(
+                    {EgressDataClass.REDACTED_TEXT, EgressDataClass.APPROVED_METADATA}
+                ),
+                authorization=authorization,
             ),
-            authorization=authorization,
-        ),
-        providers,
+            providers,
+        )
     )
 
     assert decision.provider_id == "openrouter"
@@ -148,8 +154,7 @@ async def test_remote_explicit_binds_provider_and_authorized_data_classes() -> N
     assert decision.egress_authorization_id == "auth-2"
 
 
-@pytest.mark.asyncio
-async def test_remote_image_is_denied_unless_explicitly_authorized() -> None:
+def test_remote_image_is_denied_unless_explicitly_authorized() -> None:
     policy = RoutingPolicy(RoutingMode.REMOTE_EXPLICIT)
     authorization = EgressAuthorization(
         authorization_id="auth-3",
@@ -159,23 +164,24 @@ async def test_remote_image_is_denied_unless_explicitly_authorized() -> None:
     )
 
     with pytest.raises(NoRouteError, match="egress-data-class-denied"):
-        await policy.route(
-            RoutingRequest(
-                capability=ModelCapability.GENERATION,
-                privacy_class=PrivacyClass.REDACTED_CONTENT,
-                data_classes=frozenset({EgressDataClass.REDACTED_IMAGE}),
-                authorization=authorization,
-            ),
-            (_provider("remote", location=ProviderLocation.REMOTE),),
+        asyncio.run(
+            policy.route(
+                RoutingRequest(
+                    capability=ModelCapability.GENERATION,
+                    privacy_class=PrivacyClass.REDACTED_CONTENT,
+                    data_classes=frozenset({EgressDataClass.REDACTED_IMAGE}),
+                    authorization=authorization,
+                ),
+                (_provider("remote", location=ProviderLocation.REMOTE),),
+            )
         )
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "privacy_class",
     [PrivacyClass.RAW_CAPTURE, PrivacyClass.SECRET_MATERIAL],
 )
-async def test_raw_and_secret_material_are_not_remotely_routable(
+def test_raw_and_secret_material_are_not_remotely_routable(
     privacy_class: PrivacyClass,
 ) -> None:
     policy = RoutingPolicy(RoutingMode.REMOTE_EXPLICIT)
@@ -187,12 +193,14 @@ async def test_raw_and_secret_material_are_not_remotely_routable(
     )
 
     with pytest.raises(NoRouteError, match="privacy-class-denied"):
-        await policy.route(
-            RoutingRequest(
-                capability=ModelCapability.GENERATION,
-                privacy_class=privacy_class,
-                data_classes=frozenset({EgressDataClass.REDACTED_TEXT}),
-                authorization=authorization,
-            ),
-            (_provider("remote", location=ProviderLocation.REMOTE),),
+        asyncio.run(
+            policy.route(
+                RoutingRequest(
+                    capability=ModelCapability.GENERATION,
+                    privacy_class=privacy_class,
+                    data_classes=frozenset({EgressDataClass.REDACTED_TEXT}),
+                    authorization=authorization,
+                ),
+                (_provider("remote", location=ProviderLocation.REMOTE),),
+            )
         )
