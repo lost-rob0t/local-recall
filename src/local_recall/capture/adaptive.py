@@ -167,10 +167,12 @@ class AdaptiveCaptureController:
                 self._pending_change_context = context
                 self._pending_change_since_ns = now_monotonic_ns
             else:
-                assert self._pending_change_since_ns is not None
-                if now_monotonic_ns < self._pending_change_since_ns:
+                pending_since = self._pending_change_since_ns
+                if pending_since is None:
+                    raise RuntimeError("pending change timestamp missing")
+                if now_monotonic_ns < pending_since:
                     raise ValueError("monotonic time moved backwards")
-                if now_monotonic_ns - self._pending_change_since_ns >= self._debounce_ns:
+                if now_monotonic_ns - pending_since >= self._debounce_ns:
                     self._clear_pending_change()
                     return CaptureTriggerDecision(CaptureTriggerKind.CONTEXT_CHANGE, effective)
         else:
@@ -221,13 +223,15 @@ class AdaptiveCaptureController:
         changed_bits = (self._last_fingerprint ^ fingerprint).bit_count()
         similarity_delta = changed_bits / _HASH_BITS
         if similarity_delta <= self._change_threshold:
-            assert self._span_started_ns is not None
+            span_started = self._span_started_ns
+            if span_started is None:
+                raise RuntimeError("span start timestamp missing")
             self._span_count += 1
             self._span_last_seen_ns = observed_at_monotonic_ns
             return FrameDecision(
                 FrameDisposition.COALESCE,
                 self._span_count,
-                self._span_started_ns,
+                span_started,
                 observed_at_monotonic_ns,
             )
         return self._accept_new_span(context, fingerprint, observed_at_monotonic_ns)
