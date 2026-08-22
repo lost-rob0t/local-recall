@@ -5,6 +5,9 @@ import pytest
 from local_recall.cli_contract import (
     CliCitation,
     CliCommand,
+    CliDiagnosticCategory,
+    CliDiagnosticEntry,
+    CliDiagnosticPayload,
     CliOutcome,
     CliPriority,
     CliQueryPayload,
@@ -129,6 +132,29 @@ def test_query_payload_json_preserves_citations_for_machine_output() -> None:
     assert '"text":"summary"' in rendered
     assert '"record_id":"record-2"' in rendered
     assert '"captured_at":"2026-08-22T18:31:00+00:00"' in rendered
+
+
+def test_diagnostic_payload_is_closed_and_machine_readable() -> None:
+    payload = CliDiagnosticPayload(
+        category=CliDiagnosticCategory.PROVIDERS,
+        entries=(
+            CliDiagnosticEntry(name="ollama", state="available", value="local"),
+        ),
+    )
+    response = CliResponse.success(request_id="req-2", diagnostic_payload=payload)
+
+    assert response.diagnostic_payload == payload
+    assert payload.to_json() == (
+        '{"category":"providers","entries":'
+        '[{"name":"ollama","state":"available","value":"local"}]}'
+    )
+    assert "ollama" not in repr(payload)
+    assert "ollama" not in repr(response)
+
+
+def test_diagnostic_entry_rejects_unbounded_or_unsafe_names() -> None:
+    with pytest.raises(ValueError, match="name"):
+        CliDiagnosticEntry(name="bad\nname", state="available")
 
 
 def test_response_outcomes_are_closed_and_sanitized() -> None:
