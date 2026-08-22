@@ -1,0 +1,89 @@
+#+title: RAGE issue 20 - adaptive scheduling, deduplication, and backpressure
+#+startup: overview
+
+* Immutable issue state
+:PROPERTIES:
+:ISSUE: 20
+:START_COMMIT: cfad936a38e012929b8e6897c1e97a39368a41bc
+:START_BRANCH: main
+:WORK_BRANCH: agent/issue-20-adaptive-capture-rage
+:END:
+
+Consumed issue: =lost-rob0t/local-recall#20=, adaptive scheduling, change detection, deduplication, and backpressure.
+
+Declared dependencies:
+- #14 generic Xorg active-window metadata
+- #19 Xorg screenshot capture backend
+
+Both are satisfied at the immutable starting commit above. Existing issue #8 pipeline credits/HWM/overload behavior remain authoritative and must be reused rather than replaced.
+
+Issue acceptance gate:
+- configurable interval capture;
+- immediate capture on meaningful active-window/workspace changes while rapid churn is debounced;
+- perceptual image hashing and metadata comparison before expensive OCR/model work;
+- identical/near-identical frames do not create redundant stored records;
+- near duplicates can extend a duration span rather than creating another expensive downstream record;
+- bounded queues, CPU/memory budgets, and explicit overload/drop behavior;
+- overload reduces/suspends capture instead of accumulating stale work;
+- deduplication state never crosses capture generations, configuration revisions, or privacy-policy contexts;
+- deterministic synthetic load tests demonstrate bounded memory/state.
+
+* Iteration 1 - generation-scoped adaptive capture controller
+** Repository evidence
+- =CaptureSettings= already owns =cadence_seconds=, =change_threshold=, =raw_queue_items=, =max_queue_items=, and =overload_policy=. #20 should extend these typed controls minimally rather than add parallel configuration.
+- Issue #8 already provides bounded Pykka/ZeroMQ stages, explicit credits, HWM, =drop-newest=/=coalesce-latest=, finite deadlines, generation cancellation, and raw-buffer zeroing. #20 must not create another unbounded queue or scheduler-owned bulk buffer.
+- Issue #19 requires raw producer generation binding at pipeline ingress. Any scheduler/deduper state therefore keys at least on capture generation.
+- =ApprovedCaptureRequest= carries configuration revision and policy revision, while normalized metadata supplies application/workspace/window identity without granting the scheduler capture authority.
+
+** External research
+- Johannes Buchner's ImageHash documents perceptual hashes as similarity fingerprints compared via Hamming distance, and its pHash implementation downsamples luminance, applies a DCT, thresholds low-frequency coefficients, and compares compact fingerprints. Source: https://github.com/JohannesBuchner/imagehash
+- A 2026 controlled comparison of AHash/DHash/PHash/WHash reports that pHash's low-frequency DCT representation is robust to minor appearance/compression changes but costs more CPU than simpler spatial hashes and degrades under large cropping/structural changes. Source: https://doi.org/10.3390/electronics15071493
+- The ImageHash project also records platform/decoder sensitivity and collision/pathology reports. Therefore Local Recall must pin one project-owned RGB8 normalization path and calibrate thresholds with synthetic desktop fixtures rather than inheriting an arbitrary library default as a security/correctness oracle.
+
+** Design conclusions
+1. Keep capture authorization authoritative outside scheduling. The scheduler proposes *when* to request capture; it never bypasses lifecycle/policy/session safety.
+2. Use normalized metadata change keys (=window.id= and =workspace=, with application as secondary context) for cheap trigger detection before pixel acquisition. Missing/untrusted change fields fall back to cadence instead of inventing permissive behavior.
+3. Debounce focus/workspace churn with one bounded pending trigger timestamp/key. A newer change replaces the pending trigger; there is no event queue.
+4. After an authorized RGB8 frame exists, compute one small deterministic perceptual fingerprint before OCR/model work. Exact RGB equality is not required. Hamming distance is compared against a configured bounded threshold.
+5. Dedup identity is not global. State is scoped by a =DedupContext= containing capture generation, configuration revision, policy revision, and normalized privacy-relevant metadata context. A context change resets similarity history even when pixels are identical.
+6. Metadata context changes are never collapsed merely because pixels hash similarly. Window/workspace transition semantics outrank visual similarity.
+7. Store at most the last accepted fingerprint/context plus span timing/counter. No screenshots or OCR text enter scheduler/dedup state.
+8. Reuse #8 pipeline overload signals/credits. Adaptive scheduling may lengthen cadence or suppress non-change captures when overloaded; it must not add buffering. Meaningful change triggers remain subject to the same authorization and pipeline credit gate.
+9. Backoff is bounded and reversible: overload increases effective interval up to a configured ceiling; successful accepted work decays toward base cadence. Stop/pause/lock/generation invalidation clears controller state.
+
+** Rejected alternatives
+- global hash cache across sessions: violates privacy-context isolation and can join unrelated sessions;
+- cryptographic hashes only: cannot detect near-duplicate desktop frames;
+- OCR/text dedup first: spends the expensive work #20 exists to avoid;
+- second screenshot queue owned by the scheduler: duplicates #8 and risks plaintext accumulation;
+- unbounded focus-event queue: rapid window churn becomes stale work;
+- using only perceptual hash and ignoring metadata transitions: visually similar windows/workspaces can represent different activities;
+- blindly adopting ImageHash/scipy in the hot path before dependency/performance evidence: widens the runtime and may introduce cross-platform numerical drift. A small deterministic project-owned fingerprint boundary is preferred unless benchmarks disprove it.
+
+** Security/privacy invariants
+- controller state contains fixed control values, small hashes, opaque generation/revision IDs, and normalized non-content change keys only;
+- no raw frame, OCR, title, URL, command line, secret, or provider payload is retained by scheduling state;
+- context mismatch forces a new accepted observation rather than reusing an old dedup result;
+- stale generations cannot update similarity/span state;
+- overload never makes policy more permissive and never revives stale work;
+- all mutable pixel buffers remain owned by capture/pipeline boundaries and are not copied into scheduling state.
+
+** Failure/race analysis
+- rapid A->B->A focus churn inside debounce window: one latest bounded trigger; cadence remains fallback;
+- generation/policy/config changes while a fingerprint is computed: comparison result is discarded unless context still matches;
+- identical pixels after privacy-policy revision: treated as new context, never deduped across boundary;
+- pipeline overloaded: non-urgent cadence capture is suppressed/backed off; no queue growth;
+- metadata unavailable/stale: no change trigger, but cadence capture may still be proposed and remains subject to policy;
+- clock moves backwards: controller uses injected monotonic time and rejects negative/invalid intervals by construction;
+- hash collision: metadata/context and bounded near-duplicate threshold reduce risk; a hash match is only a dedup heuristic, never authorization evidence.
+
+** Initial verification gates
+- deterministic unit tests for cadence, change triggers, debounce replacement, dedup/context isolation, hamming threshold, and overload backoff;
+- config boundary tests for new bounded controls if configuration must be extended;
+- integration test proving near duplicates are stopped before expensive processor invocation while metadata/context changes are not;
+- load/property-style deterministic test showing controller state remains O(1) and pipeline credits remain the only bulk queue bound;
+- security regression proving controller repr/status does not expose captured content and context reset prevents cross-generation/policy reuse;
+- final canonical =./scripts/check= and exact-head GitHub Actions.
+
+* TDD evidence
+Pending. The first RED slice will define the project-owned adaptive controller and perceptual-fingerprint contract before production implementation.
