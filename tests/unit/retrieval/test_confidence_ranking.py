@@ -12,14 +12,10 @@ from local_recall.domain.metadata import (
     MetadataProvenance,
     SourceConfidence,
 )
-from local_recall.retrieval.service import (
-    RetrievalPolicyDecision,
-    RetrievalQuery,
-    RetrievalService,
-)
+from local_recall.retrieval.service import RetrievalQuery, RetrievalService
 from local_recall.retrieval.time import ResolvedTimeRange
 
-from .test_service import FakeEncryption, FakePolicy, FakeStorage
+from .test_metadata_filters import Encryption, Policy, Storage
 
 
 def _record(captured_at: datetime, confidence: float) -> RedactedRecord:
@@ -57,17 +53,11 @@ def test_plain_retrieval_ranks_higher_confidence_before_earlier_low_confidence()
     earlier_low = _record(datetime(2026, 8, 22, 10, 5, tzinfo=UTC), 0.2)
     later_high = _record(datetime(2026, 8, 22, 10, 10, tzinfo=UTC), 0.95)
     records = (earlier_low, later_high)
-    storage = FakeStorage(records)
-    encryption = FakeEncryption(records)
-    policy = FakePolicy(
-        RetrievalPolicyDecision(
-            allowed=True,
-            remote_provider_eligible=False,
-            policy_revision="query-policy-v1",
-            reason_code="allowed",
-        )
+    service = RetrievalService(
+        storage=Storage(records),
+        encryption=Encryption(records),
+        policy=Policy(),
     )
-    service = RetrievalService(storage=storage, encryption=encryption, policy=policy)
     query = RetrievalQuery(
         time_range=ResolvedTimeRange(
             datetime(2026, 8, 22, 10, 0, tzinfo=UTC),
