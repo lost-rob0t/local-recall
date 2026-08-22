@@ -6,7 +6,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol, cast
 
 import local_recall.indicator as indicator
-from local_recall.cli_contract import PROTOCOL_VERSION, CliLifecycleState, CliRequest, CliResponse, CliStatusPayload
+from local_recall.cli_contract import (
+    PROTOCOL_VERSION,
+    CliLifecycleState,
+    CliRequest,
+    CliResponse,
+    CliStatusPayload,
+)
 
 
 class Presentation(Protocol):
