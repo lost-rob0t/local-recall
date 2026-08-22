@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 from uuid import uuid4
@@ -51,10 +51,10 @@ class FakeNativeRunner:
         return layout
 
 
-@dataclass
 class FakeNativeExecutor:
-    results: dict[str, xorg_capture.NativeCommandResult]
-    calls: list[tuple[str, tuple[str, ...], int, int]] = field(default_factory=list)
+    def __init__(self, results: dict[str, xorg_capture.NativeCommandResult]) -> None:
+        self.results = results
+        self.calls: list[tuple[str, tuple[str, ...], int, int]] = []
 
     async def run(
         self,
