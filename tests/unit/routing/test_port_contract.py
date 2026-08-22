@@ -44,9 +44,7 @@ def test_routing_policy_accepts_the_repository_public_routing_request() -> None:
         supports_vision=False,
     )
 
-    decision = asyncio.run(
-        RoutingPolicy(RoutingMode.REMOTE_EXPLICIT).route(request, (provider,))
-    )
+    decision = asyncio.run(RoutingPolicy(RoutingMode.REMOTE_EXPLICIT).route(request, (provider,)))
 
     assert decision.provider_id == "remote-one"
     assert decision.egress_authorization_id == "auth-port"
