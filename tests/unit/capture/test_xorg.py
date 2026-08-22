@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
@@ -110,12 +111,11 @@ def _window_metadata(*, source_id: str = "xorg-generic") -> ContextMetadata:
     )
 
 
-@pytest.mark.asyncio
-async def test_full_desktop_capture_preserves_generation_and_monitor_provenance() -> None:
+def test_full_desktop_capture_preserves_generation_and_monitor_provenance() -> None:
     reader = FakeReader(snapshot=_snapshot())
     backend = XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
-    frame = await backend.capture(_request())
+    frame = asyncio.run(backend.capture(_request()))
 
     assert reader.calls == 1
     assert frame.generation == CaptureGeneration(7)
@@ -131,12 +131,11 @@ async def test_full_desktop_capture_preserves_generation_and_monitor_provenance(
     ]
 
 
-@pytest.mark.asyncio
-async def test_validated_window_geometry_crops_only_after_root_capture() -> None:
+def test_validated_window_geometry_crops_only_after_root_capture() -> None:
     reader = FakeReader(snapshot=_snapshot())
     backend = XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
-    frame = await backend.capture(_request(metadata=_window_metadata()))
+    frame = asyncio.run(backend.capture(_request(metadata=_window_metadata())))
 
     assert reader.calls == 1
     assert (frame.width, frame.height, frame.stride) == (2, 2, 6)
@@ -147,36 +146,33 @@ async def test_validated_window_geometry_crops_only_after_root_capture() -> None
     assert frame.capture_provenance.region.width == 2
 
 
-@pytest.mark.asyncio
-async def test_untrusted_window_geometry_falls_back_to_full_desktop() -> None:
+def test_untrusted_window_geometry_falls_back_to_full_desktop() -> None:
     reader = FakeReader(snapshot=_snapshot())
     backend = XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
-    frame = await backend.capture(_request(metadata=_window_metadata(source_id="unknown-source")))
+    frame = asyncio.run(backend.capture(_request(metadata=_window_metadata(source_id="unknown-source"))))
 
     assert (frame.width, frame.height) == (4, 2)
     assert frame.pixels == bytes(range(24))
 
 
-@pytest.mark.asyncio
-async def test_expired_deadline_fails_before_reader_is_invoked() -> None:
+def test_expired_deadline_fails_before_reader_is_invoked() -> None:
     reader = FakeReader(snapshot=_snapshot())
     backend = XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 10_000_000_000)
 
     with pytest.raises(XorgCaptureError, match="capture-deadline-expired"):
-        await backend.capture(_request(deadline=9_000_000_000))
+        asyncio.run(backend.capture(_request(deadline=9_000_000_000)))
 
     assert reader.calls == 0
 
 
-@pytest.mark.asyncio
-async def test_reader_failure_is_sanitized() -> None:
+def test_reader_failure_is_sanitized() -> None:
     private_value = "DISPLAY=:77 secret-window-title"
     reader = FakeReader(error=XorgCaptureError("capture-failed", private_detail=private_value))
     backend = XorgCaptureBackend(reader=reader, monotonic_ns=lambda: 1_000_000_000)
 
     with pytest.raises(XorgCaptureError) as caught:
-        await backend.capture(_request())
+        asyncio.run(backend.capture(_request()))
 
     rendered = f"{caught.value!r} {caught.value}"
     assert "capture-failed" in rendered
