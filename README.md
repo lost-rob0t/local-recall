@@ -23,6 +23,7 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [Activity clustering and evidence-grounded summaries](docs/activity-clustering.md)
 - [Cited question answering](docs/answering.md)
 - [Explicit remote provider routing and egress](docs/remote-providers.md)
+- [CLI controls and query contract](docs/cli.md)
 - [Testing policy](docs/testing.md)
 
 ## Development

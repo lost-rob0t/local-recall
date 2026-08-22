@@ -1,0 +1,125 @@
+#+title: RAGE Issue 27 - CLI controls and query commands
+
+* Consumption
+- Issue: #27 =Implement CLI controls and query commands=
+- Immutable starting main: =109834de2453f86a70559c12bd182a409ab310eb=
+- Branch: =agent/issue-27-cli-controls=
+- Dependencies: #7 completed; #26 completed.
+- Open PRs at consumption: none.
+
+* Acceptance criteria
+- Control commands are idempotent and return meaningful exit codes.
+- =stop= confirms that capture and pending persistence have ceased.
+- =ask "What was I doing Saturday?"= produces cited output.
+- Tests cover unavailable daemon, locked key store, and concurrent control requests.
+
+* Required command surface
+- =start=, =pause=, =resume=, =stop=, =status=
+- =privacy-on=, =privacy-off=
+- =ask=, =timeline=, =search= with explicit time filters
+- =config validate=, =providers=, =health=, =storage stats=
+- Machine-readable JSON where useful.
+
+* RAGE Iteration 1
+** Research
+- Repository architecture already defines the CLI/query edge as =ROUTER/DEALER= over owner-only ZeroMQ =ipc://=, with a versioned typed header, bounded message sizes/deadlines, no TCP default, and no raw pixels/OCR/unredacted metadata crossing IPC. It also states that lifecycle commands are authoritative through =LifecycleActor= rather than optimistic client state.
+- Current =src/local_recall/cli.py= is only a read-only local session probe. It directly constructs Qtile/Xorg metadata sources for =status= and therefore is not suitable as the eventual daemon control/query CLI.
+- Issue #29 is explicitly the server/authentication transport issue and depends on #27. Therefore #27 must not steal server-side socket ownership, peer-identity authorization, token issuance, ZAP handling, or daemon request scheduling from #29. The dependency direction implies #27 must establish the client-side typed command contract and CLI behavior that #29's server will implement.
+- ZeroMQ ZMTP =NULL= provides no authentication and =PLAIN= provides no confidentiality; CURVE provides authentication/confidentiality. ZAP is the server-side policy hook. For this issue, the client contract must require authenticated IPC/session credentials without claiming server-side authentication is already implemented; #29 remains responsible for enforcing owner-only endpoint permissions and peer/session authorization.
+- Typer shell completion executes the CLI program and prints completion candidates. Therefore completion must remain static to command/option vocabulary. It must never query daemon history, captured text, application names, workspace names, questions, or storage-derived values.
+- Existing lifecycle semantics guarantee serialized/idempotent start/pause/resume/stop and define =stop= as returning only after the bounded stop barrier reaches =off= or =faulted=. The CLI must report the daemon result and must not infer completion from send success.
+- Existing issue #26 provides evidence-bounded answering and cited rendering. The CLI must transport query requests and render daemon-provided typed/cited results rather than recreate retrieval or answering logic in the client.
+
+** Evidence-derived design
+*** Ownership and dependency split
+- Introduce a narrow =DaemonClient= protocol owned by the CLI boundary. It accepts closed, typed request objects and returns closed, typed response objects. It has no lifecycle, storage, retrieval, provider, capture, or policy implementation imports.
+- Implement the client-side ZeroMQ =ipc://= request path in #27 only if it can be fully bounded and authenticated from already-provisioned endpoint/session material. Do not bind sockets, issue credentials, authorize peers, or implement the daemon server; those are #29.
+- The default CLI transport fails closed with stable sanitized outcomes when endpoint/session material is absent, malformed, unavailable, expired, or times out. No exception text, endpoint path, token, captured content, or provider payload is printed.
+
+*** Request model
+- Closed command enum: =start=, =pause=, =resume=, =stop=, =status=, =privacy-on=, =privacy-off=, =ask=, =timeline=, =search=, =providers=, =health=, =storage-stats=.
+- =config validate= is local validation of explicit configuration input and does not need daemon content. It may use the existing config loader only through its public validation surface.
+- Every daemon request carries protocol version, opaque request ID, command, finite deadline, and a priority class. =stop= and privacy commands are =urgent-control=; start/pause/resume/status are =control=; query/inspection commands are =query=. The client does not schedule; #29's server will honor priority.
+- Query request text is payload content, never routing identity, endpoint name, log value, exception text, or completion candidate.
+
+*** Response and exit semantics
+- Closed outcomes distinguish success, unavailable, unauthorized, locked, invalid, overloaded, timeout, cancelled, faulted, and internal-failure without arbitrary exception text.
+- CLI exit codes are stable by outcome class: success 0; invalid input 2; unavailable/timeout/overloaded 3; unauthorized/locked 4; daemon fault/internal failure 5; cancelled 130 where cancellation is local/user initiated.
+- Control success renders only authoritative daemon state plus sanitized generation/status fields. =stop= is successful only when the daemon response confirms =off=; a =faulted= or ambiguous response is non-zero.
+- =status= must report daemon lifecycle state, not local desktop-probe optimism. Local session capability probing may remain available only as a separate internal diagnostic if still needed; it cannot masquerade as recording state.
+- =ask= renders answer text and citations supplied by the daemon contract. =timeline= and =search= return bounded structured records/summaries whose user-visible content is intentionally requested output; debug/error/status surfaces remain sanitized.
+
+*** Completion/privacy
+- Use Typer's static command/option completion only. No dynamic completions from daemon/storage/query history.
+- Machine-readable =--json= output uses closed response schemas and never serializes arbitrary exceptions or object =repr= values.
+
+*** Concurrency/failure analysis
+- Each CLI invocation has one bounded request lifecycle. No unbounded retry. A retry, if any, must remain same request ID/session and finite; initial implementation prefers no automatic retry so idempotency remains daemon-authoritative.
+- Concurrent CLI processes are independent clients; server-side serialization/priority is #29. Client tests use a deterministic fake =DaemonClient= to prove request priority and that no command executes through direct lifecycle imports.
+- SIGINT/cancellation closes the client socket with zero linger and returns non-success; it must not transform an unknown command outcome into success.
+
+*** Rejected alternatives
+- Directly import/call =LifecycleActor= from CLI: rejected because it bypasses the daemon IPC authority and fails cross-process ownership.
+- Keep current local =status= implementation as lifecycle status: rejected because desktop capability is not authoritative recording state.
+- Implement the #29 server in #27: rejected due to explicit issue ownership/dependency ordering.
+- Dynamic completion from application/workspace/history data: rejected because completion executes out-of-band and would leak captured data into shell/UI surfaces.
+- Generic JSON dictionaries: rejected because architecture requires concrete validated message types across IPC/security boundaries.
+
+*** Exact gates
+- RED must first prove the typed CLI/client contract is absent while formatting/lint/type setup otherwise remains valid.
+- Unit: command-to-request mapping, priority, exit codes, authoritative stop semantics, unavailable/locked/faulted outcomes, static completion, query rendering, no secret/error leakage.
+- Contract: versioned request/response schema validation, size/deadline bounds, closed enums, JSON round trip without arbitrary mappings.
+- Integration: fake daemon/client boundary for concurrent control/query requests, ensuring urgent-control tagging and no direct lifecycle/retrieval/provider calls from CLI.
+- Security: seeded question/title/token/path/exception markers cannot appear in status/error/completion output; structural import test prevents CLI/client transport from importing capture/storage/provider implementations.
+- Canonical =./scripts/check= and applicable =nix flake check=; exact-head GitHub Actions must be green before merge.
+
+** RED
+- Test-only head =4f7c0e2fd6d7ad4335ce8e24cde3780e54f06a83=, CI run =32594185316=, was rejected as RED because Ruff import sorting failed before static typing/tests.
+- Test-only head =799a9140b0f519df064e50bcf26e644311bf5ea0=, CI run =32594237854=, was also rejected because Ruff still classified the unresolved import block as unsorted.
+- Accepted RED: exact head =6735573ed91180685bc740aebd0bdcdfec1c2f86=, CI run =32594272226=. Formatting, Ruff, ShellCheck, and failure-propagation passed. Strict Pyright then failed specifically because =local_recall.cli_contract= did not exist, with the expected cascade of unknown contract types. No production CLI-contract code existed at this head.
+
+** GREEN
+- Implemented the closed typed CLI contract, narrow =DaemonClient= service boundary, stable exit semantics, daemon-authoritative lifecycle rendering, cited query output, explicit time filters, typed diagnostics, local =config validate=, and static completion behavior.
+- The default client intentionally returns the sanitized =daemon-unavailable= outcome until issue #29 provides the authenticated owner-only daemon transport; #27 does not create an unauthenticated interim socket.
+
+* RAGE Iteration 2 - acceptance audit hardening
+** Finding: malformed command payload grammar
+- Acceptance audit found that typed requests could still encode nonsensical command/payload combinations: =ask=/=search= without usable query text and arbitrary query text attached to non-text commands.
+- Test-only head =bf664b196a38fe95f9dbbe3d64ae555aafc772c3=, CI run =32598318258=, is accepted RED evidence. Formatting, Ruff, ShellCheck, strict Pyright, and failure-propagation passed; unit tests then failed exactly 13 new malformed-payload assertions while 640 tests passed.
+- Production head =39f5cdc3e72f56fe30daa0ecd61f40ffbb349ff5= added a closed command/query grammar: =ask=/=search= require bounded nonblank text, and every other command rejects unexpected query text. CI run =32598398084= completed green across both Ubuntu matrices, canonical repository gate, and failure-propagation.
+
+** Finding: lifecycle success without authoritative state
+- Acceptance audit then found that =start=, =pause=, =resume=, =status=, and privacy controls could accept a content-free =SUCCESS= response, violating the daemon-authoritative lifecycle invariant.
+- Head =9dc1df89bec3ff5d02d7fcbea28ff323b100496d=, CI run =32598471027=, was rejected as RED evidence because formatting failed before behavior tests.
+- Corrected test-only head =d92bbc78be32987d73b8e903e9f79794fce80669=, CI run =32598535635=, is accepted RED evidence. Formatting, Ruff, ShellCheck, strict Pyright, and failure-propagation passed; unit tests collected 660 and failed exactly the six new lifecycle-state assertions, with 654 passing. The concurrent STOP/PAUSE regression passed at this RED head.
+- Production change =a7570a14c5d200a6520615b1b35aa722ac55cf16= requires authoritative lifecycle state on every successful lifecycle/privacy/status response before the CLI can return success; =stop= remains stricter and additionally requires =off=.
+
+** Security and documentation completion
+- Added structural security coverage proving =cli.py=, =cli_contract.py=, and =cli_service.py= do not import capture, lifecycle, storage, retrieval, answering, provider, or routing implementations.
+- Added seeded query-content coverage proving payload text cannot enter routing metadata or object representations.
+- Added =docs/cli.md= and README linkage documenting command surface, authoritative-state semantics, typed output, exit codes, privacy properties, and the explicit #29 IPC ownership boundary.
+
+** Pre-ledger final GREEN
+- Exact implementation/documentation head =aef29c46d1751ebfe1bfb6c383fe8ec38ead1856= passed CI run =32598664211=.
+- Ubuntu 24.04 evidence: formatting clean; Ruff clean; ShellCheck clean; strict Pyright =0 errors, 0 warnings=; 660 unit tests passed; 6 contract tests passed; 37 integration tests passed; 59 security tests passed; repository security/policy scans passed.
+- Ubuntu 22.04, canonical =./scripts/check=, and failure-propagation jobs also passed on the same exact head.
+- =nix flake check= could not be executed by this worker runtime because no Nix executable/runtime is available. No Nix result is claimed. The repository's current CI/canonical gate remains the observed executable merge gate for this issue; NixOS packaging/release behavior is separately owned by later issue #40.
+
+* Acceptance mapping
+- Idempotent control / meaningful exits: CLI sends one typed request, performs no client retry, and maps closed outcomes to stable process exit codes.
+- Stop confirmation: successful =stop= requires authoritative lifecycle state =off=; missing state or any other state is non-zero.
+- Cited question output: =ask= transports bounded question text and renders typed answer text plus opaque record/timestamp citations; machine JSON is supported.
+- Unavailable daemon: deterministic =daemon-unavailable= path exits 3 without exception/path leakage.
+- Locked key/session: typed =locked= outcome exits 4 with sanitized reason code.
+- Concurrent controls: deterministic concurrent STOP/PAUSE test proves independent request IDs and preserves urgent priority on STOP without client-side serialization.
+- Required command surface: lifecycle/privacy, =ask=/=timeline=/=search=, =config validate=, =providers=, =health=, and =storage stats= are exposed.
+- Completion privacy: static shell completion constructs no daemon client and exposes no captured/history values.
+- IPC/authentication boundary: #27 defines and tests the client contract; #29 remains the explicit owner of authenticated owner-only IPC/server implementation.
+
+* Hard invariants
+- The CLI must not become a second lifecycle, policy, retrieval, or provider authority.
+- Stop/privacy control must remain higher priority than ordinary query work.
+- CLI/status/error/completion surfaces must not expose captured text, raw OCR, titles, command lines, secrets, provider payloads, or storage paths.
+- No plaintext capture artifacts or temporary screenshot files.
+- Local-first routing and no silent remote fallback remain authoritative.
+- Tests and CI must remain failure-honest; zero required tests is failure and no false-green constructs are permitted.
