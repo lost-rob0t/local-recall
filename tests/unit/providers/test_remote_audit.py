@@ -16,14 +16,10 @@ from local_recall.providers.remote import (
 )
 from local_recall.routing import ApprovedEgressPayload, EgressDataClass
 
-RemoteProviderAuditAdapter = getattr(
-    import_module("local_recall.audit.adapters"),
-    "RemoteProviderAuditAdapter",
-)
-RemoteProviderClient = getattr(
-    import_module("local_recall.providers.remote_client"),
-    "RemoteProviderClient",
-)
+_adapters_module = import_module("local_recall.audit.adapters")
+_remote_client_module = import_module("local_recall.providers.remote_client")
+RemoteProviderAuditAdapter = vars(_adapters_module)["RemoteProviderAuditAdapter"]
+RemoteProviderClient = vars(_remote_client_module)["RemoteProviderClient"]
 
 
 class MemorySink:
