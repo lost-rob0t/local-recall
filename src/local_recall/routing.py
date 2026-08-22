@@ -7,7 +7,6 @@ from enum import StrEnum
 from local_recall.domain import (
     EgressAuthorization,
     EgressDataClass,
-    ModelCapability,
     PrivacyClass,
     ProviderCapabilities,
     ProviderLocation,
