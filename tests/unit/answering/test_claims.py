@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import importlib
+import typing
 from datetime import UTC, datetime
-from importlib import import_module
-from typing import Any
 from uuid import UUID
 
 
@@ -10,14 +10,17 @@ RECORD_A = UUID("00000000-0000-0000-0000-000000000101")
 RECORD_B = UUID("00000000-0000-0000-0000-000000000102")
 CAPTURE_A = datetime(2026, 8, 15, 14, 0, tzinfo=UTC)
 CAPTURE_B = datetime(2026, 8, 15, 14, 5, tzinfo=UTC)
-MODELS: Any = import_module("local_recall.answering.models")
+MODELS: typing.Any = importlib.import_module("local_recall.answering.models")
 
 
-def citation(record_id: UUID = RECORD_A, captured_at: datetime = CAPTURE_A) -> Any:
+def citation(
+    record_id: UUID = RECORD_A,
+    captured_at: datetime = CAPTURE_A,
+) -> typing.Any:
     return MODELS.AnswerCitation(record_id=record_id, captured_at=captured_at)
 
 
-def expect_value_error(callable_: Any, expected: str) -> None:
+def expect_value_error(callable_: typing.Any, expected: str) -> None:
     try:
         callable_()
     except ValueError as exc:
