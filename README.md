@@ -24,6 +24,7 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [Cited question answering](docs/answering.md)
 - [Explicit remote provider routing and egress](docs/remote-providers.md)
 - [CLI controls and query contract](docs/cli.md)
+- [Recording status indicator](docs/indicator.md)
 - [Testing policy](docs/testing.md)
 
 ## Development

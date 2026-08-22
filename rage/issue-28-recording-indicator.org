@@ -1,0 +1,90 @@
+#+title: RAGE Issue 28 - Recording Status Indicator
+#+property: header-args :results output
+
+* Transaction
+- Consumed issue :: #28 [P1] Add an always-visible recording status indicator
+- Immutable starting main :: b798ab94e2c3ccc51ba723ee7f8a36352dfea4c9
+- Branch :: agent/issue-28-recording-indicator
+- Dependencies :: #7, #27 (completed before consumption)
+- Ordering :: first open dependency-satisfied issue after #27 closeout
+
+* Acceptance criteria
+- Indicator cannot display recording unless the daemon authoritatively confirms recording.
+- Stop from the indicator routes through the daemon control boundary and therefore the hard capture gate / stop barrier.
+- Indicator recovers after daemon or Qtile restart by re-querying authoritative daemon state.
+- Notifications, tooltip/status metadata, errors, and representations contain no screenshots, OCR, titles, secrets, command lines, provider payloads, or storage paths.
+- Surface off, paused, recording, privacy mode, locked, overloaded, and faulted states.
+- Provide one-action stop and privacy controls.
+- Show content-free backend, metadata-source, and last-successful-capture information.
+- Provide both a generic Linux tray/status integration and a Qtile integration path.
+
+* Hard invariants
+- The indicator is a client/view. It does not own lifecycle, privacy, policy, capture, storage, or query state.
+- Recording is rendered only from a successful authoritative daemon observation for the current poll cycle; disconnect/error cannot preserve optimistic recording state.
+- Commands use the existing typed daemon client/service boundary; no direct lifecycle/capture imports.
+- Restart/reconnect is pull-authoritative: stale UI state is discarded and status is queried again.
+- No content-bearing value enters indicator models, notifications, labels, tooltips, object reprs, or logs.
+- #29 remains owner of authenticated ipc:// transport/server authorization. #28 must not introduce an unauthenticated interim socket.
+
+* RAGE Iteration 1
+** Research
+- Current Freedesktop StatusNotifierItem 0.1 defines generic application status items as a D-Bus model/view protocol. It intentionally leaves visual rendering to the desktop host. This is preferable to legacy XEmbed because Local Recall can expose state/actions without owning a desktop-window toolkit.
+- Current Qtile documentation supports polling text widgets with bounded update intervals and mouse callbacks. That fits a thin Qtile integration which polls a Local Recall adapter and routes clicks to typed control actions rather than importing daemon internals.
+- Existing Local Recall architecture already defines sanitized status PUB/SUB as non-authoritative and requires clients to query authoritative status after reconnect. Therefore the indicator must treat events as wakeups only; every visible state is produced by a fresh daemon status query.
+- Existing #27 CLI contract deliberately leaves authenticated ipc:// transport to #29. #28 must reuse the injectable DaemonClient boundary and fail closed as unavailable until #29 supplies the real transport.
+
+** Evidence-derived design
+*** Accepted
+1. Add a content-free =indicator= domain package independent of Qtile/D-Bus libraries.
+2. =IndicatorSnapshot= is closed and sanitized: lifecycle display state, privacy flag, backend/source identifiers from bounded allowlisted operational metadata, last-capture timestamp, and observation timestamp. No arbitrary tooltip text.
+3. =IndicatorController= polls authoritative STATUS through the existing =DaemonClient=. Any unavailable/invalid/faulted response discards previous recording display and renders a safe disconnected/faulted state. It never carries recording across a failed poll.
+4. One-action stop/privacy methods send existing typed STOP/PRIVACY commands. UI state is not changed optimistically; a successful command is followed by a status refresh.
+5. Generic Linux integration targets StatusNotifierItem semantics. Keep protocol formatting/actions behind a small adapter so D-Bus transport can be injected/tested and packaging can supply the concrete session-bus dependency without contaminating the indicator authority.
+6. Qtile integration is a pure adapter returning bounded text/action callbacks suitable for =GenPollText= or a tiny downstream widget wrapper. It does not shell out and does not inspect desktop content.
+7. Sanitized status events may trigger an immediate refresh later, but are never authoritative.
+
+*** Rejected alternatives
+- Cached optimistic recording state: rejected because daemon restart/disconnect could leave a false recording indicator or false non-recording indicator.
+- Direct lifecycle/capture imports from tray/Qtile code: rejected as a second authority and violates #27/#29 boundary.
+- Shelling out to =local-recall status=: rejected for the in-package adapter because it adds subprocess/parsing ambiguity and weakens typed correlation; Qtile can call the adapter directly when installed in the same environment.
+- Legacy XEmbed tray implementation: rejected in favor of StatusNotifierItem's model/view protocol.
+- Implementing unauthenticated ipc:// now: rejected; #29 owns it.
+- Notifications containing capture titles/content: rejected; indicator surfaces are control metadata only.
+
+*** State and failure model
+- =recording= may be emitted only from =CliOutcome.SUCCESS + CliLifecycleState.RECORDING= on the current STATUS response.
+- privacy mode is orthogonal display state and must come from an authoritative daemon field, not inferred from PAUSED.
+- unavailable/timeout/cancelled/invalid responses map to non-recording content-free indicator states and clear capture metadata.
+- stop/privacy control completion never proves new display state; refresh does.
+- backend/source strings are bounded operational identifiers, not raw environment values.
+- last-capture timestamps must be timezone-aware.
+
+*** Migration/config
+- Additive API only; no storage/config schema migration in this slice.
+- No new network listener or TCP endpoint.
+- Generic StatusNotifier transport dependency remains optional until packaging; core and Qtile adapter require no GUI dependency.
+
+*** Verification gates
+- RED first for authoritative snapshot/control semantics.
+- Unit tests: all lifecycle states; privacy; failed poll after recording; malformed/sensitive metadata rejection; timezone validation; stop/privacy refresh behavior; object representations.
+- Integration/security: fake daemon restart; stale-status discard; secret/title/OCR sentinel absence; no lifecycle/capture/storage/provider imports from indicator package.
+- Qtile adapter contract tests and generic StatusNotifier model/action tests.
+- canonical ./scripts/check; nix flake check only if Nix inputs are modified.
+- exact-head Actions green before merge.
+
+** RED
+- Initial issue-consumption RED established the missing indicator contracts before production implementation.
+- Acceptance audit on head =a9650970dbdb804e89b089c828fc23fd782574ac= found a remaining design gap: presentation views existed, but there was no concrete Qtile polling/action adapter or generic StatusNotifier action adapter.
+- Test-only commit =2447933e46b6f3053ebecec9e5d3459732b160ee= added those required adapter contracts.
+- CI run 710 observed the intended RED: formatting, Ruff, ShellCheck, strict Pyright, and failure-propagation passed; unit tests failed on both Ubuntu 22.04 and 24.04 because the adapter implementations were absent. Contract/integration/security jobs were skipped after the unit failure. This is accepted behavioral RED evidence.
+
+** GREEN
+- Production commit =90311a3e2eeb272f702f8b9e9ea7cc2cd6effa4d= added =QtileIndicatorAdapter= and =StatusNotifierItemAdapter= over the existing authoritative =IndicatorSurface= without adding lifecycle/capture/storage/provider/transport authority.
+- Integration coverage now verifies recording -> daemon unavailable -> recovered paused state, action-driven refresh after stop/privacy commands, and stale metadata discard.
+- Security coverage injects recognizable secret/title/OCR/provider sentinel text into daemon failure reasons and verifies it never reaches tray presentation; structural tests reject indicator imports of capture/storage/provider/policy/lifecycle/subprocess/socket/zmq authority.
+- =docs/indicator.md= documents authority boundaries, closed states, content minimization, controls, Qtile integration, generic StatusNotifier integration, and restart behavior.
+- Final exact-head CI remains the merge gate and must be recorded below before completion.
+
+* Verification
+- No Nix inputs changed, so no new Nix dependency gate is introduced by this issue.
+- PR must remain unmerged until exact final head passes canonical =./scripts/check=, both Ubuntu matrices, security checks, failure-propagation, and review/mergeability inspection.

@@ -17,6 +17,7 @@ MAX_CITATIONS = 256
 MAX_RECORD_ID_LENGTH = 128
 MAX_DIAGNOSTIC_ENTRIES = 256
 MAX_DIAGNOSTIC_FIELD_LENGTH = 128
+MAX_STATUS_IDENTIFIER_LENGTH = 128
 
 
 class CliPriority(StrEnum):
@@ -111,6 +112,16 @@ def _validate_diagnostic_field(value: str, *, field: str) -> None:
     if not value or len(value) > MAX_DIAGNOSTIC_FIELD_LENGTH:
         raise ValueError(f"{field} has invalid length")
     if any(character in "\r\n\x00" for character in value):
+        raise ValueError(f"{field} contains invalid characters")
+
+
+def _validate_status_identifier(value: str, *, field: str) -> None:
+    if not value or len(value) > MAX_STATUS_IDENTIFIER_LENGTH:
+        raise ValueError(f"{field} has invalid length")
+    if any(
+        not (character.isascii() and (character.isalnum() or character in "-_."))
+        for character in value
+    ):
         raise ValueError(f"{field} contains invalid characters")
 
 
@@ -229,6 +240,41 @@ class CliDiagnosticPayload:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
+class CliStatusPayload:
+    """Content-free authoritative status details intended for status indicators."""
+
+    privacy_mode: bool
+    capture_backend: str | None = None
+    metadata_source: str | None = None
+    last_capture_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if self.capture_backend is not None:
+            _validate_status_identifier(self.capture_backend, field="capture_backend")
+        if self.metadata_source is not None:
+            _validate_status_identifier(self.metadata_source, field="metadata_source")
+        if self.last_capture_at is not None:
+            _require_aware(self.last_capture_at, field="last_capture_at")
+
+    def to_dict(self) -> dict[str, bool | str | None]:
+        return {
+            "privacy_mode": self.privacy_mode,
+            "capture_backend": self.capture_backend,
+            "metadata_source": self.metadata_source,
+            "last_capture_at": (
+                self.last_capture_at.isoformat() if self.last_capture_at is not None else None
+            ),
+        }
+
+    def __repr__(self) -> str:
+        return (
+            "CliStatusPayload("
+            f"privacy_mode={self.privacy_mode}, capture_backend=<opaque>, "
+            "metadata_source=<opaque>, last_capture_at=<timestamp>)"
+        )
+
+
+@dataclass(frozen=True, slots=True, repr=False)
 class CliRequest:
     """One bounded request from the CLI to the daemon."""
 
@@ -310,6 +356,7 @@ class CliResponse:
     lifecycle_state: CliLifecycleState | None = None
     query_payload: CliQueryPayload | None = None
     diagnostic_payload: CliDiagnosticPayload | None = None
+    status_payload: CliStatusPayload | None = None
 
     @classmethod
     def success(
@@ -319,13 +366,18 @@ class CliResponse:
         lifecycle_state: CliLifecycleState | str | None = None,
         query_payload: CliQueryPayload | None = None,
         diagnostic_payload: CliDiagnosticPayload | None = None,
+        status_payload: CliStatusPayload | None = None,
     ) -> CliResponse:
         state = CliLifecycleState(lifecycle_state) if lifecycle_state is not None else None
-        payload_count = sum(
-            value is not None for value in (state, query_payload, diagnostic_payload)
+        content_payload_count = sum(
+            value is not None for value in (query_payload, diagnostic_payload, status_payload)
         )
-        if payload_count > 1:
+        if content_payload_count > 1:
             raise ValueError("success response cannot mix payload types")
+        if state is not None and (query_payload is not None or diagnostic_payload is not None):
+            raise ValueError("lifecycle state cannot accompany query or diagnostic payload")
+        if status_payload is not None and state is None:
+            raise ValueError("status payload requires lifecycle state")
         return cls(
             protocol_version=PROTOCOL_VERSION,
             request_id=request_id,
@@ -333,6 +385,7 @@ class CliResponse:
             lifecycle_state=state,
             query_payload=query_payload,
             diagnostic_payload=diagnostic_payload,
+            status_payload=status_payload,
         )
 
     @classmethod
@@ -373,6 +426,9 @@ class CliResponse:
                     if self.diagnostic_payload is not None
                     else None
                 ),
+                "status_payload": (
+                    self.status_payload.to_dict() if self.status_payload is not None else None
+                ),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -390,9 +446,11 @@ class CliResponse:
             if self.diagnostic_payload is not None
             else None
         )
+        status = "present" if self.status_payload is not None else None
         return (
             "CliResponse("
             f"outcome={self.outcome.value!r}, request_id={self.request_id!r}, "
             f"reason_code={self.reason_code!r}, lifecycle_state={state!r}, "
-            f"query_payload={query!r}, diagnostic_payload={diagnostic!r})"
+            f"query_payload={query!r}, diagnostic_payload={diagnostic!r}, "
+            f"status_payload={status!r})"
         )
