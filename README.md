@@ -19,6 +19,7 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [Sanitized audit logging and operational hardening](docs/audit.md)
 - [Desktop session and metadata strategy resolution](docs/session-resolution.md)
 - [Local embeddings and encrypted semantic index](docs/semantic-index.md)
+- [Explicit remote provider routing and egress](docs/remote-providers.md)
 - [Testing policy](docs/testing.md)
 
 ## Development
