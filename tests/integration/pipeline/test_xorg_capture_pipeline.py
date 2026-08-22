@@ -99,7 +99,6 @@ def test_approved_xorg_capture_enters_bounded_in_memory_redaction_pipeline() -> 
             record_id=frame.frame_id,
             frames=raw_frames,
             expected_generation=frame.generation,
-            deadline_monotonic_ns=2_000_000_000,
         )
         assert result.status is SubmissionStatus.ACCEPTED
         assert sink.event.wait(2)
@@ -131,7 +130,6 @@ def test_late_xorg_frame_cannot_be_relabelled_after_generation_invalidation() ->
                 record_id=frame.frame_id,
                 frames=raw_frames,
                 expected_generation=frame.generation,
-                deadline_monotonic_ns=2_000_000_000,
             )
         except StaleCaptureGeneration:
             pass
