@@ -41,7 +41,7 @@ Issue acceptance requires explicit/relative time-range parsing in the configured
 6. Decrypt each candidate at most once and only when it survives every pre-decryption selector available for that query (time bucket and semantic record-ID narrowing). Never decrypt records merely to build a global plaintext index.
 7. =RetrievalQuery= is immutable and bounded: resolved time selector, optional exact application/workspace selectors, optional metadata field/value selectors, optional keyword terms, optional semantic text, and a hard result limit.
 8. =RetrievedPassage= carries record ID, exact capture timestamp, matched redacted text, sanitized score/confidence, metadata provenance, redaction policy revision, and redaction finding identifiers/counts needed by later answer citation. It never carries screenshot pixels.
-9. Ranking is deterministic: semantic score when present, then exact keyword evidence/metadata confidence, then capture time/record ID for stable ties. No model-generated ranking is required.
+9. Ranking is deterministic: semantic score when present, then exact keyword evidence, then metadata provenance confidence, then capture time/record ID for stable ties. No model-generated ranking is required.
 10. Query-time privacy is a separate injected =RetrievalPolicy= decision. Retrieval asks policy before decrypting and before returning each record. It does not call providers or mint remote authorization. Later answering composes the returned redacted context with #23 routing/egress authority.
 11. The retrieval working set is bounded and scoped to one coroutine. On success, cancellation, or failure, temporary mutable text buffers are scrubbed where practical and all references to decrypted records/passages are released in =finally=. Python cannot promise physical zeroization of immutable =str=/=bytes= copies, so documentation must not make that false claim.
 
@@ -86,4 +86,8 @@ Issue acceptance requires explicit/relative time-range parsing in the configured
 - exact-head GitHub Actions green before merge.
 
 * TDD evidence
-No RED has been accepted yet. Tests must first pass formatting/lint/type collection far enough to fail for the missing retrieval behavior rather than for harness mistakes.
+** Confidence-ranking regression
+- Audit of green head =d1603293174ecb9d22da93d37076cc9a59f8a802= found that =RetrievedPassage= carried metadata provenance confidence but plain retrieval assigned every non-keyword/non-semantic result score =1.0=. That made confidence irrelevant to ranking and did not satisfy the issue requirement to rank with source timestamps and confidence.
+- Test-only commit =7a76738287c617ea47931fb8585ac7c0438d40df= added a deterministic regression with an earlier low-confidence record and a later high-confidence record. GitHub Actions CI run 514 (=32580377293=) completed with =failure=, establishing RED on the exact test-only head.
+- Production commit =ba1f6ae3eb97c8304c4fbb28c3c17f409c79c97d= preserves semantic score as highest-precedence ranking evidence and keyword evidence as the next scoring mode; otherwise the passage score is the maximum retained provenance confidence, with capture timestamp and record ID remaining stable tie-breakers.
+- Exact-head GREEN for the production commit remains required before this slice is accepted.
