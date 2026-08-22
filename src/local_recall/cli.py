@@ -71,6 +71,18 @@ def _render_query_payload(payload: CliQueryPayload) -> str:
     return "\n".join(lines)
 
 
+def _parse_query_bound(value: str | None, *, name: str) -> dt.datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise typer.BadParameter(f"{name} must be ISO-8601 with a timezone") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise typer.BadParameter(f"{name} must include a timezone")
+    return parsed
+
+
 def _run_daemon_command(command: CliCommand) -> None:
     now = dt.datetime.now(dt.UTC)
     result = execute_command(
@@ -88,12 +100,14 @@ def _run_query_command(
     command: CliCommand,
     *,
     query: str | None,
-    start: dt.datetime | None,
-    end: dt.datetime | None,
+    start: str | None,
+    end: str | None,
     json_output: bool,
 ) -> None:
     if (start is None) is not (end is None):
         raise typer.BadParameter("start and end must be supplied together")
+    parsed_start = _parse_query_bound(start, name="start")
+    parsed_end = _parse_query_bound(end, name="end")
 
     now = dt.datetime.now(dt.UTC)
     result = execute_command(
@@ -102,8 +116,8 @@ def _run_query_command(
         now=now,
         timeout=_DEFAULT_TIMEOUT,
         query=query,
-        start=start,
-        end=end,
+        start=parsed_start,
+        end=parsed_end,
     )
     if result.exit_code != 0:
         typer.echo(_render_response(result.response))
@@ -172,8 +186,8 @@ def privacy_off() -> None:
 @app.command()
 def ask(
     question: str,
-    start: Annotated[dt.datetime | None, typer.Option()] = None,
-    end: Annotated[dt.datetime | None, typer.Option()] = None,
+    start: Annotated[str | None, typer.Option()] = None,
+    end: Annotated[str | None, typer.Option()] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Ask a question over retained activity with citations."""
@@ -189,8 +203,8 @@ def ask(
 @app.command()
 def search(
     query: str,
-    start: Annotated[dt.datetime | None, typer.Option()] = None,
-    end: Annotated[dt.datetime | None, typer.Option()] = None,
+    start: Annotated[str | None, typer.Option()] = None,
+    end: Annotated[str | None, typer.Option()] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Search retained activity with optional explicit time bounds."""
@@ -205,8 +219,8 @@ def search(
 
 @app.command()
 def timeline(
-    start: Annotated[dt.datetime | None, typer.Option()] = None,
-    end: Annotated[dt.datetime | None, typer.Option()] = None,
+    start: Annotated[str | None, typer.Option()] = None,
+    end: Annotated[str | None, typer.Option()] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Render a bounded activity timeline."""
