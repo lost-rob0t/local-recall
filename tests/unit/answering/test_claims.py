@@ -1,6 +1,5 @@
 import local_recall.answering.models
 
-
 models = local_recall.answering.models
 RECORD_A = models.UUID("00000000-0000-0000-0000-000000000101")
 RECORD_B = models.UUID("00000000-0000-0000-0000-000000000102")
