@@ -39,10 +39,12 @@ def _default_client_factory() -> DaemonClient:
 _client_factory: ClientFactory = _default_client_factory
 
 
-def set_client_factory(factory: ClientFactory) -> None:
-    """Inject the daemon client boundary for tests and later transport composition."""
+def set_client_factory(factory: ClientFactory) -> ClientFactory:
+    """Replace the daemon client factory and return the prior factory."""
     global _client_factory
+    previous = _client_factory
     _client_factory = factory
+    return previous
 
 
 def _render_response(response: CliResponse) -> str:
