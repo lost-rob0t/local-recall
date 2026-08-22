@@ -1,0 +1,60 @@
+#+title: RAGE issue 23 closeout - model routing and remote egress
+#+startup: overview
+
+* Canonical transaction
+Primary work log: [[file:issue-23-model-routing-egress.org][issue-23-model-routing-egress.org]]
+
+Consumed issue: =lost-rob0t/local-recall#23=.
+Immutable starting =main=: =14db91804a6233bf676a1820e04c29db2abfd2fd=.
+Implementation PR: =#75=.
+Final implementation head: =6d234809b189919d726fadc6bdb89bf00183bc78=.
+Squash merge commit: =3de103b4ce2f3ae452bb8599d1cfbfe41a0774b2=.
+
+* Final exact-head verification
+CI run =#490= on exact PR head =6d234809b189919d726fadc6bdb89bf00183bc78= completed successfully before merge.
+
+Verified gates:
+- Ubuntu 22.04 matrix: success;
+- Ubuntu 24.04 matrix: success;
+- Ruff formatting: success;
+- Ruff lint: success;
+- ShellCheck: success;
+- strict Pyright: success;
+- unit tests: success;
+- contract tests: success;
+- integration tests: success;
+- security tests: success;
+- repository security scans: success;
+- canonical =./scripts/check=: success;
+- failure-propagation verification: success.
+
+The immediately preceding documentation/import-cleanup head =88bd86699463919a7cb78dd5e9a1cc819c0714fd= failed strict Pyright only because the new audit test used an unnecessary =FakeBuilder= that was not a subtype of the concrete =RemoteRequestBuilder= annotation. Production code had already passed CI #487. The test-only fake was removed instead of widening the production security boundary; the corrected exact head is the green #490 head above.
+
+* Merge and issue state
+PR #75 was marked ready only after exact-head CI #490 was green, mergeability was re-read, and there were no reviews or unresolved review threads.
+
+PR #75 was squash-merged with expected-head protection at =6d234809b189919d726fadc6bdb89bf00183bc78=.
+
+GitHub closed issue #23 automatically as =completed= through =Closes #23= in the PR body. The resulting canonical =main= merge commit is =3de103b4ce2f3ae452bb8599d1cfbfe41a0774b2=.
+
+* Acceptance closeout
+Issue #23 is complete with the following verified properties:
+- routing modes =local-only=, =local-first=, =remote-explicit=, and =privacy-strict=;
+- remote providers disabled by default;
+- local inference failure cannot silently grant or select remote egress;
+- exact provider/data-class authorization before remote routing;
+- text/metadata/image egress classes with images explicit-only;
+- deterministic secret re-scan, sensitive-metadata rejection, payload digest and byte ceiling;
+- provider strategies for OpenAI-compatible APIs, OpenRouter, Anthropic, and Google where practical;
+- OpenRouter upstream provider fallback disabled;
+- credentials resolved through the key-provider seam immediately before request construction;
+- bounded direct HTTPS transport with certificate/hostname verification, no redirects, and sanitized errors;
+- same-provider-only bounded retries, deadline handling, and cancellation;
+- control-only sanitized audit events for remote authorization/rejection;
+- mock/injected tests for request headers/shapes, filtering, transport failures, retries, cancellation, and privacy invariants;
+- =docs/remote-providers.md= and README documentation.
+
+No Nix input/package/flake output changed in #23, so no issue-specific Nix rebuild gate was introduced. The repository's applicable canonical CI gates above are green.
+
+* Next work
+Do not consume another issue in this closeout transaction. Re-enumerate current remote backlog and consume the next dependency-satisfied issue on the next RAGE iteration.
