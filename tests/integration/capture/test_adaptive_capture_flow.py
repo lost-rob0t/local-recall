@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -7,11 +8,7 @@ import pytest
 
 from local_recall.capture.adaptive import AdaptiveCaptureController, FrameDisposition
 from local_recall.capture.flow import AdaptiveCaptureFlow, AdaptiveCaptureOutcome
-from local_recall.domain.capture import (
-    ApprovedCaptureRequest,
-    CaptureAuthorization,
-    CaptureIntent,
-)
+from local_recall.domain.capture import ApprovedCaptureRequest, CaptureAuthorization, CaptureIntent
 from local_recall.domain.frames import PixelFormat, RawFrame
 from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.domain.metadata import (
@@ -102,14 +99,17 @@ def _flow(backend: _Backend) -> AdaptiveCaptureFlow:
     )
 
 
-@pytest.mark.asyncio
-async def test_duplicate_frame_is_coalesced_before_downstream_admission() -> None:
+def test_duplicate_frame_is_coalesced_before_downstream_admission() -> None:
     backend = _Backend([_frame(), _frame()])
     flow = _flow(backend)
     request = _request()
 
-    first = await flow.capture_if_due(request=request, now_monotonic_ns=1_000_000_000)
-    second = await flow.capture_if_due(request=request, now_monotonic_ns=2_000_000_000)
+    first = asyncio.run(
+        flow.capture_if_due(request=request, now_monotonic_ns=1_000_000_000)
+    )
+    second = asyncio.run(
+        flow.capture_if_due(request=request, now_monotonic_ns=2_000_000_000)
+    )
 
     assert first.outcome is AdaptiveCaptureOutcome.ADMIT
     assert first.frame is not None
@@ -120,18 +120,21 @@ async def test_duplicate_frame_is_coalesced_before_downstream_admission() -> Non
     assert backend.calls == 2
 
 
-@pytest.mark.asyncio
-async def test_privacy_revision_change_never_reuses_duplicate_state() -> None:
+def test_privacy_revision_change_never_reuses_duplicate_state() -> None:
     backend = _Backend([_frame(), _frame()])
     flow = _flow(backend)
 
-    first = await flow.capture_if_due(
-        request=_request(policy_revision="policy-a"),
-        now_monotonic_ns=1_000_000_000,
+    first = asyncio.run(
+        flow.capture_if_due(
+            request=_request(policy_revision="policy-a"),
+            now_monotonic_ns=1_000_000_000,
+        )
     )
-    second = await flow.capture_if_due(
-        request=_request(policy_revision="policy-b"),
-        now_monotonic_ns=2_000_000_000,
+    second = asyncio.run(
+        flow.capture_if_due(
+            request=_request(policy_revision="policy-b"),
+            now_monotonic_ns=2_000_000_000,
+        )
     )
 
     assert first.outcome is AdaptiveCaptureOutcome.ADMIT
@@ -139,20 +142,20 @@ async def test_privacy_revision_change_never_reuses_duplicate_state() -> None:
     assert second.frame is not None
 
 
-@pytest.mark.asyncio
-async def test_stale_backend_frame_is_rejected_before_dedup_state_changes() -> None:
+def test_stale_backend_frame_is_rejected_before_dedup_state_changes() -> None:
     backend = _Backend([_frame(generation=1)])
     flow = _flow(backend)
 
     with pytest.raises(ValueError, match="generation"):
-        await flow.capture_if_due(
-            request=_request(generation=2),
-            now_monotonic_ns=1_000_000_000,
+        asyncio.run(
+            flow.capture_if_due(
+                request=_request(generation=2),
+                now_monotonic_ns=1_000_000_000,
+            )
         )
 
 
-@pytest.mark.asyncio
-async def test_not_due_does_not_invoke_capture_backend() -> None:
+def test_not_due_does_not_invoke_capture_backend() -> None:
     backend = _Backend([_frame(), _frame()])
     flow = AdaptiveCaptureFlow(
         backend=backend,
@@ -164,8 +167,12 @@ async def test_not_due_does_not_invoke_capture_backend() -> None:
     )
     request = _request()
 
-    first = await flow.capture_if_due(request=request, now_monotonic_ns=1_000_000_000)
-    second = await flow.capture_if_due(request=request, now_monotonic_ns=2_000_000_000)
+    first = asyncio.run(
+        flow.capture_if_due(request=request, now_monotonic_ns=1_000_000_000)
+    )
+    second = asyncio.run(
+        flow.capture_if_due(request=request, now_monotonic_ns=2_000_000_000)
+    )
 
     assert first.outcome is AdaptiveCaptureOutcome.ADMIT
     assert second.outcome is AdaptiveCaptureOutcome.SKIP
