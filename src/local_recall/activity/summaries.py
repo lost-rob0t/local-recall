@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import cast
 from uuid import UUID
 
 from local_recall.domain._validation import require_nonempty
@@ -143,19 +144,28 @@ def _validate_evidence(
     record_by_id: dict[UUID, RedactedRecord],
 ) -> tuple[tuple[UUID, str], ...]:
     try:
-        decoded = json.loads(payload)
+        decoded_raw: object = json.loads(payload)
     except (json.JSONDecodeError, TypeError) as exc:
         raise ActivitySummaryFailure("invalid activity summary output") from exc
-    if not isinstance(decoded, dict) or set(decoded) != {"evidence"}:
+    if not isinstance(decoded_raw, dict):
         raise ActivitySummaryFailure("invalid activity summary output")
-    raw_evidence = decoded["evidence"]
-    if not isinstance(raw_evidence, list) or not 1 <= len(raw_evidence) <= _MAX_EXCERPTS:
+    decoded = cast(dict[str, object], decoded_raw)
+    if set(decoded) != {"evidence"}:
+        raise ActivitySummaryFailure("invalid activity summary output")
+    raw_evidence_obj = decoded["evidence"]
+    if not isinstance(raw_evidence_obj, list):
+        raise ActivitySummaryFailure("invalid activity summary output")
+    raw_evidence = cast(list[object], raw_evidence_obj)
+    if not 1 <= len(raw_evidence) <= _MAX_EXCERPTS:
         raise ActivitySummaryFailure("invalid activity summary output")
 
     evidence: list[tuple[UUID, str]] = []
     seen: set[UUID] = set()
-    for item in raw_evidence:
-        if not isinstance(item, dict) or set(item) != {"source_id", "excerpt"}:
+    for raw_item in raw_evidence:
+        if not isinstance(raw_item, dict):
+            raise ActivitySummaryFailure("invalid activity summary output")
+        item = cast(dict[str, object], raw_item)
+        if set(item) != {"source_id", "excerpt"}:
             raise ActivitySummaryFailure("invalid activity summary output")
         source_text = item["source_id"]
         excerpt = item["excerpt"]
