@@ -118,9 +118,7 @@ def test_semantic_hits_narrow_decryption_and_cannot_resurrect_deleted_records() 
 
     result = asyncio.run(service.retrieve(query))
 
-    assert semantic.queries == [
-        ("architecture work", time_range.start_at, time_range.end_at, 100)
-    ]
+    assert semantic.queries == [("architecture work", time_range.start_at, time_range.end_at, 100)]
     assert decryptor.decrypted == [selected.record_id]
     assert tuple(item.record_id for item in result.passages) == (selected.record_id,)
     assert result.passages[0].score == 0.91
