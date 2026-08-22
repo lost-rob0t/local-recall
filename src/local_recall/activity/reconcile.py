@@ -24,7 +24,7 @@ class _Digest(Protocol):
 
 
 class ActivityReconciler:
-    __slots__ = ("_feature_extractor", "_segmenter", "_store", "_summarizer", "_lock")
+    __slots__ = ("_feature_extractor", "_lock", "_segmenter", "_store", "_summarizer")
 
     def __init__(
         self,
