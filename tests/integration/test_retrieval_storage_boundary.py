@@ -115,7 +115,7 @@ def _record(
         height=1,
         stride=3,
         pixel_format=PixelFormat.RGB8,
-        pixels=b"REDACTED-PIXELS",
+        pixels=b"PIX",
         metadata=metadata,
         ocr_text=("retrieval boundary evidence",),
         findings=(),
