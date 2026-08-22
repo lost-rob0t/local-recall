@@ -50,11 +50,14 @@ Use a narrow Xlib adapter behind =CaptureBackend=, with native calls isolated in
 
 The production backend owns no persistence and no temporary-file path. It receives only an =ApprovedCaptureRequest=. Deadline checks happen immediately before entering the blocking native call and immediately after it returns; native work runs through a bounded executor boundary so cancellation/timeout cannot unblock later persistence merely because the native function eventually returns.
 
+Focused-window capture uses one authorized virtual-root image followed by an in-memory crop from validated normalized geometry. It does not call =XGetImage= on the focused window itself, avoiding viewability/overlap/depth races at a second X11 read boundary.
+
 *** Rejected alternatives
 - Shelling out to ImageMagick/import, scrot, or xwd: stdout could be kept in memory, but this adds executable/version/parser variability and a larger hostile-output surface. It also makes provenance and pixel-format guarantees depend on external CLI behavior.
 - Reimplementing X11 GetImage over the wire: unnecessary protocol/security complexity when the platform already provides maintained libX11.
 - Letting the backend evaluate lifecycle, lock, or privacy state itself: duplicates #7/#17/#18 authorities and creates race-prone split-brain authorization.
 - Writing screenshot files and reopening them: directly violates the issue's plaintext-artifact invariant.
+- Capturing the focused window as a second X drawable: adds X11 visibility/overlap/depth failure modes without improving the privacy boundary; root capture plus validated memory crop is simpler and deterministic.
 
 *** Invariants
 1. The public production capture method requires a typed =ApprovedCaptureRequest=; no unauthenticated convenience method exists.
@@ -84,6 +87,15 @@ The production backend owns no persistence and no temporary-file path. It receiv
 
 *** Migration/configuration
 No persistent-data migration is intended. Frame/provenance domain types may gain additive fields. No remote-provider or network configuration changes belong to this issue.
+
+** TDD ledger
+*** RED 1 - production capture API absent
+- Test-only head: =7e5d2ec5418544ca8f3f003c0b73b3dd2ab82b90=.
+- GitHub Actions run: =32557673759=; Ubuntu 24.04 job =96994339021=.
+- Formatting, Ruff, ShellCheck, and strict Pyright all passed before the unit suite.
+- Unit result: 452 collected, 451 passed, exactly 1 failed.
+- Expected failure: =tests/unit/capture/test_xorg.py::test_xorg_capture_backend_module_exists= raised =ModuleNotFoundError: No module named 'local_recall.capture'=.
+- This is accepted RED evidence because the failure is the missing production API, not formatting/lint/plumbing noise. Earlier format/import-order failures were explicitly rejected as invalid RED evidence and are not implementation justification.
 
 ** Verification gates
 - deterministic unit tests for full-root capture, multi-monitor geometry including negative origins, scaling metadata, focused crop validation, malformed/native-overflow rejection, display disconnect, timeout, and sanitized errors;
