@@ -99,4 +99,8 @@ The important design change from this research is that “cluster” should not 
 - exact-head GitHub Actions green and mergeable before merge.
 
 * TDD evidence
-No accepted RED yet. The first implementation slice will define the deterministic contiguous segmentation contract before production code exists.
+** Contiguous segmentation RED
+- Test-only head =53ea17d5e59d62ab7b800434d1c921825afee4fe= defines deterministic acceptance cases for repetitive frames, long idle gaps, workspace changes, short cross-application continuity, same-application semantic task changes, missing-confidence evidence, policy revision changes, and equal-timestamp ordering.
+- Pull-request CI run =32582164512= (#534) completed with failure on that exact head. Both Ubuntu matrices passed bootstrap, Ruff formatting, Ruff lint, and ShellCheck before strict Pyright failed because =local_recall.activity.clustering= did not exist. The primary oracle was =Import "local_recall.activity.clustering" could not be resolved=; subsequent unknown-type diagnostics were consequences of the same missing production API.
+- The failure-propagation job remained green, proving the test runner itself still propagated known failures correctly.
+- This is the accepted RED for the first implementation slice. Production clustering code is added only after this observed behavioral/API failure.
