@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from local_recall.cli_contract import (
-    PROTOCOL_VERSION,
     CliLifecycleState,
     CliOutcome,
     CliRequest,
@@ -23,7 +22,7 @@ class FakeClient:
         self.requests.append(request)
         response = self.responses.pop(0)
         return CliResponse(
-            protocol_version=PROTOCOL_VERSION,
+            protocol_version=response.protocol_version,
             request_id=request.request_id,
             outcome=response.outcome,
             reason_code=response.reason_code,
