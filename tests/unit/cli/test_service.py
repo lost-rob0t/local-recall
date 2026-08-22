@@ -1,19 +1,18 @@
 import datetime as dt
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
+from local_recall.cli_contract import CliCommand, CliOutcome, CliRequest, CliResponse
 from local_recall.cli_service import DaemonClient, execute_command, exit_code_for
-
-from local_recall.cli_contract import CliCommand, CliOutcome, CliResponse
 
 
 @dataclass
 class FakeClient(DaemonClient):
     response: CliResponse
-    requests: list[object] = field(default_factory=list)
+    requests: list[CliRequest] = field(default_factory=list)
 
-    def request(self, request: object) -> CliResponse:
+    def request(self, request: CliRequest) -> CliResponse:
         self.requests.append(request)
-        return self.response
+        return replace(self.response, request_id=request.request_id)
 
 
 def test_exit_codes_are_stable_by_outcome() -> None:
@@ -31,7 +30,7 @@ def test_exit_codes_are_stable_by_outcome() -> None:
 
 def test_execute_uses_daemon_client_and_preserves_priority() -> None:
     client = FakeClient(
-        CliResponse.success(request_id="response-request", lifecycle_state="paused")
+        CliResponse.success(request_id="placeholder", lifecycle_state="paused")
     )
     now = dt.datetime(2026, 8, 22, 20, 0, tzinfo=dt.UTC)
 
@@ -51,7 +50,7 @@ def test_execute_uses_daemon_client_and_preserves_priority() -> None:
 
 def test_stop_success_requires_authoritative_off_state() -> None:
     client = FakeClient(
-        CliResponse.success(request_id="response-request", lifecycle_state="recording")
+        CliResponse.success(request_id="placeholder", lifecycle_state="recording")
     )
     now = dt.datetime(2026, 8, 22, 20, 0, tzinfo=dt.UTC)
 
@@ -67,9 +66,27 @@ def test_stop_success_requires_authoritative_off_state() -> None:
     assert result.response.reason_code == "stop-not-quiescent"
 
 
+def test_mismatched_response_id_fails_closed() -> None:
+    class MismatchedClient(DaemonClient):
+        def request(self, request: CliRequest) -> CliResponse:
+            del request
+            return CliResponse.success(request_id="wrong-request", lifecycle_state="paused")
+
+    now = dt.datetime(2026, 8, 22, 20, 0, tzinfo=dt.UTC)
+    result = execute_command(
+        client=MismatchedClient(),
+        command=CliCommand.STATUS,
+        now=now,
+        timeout=dt.timedelta(seconds=2),
+    )
+
+    assert result.exit_code == 5
+    assert result.response.reason_code == "request-mismatch"
+
+
 def test_failure_result_does_not_expose_client_exception_text() -> None:
     class ExplodingClient(DaemonClient):
-        def request(self, request: object) -> CliResponse:
+        def request(self, request: CliRequest) -> CliResponse:
             del request
             raise RuntimeError("synthetic-private-exception-marker")
 
