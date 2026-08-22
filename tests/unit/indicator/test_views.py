@@ -37,10 +37,14 @@ class Surface(Protocol):
     def privacy_off(self, *, now: datetime) -> indicator.IndicatorSnapshot: ...
 
 
+class SurfaceFactory(Protocol):
+    def __call__(self, controller: indicator.IndicatorController) -> Surface: ...
+
+
 class ViewsModule(Protocol):
     QtileIndicatorView: type[QtileView]
     StatusNotifierItemView: type[StatusNotifierView]
-    IndicatorSurface: type[Surface]
+    IndicatorSurface: SurfaceFactory
 
 
 indicator_views = cast(
