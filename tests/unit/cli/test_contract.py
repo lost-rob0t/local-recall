@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+import datetime as dt
 
 import pytest
 
@@ -40,23 +40,23 @@ def test_command_priority_is_closed_and_deterministic(
 
 
 def test_request_rejects_expired_deadline() -> None:
-    now = datetime(2026, 8, 22, 19, 0, tzinfo=UTC)
+    now = dt.datetime(2026, 8, 22, 19, 0, tzinfo=dt.UTC)
 
     with pytest.raises(ValueError, match="deadline"):
         CliRequest.create(
             command=CliCommand.STATUS,
             now=now,
-            deadline=now - timedelta(milliseconds=1),
+            deadline=now - dt.timedelta(milliseconds=1),
         )
 
 
 def test_query_text_is_payload_not_routing_metadata() -> None:
     marker = "synthetic-question-marker"
-    now = datetime(2026, 8, 22, 19, 0, tzinfo=UTC)
+    now = dt.datetime(2026, 8, 22, 19, 0, tzinfo=dt.UTC)
     request = CliRequest.create(
         command=CliCommand.ASK,
         now=now,
-        deadline=now + timedelta(seconds=2),
+        deadline=now + dt.timedelta(seconds=2),
         query=marker,
     )
 
