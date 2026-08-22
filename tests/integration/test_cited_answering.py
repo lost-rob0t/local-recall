@@ -170,7 +170,7 @@ def _record(captured_at: datetime, text: str) -> RedactedRecord:
         stride=3,
         pixel_format=PixelFormat.RGB8,
         pixels=b"PIX",
-        metadata=ContextMetadata(observed_at=captured_at),
+        metadata=ContextMetadata(observed_at=captured_at, fields=()),
         ocr_text=(text,),
         findings=(),
         policy_revision="redaction-policy-v1",
