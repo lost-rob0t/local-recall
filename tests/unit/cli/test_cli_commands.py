@@ -217,9 +217,7 @@ def test_providers_json_renders_typed_diagnostics() -> None:
             request_id="placeholder",
             diagnostic_payload=CliDiagnosticPayload(
                 category=CliDiagnosticCategory.PROVIDERS,
-                entries=(
-                    CliDiagnosticEntry(name="ollama", state="available", value="local"),
-                ),
+                entries=(CliDiagnosticEntry(name="ollama", state="available", value="local"),),
             ),
         )
     )
@@ -231,8 +229,7 @@ def test_providers_json_renders_typed_diagnostics() -> None:
 
     assert result.exit_code == 0
     assert result.stdout.strip() == (
-        '{"category":"providers","entries":[{"name":"ollama",'
-        '"state":"available","value":"local"}]}'
+        '{"category":"providers","entries":[{"name":"ollama","state":"available","value":"local"}]}'
     )
     assert client.requests[0].command.value == "providers"
 
