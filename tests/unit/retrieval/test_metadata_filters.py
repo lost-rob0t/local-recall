@@ -29,6 +29,8 @@ from local_recall.retrieval.service import (
 )
 from local_recall.retrieval.time import ResolvedTimeRange
 
+_SCREEN_SENTINEL = 987654321
+
 
 class Storage:
     backend_id = "metadata-test"
@@ -90,8 +92,8 @@ class Policy:
 
 
 def test_metadata_filters_match_only_decrypted_redacted_metadata() -> None:
-    wanted = _record("max", 2)
-    other = _record("columns", 2)
+    wanted = _record("max", _SCREEN_SENTINEL)
+    other = _record("columns", _SCREEN_SENTINEL)
     service = RetrievalService(
         storage=Storage((wanted, other)),
         encryption=Encryption((wanted, other)),
@@ -102,7 +104,10 @@ def test_metadata_filters_match_only_decrypted_redacted_metadata() -> None:
             datetime(2026, 8, 22, 10, 0, tzinfo=UTC),
             datetime(2026, 8, 22, 12, 0, tzinfo=UTC),
         ),
-        metadata_filters=(MetadataFilter("layout", "max"), MetadataFilter("screen", 2)),
+        metadata_filters=(
+            MetadataFilter("layout", "max"),
+            MetadataFilter("screen", _SCREEN_SENTINEL),
+        ),
         limit=10,
         candidate_limit=100,
     )
@@ -111,7 +116,7 @@ def test_metadata_filters_match_only_decrypted_redacted_metadata() -> None:
 
     assert tuple(item.record_id for item in result.passages) == (wanted.record_id,)
     assert "max" not in repr(query)
-    assert "2" not in repr(query)
+    assert str(_SCREEN_SENTINEL) not in repr(query)
     assert "metadata_filter_count=2" in repr(query)
 
 
