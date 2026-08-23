@@ -2,8 +2,10 @@ import datetime as dt
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
+from local_recall import ipc_transport
 from local_recall.cli import app, set_client_factory
 from local_recall.cli_contract import (
     CliCitation,
@@ -314,3 +316,17 @@ def test_static_completion_does_not_construct_daemon_client() -> None:
     assert result.exit_code == 0
     assert marker not in result.stdout
     assert "LOCAL_RECALL_COMPLETE" in result.stdout
+
+
+def test_runtime_ipc_client_uses_owner_runtime_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_dir = tmp_path / "runtime"
+    runtime_dir.mkdir(mode=0o700)
+    runtime_dir.chmod(0o700)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime_dir))
+
+    client = ipc_transport.daemon_client_from_environment()
+
+    assert isinstance(client, ipc_transport.ZmqDaemonClient)
+    assert str(runtime_dir) not in repr(client)

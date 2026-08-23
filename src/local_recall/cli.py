@@ -9,7 +9,7 @@ from typing import Annotated
 
 import typer
 
-from local_recall import __version__
+from local_recall import __version__, ipc_transport
 from local_recall.cli_contract import (
     CliCommand,
     CliDiagnosticPayload,
@@ -36,7 +36,7 @@ _DEFAULT_TIMEOUT = dt.timedelta(seconds=2)
 
 
 class _UnavailableDaemonClient:
-    """Fail-closed placeholder until authenticated daemon IPC lands in #29."""
+    """Fail-closed daemon client used when authenticated IPC cannot be constructed."""
 
     def request(self, request: CliRequest) -> CliResponse:
         return CliResponse.failure(
@@ -47,7 +47,10 @@ class _UnavailableDaemonClient:
 
 
 def _default_client_factory() -> DaemonClient:
-    return _UnavailableDaemonClient()
+    try:
+        return ipc_transport.daemon_client_from_environment()
+    except ipc_transport.IpcTransportError:
+        return _UnavailableDaemonClient()
 
 
 _client_factory: ClientFactory = _default_client_factory
@@ -119,11 +122,10 @@ def _run_query_command(
     end: str | None,
     json_output: bool,
 ) -> None:
-    if (start is None) is not (end is None):
-        raise typer.BadParameter("start and end must be supplied together")
     parsed_start = _parse_query_bound(start, name="start")
     parsed_end = _parse_query_bound(end, name="end")
-
+    if (parsed_start is None) is not (parsed_end is None):
+        raise typer.BadParameter("start and end must be supplied together")
     now = dt.datetime.now(dt.UTC)
     result = execute_command(
         client=_client_factory(),
@@ -134,15 +136,17 @@ def _run_query_command(
         start=parsed_start,
         end=parsed_end,
     )
+    response = result.response
+    if response.outcome is CliOutcome.SUCCESS and response.query_payload is not None:
+        typer.echo(
+            response.query_payload.to_json()
+            if json_output
+            else _render_query_payload(response.query_payload)
+        )
+    else:
+        typer.echo(_render_response(response))
     if result.exit_code != 0:
-        typer.echo(_render_response(result.response))
         raise typer.Exit(result.exit_code)
-
-    payload = result.response.query_payload
-    if payload is None:
-        typer.echo("query-result-missing")
-        raise typer.Exit(5)
-    typer.echo(payload.to_json() if json_output else _render_query_payload(payload))
 
 
 def _run_diagnostic_command(command: CliCommand, *, json_output: bool) -> None:
@@ -153,20 +157,17 @@ def _run_diagnostic_command(command: CliCommand, *, json_output: bool) -> None:
         now=now,
         timeout=_DEFAULT_TIMEOUT,
     )
+    response = result.response
+    if response.outcome is CliOutcome.SUCCESS and response.diagnostic_payload is not None:
+        typer.echo(
+            response.diagnostic_payload.to_json()
+            if json_output
+            else _render_diagnostic_payload(response.diagnostic_payload)
+        )
+    else:
+        typer.echo(_render_response(response))
     if result.exit_code != 0:
-        typer.echo(_render_response(result.response))
         raise typer.Exit(result.exit_code)
-
-    payload = result.response.diagnostic_payload
-    if payload is None:
-        typer.echo("diagnostic-result-missing")
-        raise typer.Exit(5)
-    typer.echo(payload.to_json() if json_output else _render_diagnostic_payload(payload))
-
-
-@app.callback()
-def main() -> None:
-    """Local Recall command group."""
 
 
 @app.command()
@@ -176,72 +177,74 @@ def version() -> None:
 
 
 @app.command()
+def status() -> None:
+    """Read authoritative daemon lifecycle status."""
+    _run_daemon_command(CliCommand.STATUS)
+
+
+@app.command()
 def start() -> None:
-    """Request recording start from the authoritative daemon."""
+    """Request capture start through the daemon control boundary."""
     _run_daemon_command(CliCommand.START)
 
 
 @app.command()
 def pause() -> None:
-    """Request capture pause from the authoritative daemon."""
+    """Request capture pause through the daemon control boundary."""
     _run_daemon_command(CliCommand.PAUSE)
 
 
 @app.command()
 def resume() -> None:
-    """Request capture resume from the authoritative daemon."""
+    """Request capture resume through the daemon control boundary."""
     _run_daemon_command(CliCommand.RESUME)
 
 
 @app.command()
 def stop() -> None:
-    """Request a bounded stop and wait for authoritative quiescence."""
+    """Request capture stop and require authoritative OFF confirmation."""
     _run_daemon_command(CliCommand.STOP)
-
-
-@app.command()
-def status() -> None:
-    """Print the authoritative daemon lifecycle state."""
-    _run_daemon_command(CliCommand.STATUS)
 
 
 @app.command("privacy-on")
 def privacy_on() -> None:
-    """Enable immediate privacy mode through the daemon."""
+    """Enter immediate privacy mode through the urgent control boundary."""
     _run_daemon_command(CliCommand.PRIVACY_ON)
 
 
 @app.command("privacy-off")
 def privacy_off() -> None:
-    """Disable privacy mode through the daemon."""
+    """Leave privacy mode through the urgent control boundary."""
     _run_daemon_command(CliCommand.PRIVACY_OFF)
 
 
 @app.command()
 def ask(
-    question: str,
-    start: Annotated[str | None, typer.Option()] = None,
-    end: Annotated[str | None, typer.Option()] = None,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
+    question: Annotated[str, typer.Argument(help="Question about recorded activity.")],
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
-    """Ask a question over retained activity with citations."""
+    """Ask a cited question about recorded activity."""
     _run_query_command(
         CliCommand.ASK,
         query=question,
-        start=start,
-        end=end,
+        start=None,
+        end=None,
         json_output=json_output,
     )
 
 
 @app.command()
 def search(
-    query: str,
-    start: Annotated[str | None, typer.Option()] = None,
-    end: Annotated[str | None, typer.Option()] = None,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
+    query: Annotated[str, typer.Argument(help="Search text.")],
+    start: Annotated[str | None, typer.Option(help="ISO-8601 start time.")] = None,
+    end: Annotated[str | None, typer.Option(help="ISO-8601 end time.")] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
-    """Search retained activity with optional explicit time bounds."""
+    """Search recorded activity with optional explicit time bounds."""
     _run_query_command(
         CliCommand.SEARCH,
         query=query,
@@ -253,11 +256,13 @@ def search(
 
 @app.command()
 def timeline(
-    start: Annotated[str | None, typer.Option()] = None,
-    end: Annotated[str | None, typer.Option()] = None,
-    json_output: Annotated[bool, typer.Option("--json")] = False,
+    start: Annotated[str | None, typer.Option(help="ISO-8601 start time.")] = None,
+    end: Annotated[str | None, typer.Option(help="ISO-8601 end time.")] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
-    """Render a bounded activity timeline."""
+    """Render a cited activity timeline."""
     _run_query_command(
         CliCommand.TIMELINE,
         query=None,
@@ -269,34 +274,46 @@ def timeline(
 
 @app.command()
 def providers(
-    json_output: Annotated[bool, typer.Option("--json")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
-    """Show sanitized generation and embedding provider status."""
+    """Inspect configured provider health without exposing credentials."""
     _run_diagnostic_command(CliCommand.PROVIDERS, json_output=json_output)
 
 
 @app.command()
 def health(
-    json_output: Annotated[bool, typer.Option("--json")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
-    """Show sanitized daemon health status."""
+    """Inspect sanitized daemon health."""
     _run_diagnostic_command(CliCommand.HEALTH, json_output=json_output)
 
 
 @storage_app.command("stats")
 def storage_stats(
-    json_output: Annotated[bool, typer.Option("--json")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
-    """Show sanitized storage statistics."""
+    """Inspect sanitized storage statistics."""
     _run_diagnostic_command(CliCommand.STORAGE_STATS, json_output=json_output)
 
 
 @config_app.command("validate")
-def config_validate(path: Path) -> None:
-    """Validate one versioned configuration file without printing its values."""
+def config_validate(
+    path: Annotated[Path, typer.Argument(help="Configuration TOML path.")],
+) -> None:
+    """Validate a Local Recall configuration file without printing its contents."""
     try:
-        load_configuration_file(path, environ={})
-    except ConfigurationError:
+        load_configuration_file(path)
+    except ConfigurationError, OSError, ValueError:
         typer.echo("invalid-configuration")
         raise typer.Exit(2) from None
     typer.echo("valid")
+
+
+def main() -> None:
+    app()
