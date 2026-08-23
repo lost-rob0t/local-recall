@@ -109,6 +109,33 @@ class AuditRecorder:
             attributes={"remote": remote, "authorized": authorized},
         )
 
+    def ipc_request(
+        self,
+        *,
+        authorized: bool,
+        capability: str,
+        urgent: bool,
+        correlation_id: UUID | None = None,
+    ) -> AuditEvent:
+        if capability not in {"control", "query", "diagnostic"}:
+            raise ValueError("unsupported IPC capability")
+        return self._emit(
+            category=AuditCategory.IPC,
+            action=AuditAction.IPC_REQUEST,
+            outcome=AuditOutcome.ACCEPTED if authorized else AuditOutcome.REJECTED,
+            reason=(
+                AuditReasonCode.IPC_AUTHORIZED if authorized else AuditReasonCode.IPC_REJECTED
+            ),
+            correlation_id=correlation_id,
+            attributes={
+                "authorized": authorized,
+                "control": capability == "control",
+                "diagnostic": capability == "diagnostic",
+                "query": capability == "query",
+                "urgent": urgent,
+            },
+        )
+
     def record_rejected(
         self,
         *,
