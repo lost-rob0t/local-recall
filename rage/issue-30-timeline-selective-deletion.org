@@ -1,0 +1,35 @@
+#+title: RAGE Issue 30 — Timeline Inspection and Selective Deletion
+
+* Transaction
+- Issue: #30 — Implement timeline inspection and selective deletion
+- Immutable starting main: =44917323d8649c56bb8d7948315eca78d0eadc81=
+- Branch: =agent/issue-30-timeline-deletion=
+- Dependencies: #24, #25, #29
+- Dependency state at consumption: satisfied on current =main=
+
+* Acceptance criteria
+- A user can identify and delete an unwanted capture through CLI/API first; richer UI may follow.
+- Deleted records no longer appear in search, summaries, or answers.
+- Failed partial deletion is recoverable and never leaves orphaned plaintext.
+- Every destructive action requires explicit scope and emits a sanitized audit event.
+
+* Required behavior
+- Timeline listing by date, time, application, workspace, and activity cluster.
+- Explicit decrypt-on-demand preview for redacted screenshots and text.
+- Show capture provenance, redaction findings, model versions, and policy decision.
+- Delete individual records, clusters, applications, or time ranges.
+- Deletion updates indexes, summaries, citations, and storage references atomically.
+- Preview caches remain memory-only or encrypted and expire promptly.
+
+* RAGE iteration 1
+** Research
+Pending.
+
+** Design
+Pending.
+
+** Execute / TDD
+Pending.
+
+** Verify
+Pending.
