@@ -12,6 +12,7 @@ from local_recall.audit.adapters import IpcAuditAdapter
 from local_recall.cli_contract import (
     CliCommand,
     CliLifecycleState,
+    CliOutcome,
     CliQueryPayload,
     CliRequest,
     CliResponse,
@@ -110,6 +111,46 @@ def test_authorized_request_emits_content_free_ipc_audit_event(tmp_path: Path) -
         "urgent": False,
     }
     assert private_marker not in repr(event)
+
+
+def test_failed_authentication_is_audited_without_dispatch(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    sink = MemoryAuditSink()
+    audit = IpcAuditAdapter(AuditRecorder(sink))
+    handler_called = threading.Event()
+
+    def handler(request: CliRequest) -> CliResponse:
+        handler_called.set()
+        return CliResponse.success(
+            request_id=request.request_id,
+            lifecycle_state=CliLifecycleState.PAUSED,
+        )
+
+    server = ipc_transport.ZmqIpcServer(
+        paths=paths,
+        expected_uid=os.getuid(),
+        handler=handler,
+        audit=audit,
+    )
+    server.start()
+    try:
+        ipc.IpcCredentialStore(paths, os.getuid()).initialize()
+        client = ipc_transport.ZmqDaemonClient(paths=paths, expected_uid=os.getuid())
+        response = client.request(_request(CliCommand.STATUS))
+    finally:
+        server.close()
+
+    assert response.outcome is CliOutcome.INVALID
+    assert response.reason_code == "ipc-rejected"
+    assert not handler_called.is_set()
+    assert len(sink.events) == 1
+    assert sink.events[0].attributes == {
+        "authorized": False,
+        "control": False,
+        "diagnostic": False,
+        "query": False,
+        "urgent": False,
+    }
 
 
 def test_stop_is_not_starved_by_blocked_query(tmp_path: Path) -> None:
