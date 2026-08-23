@@ -23,10 +23,68 @@
 
 * RAGE iteration 1
 ** Research
-Pending.
+*** Current architecture evidence
+- Canonical storage already has a crash-recoverable single-record deletion state: mark the catalog row =deleting=, unlink the encrypted blob, fsync the shard, then remove the catalog row. =get= and day-range candidate enumeration expose only =ready= records.
+- The storage catalog deliberately contains only coarse/opaque metadata. Exact timestamps, application/workspace names, OCR, titles, summaries, embeddings, and deletion scope are not catalog columns. Scope selection therefore must happen only after bounded decrypt-on-demand, not by adding plaintext metadata columns.
+- Retrieval treats storage as authoritative: semantic hits are intersected with canonical storage candidate IDs and every returned passage requires a still-present encrypted envelope. A stale semantic entry therefore cannot by itself resurrect a deleted record into answers.
+- The semantic index is one encrypted authenticated snapshot replaced atomically under an operation lock. It currently supports add/search/rebuild but no record-removal operation.
+- Activity clusters/summaries are another encrypted replace-in-full snapshot. =ActivityReconciler= already knows how to regenerate clusters/summaries from a supplied tuple of remaining redacted records and replaces the complete snapshot.
+- The authenticated owner-only IPC boundary from #29 already separates capabilities and supplies the correct transport authority for destructive CLI/API calls.
+
+*** External primary-source findings
+- SQLite serializes writers and provides atomic database transactions, but WAL mode commits by appending commit records to the WAL; checkpointing later transfers pages into the main database. Therefore application-level logical deletion must not be confused with immediate physical erasure of every prior byte.
+- SQLite documents =secure_delete= and =VACUUM= as mechanisms affecting forensic remnants in database pages. Those are relevant to #31 cryptographic/retention deletion, not a justification for widening #30 into physical secure erase.
+- SQLite WAL and journal files are part of persistent database state during recovery. Crash safety must preserve the deletion transaction state rather than deleting recovery metadata ad hoc.
+
+*** Adversarial conclusions
+1. Rejected: one in-memory "transaction" that mutates catalog, semantic index, activity snapshot, and blobs and rolls back on exceptions. The resources are independent files; rollback after a blob unlink cannot recreate the original ciphertext safely without inventing a second plaintext/ciphertext cache.
+2. Rejected: delete blob first, then repair derived state. A crash after unlink but before catalog/derived updates produces ambiguous orphaned references and weakens the already-proven storage recovery ordering.
+3. Rejected: store application/workspace/time-range deletion predicates in the plaintext catalog. This violates the catalog leakage boundary from #11.
+4. Rejected: treat semantic index removal as the authoritative deletion. Retrieval correctly treats encrypted storage as canonical, so the storage visibility transition must remain the authority.
+5. Accepted: resolve an explicit bounded deletion scope to opaque record IDs while decrypted records are memory-only; durably make those records non-query-visible first; then reconcile every derived encrypted snapshot from the surviving canonical records; finally complete encrypted-blob removal and clear the durable intent. Crash recovery always resumes forward.
 
 ** Design
-Pending.
+*** Authority and state ownership
+- Storage remains canonical record existence/visibility authority.
+- A new deletion coordinator owns orchestration only; it does not duplicate storage crypto, indexing, clustering, answering, or IPC authorization.
+- Destructive requests are closed typed scopes: record IDs, activity cluster ID/source IDs, application, or bounded time range. Empty/implicit "everything" scopes are invalid in #30.
+- Scope resolution uses bounded candidate enumeration + decrypt-on-demand and keeps selected plaintext only for the operation lifetime.
+- Once a deletion intent is durably admitted, selected records become non-query-visible before any derived-state mutation.
+
+*** Forward-only deletion state machine
+1. =resolved=: explicit request has been validated and reduced to unique opaque record IDs.
+2. =hidden=: selected catalog records are durably non-ready, so retrieval/search/answer paths cannot return them.
+3. =derived-reconciled=: semantic index no longer contains those IDs and activity snapshot is rebuilt from surviving records; citations/summaries therefore cannot reference deleted IDs.
+4. =blobs-removed=: encrypted blobs are unlinked/fsynced using the existing storage deletion mechanics.
+5. =complete=: durable intent/tombstone metadata is cleared only after all prior phases succeed.
+
+A crash at any phase resumes forward from durable state. No rollback may make a hidden record visible again merely because a later derived-state cleanup failed.
+
+*** Privacy invariants
+- Timeline list output may expose only user-requested redacted fields and provenance through the authenticated query capability; status/audit remain content-free.
+- Screenshot/text preview is explicit decrypt-on-demand, bounded, returned only through the owner-authenticated query path, and not cached in plaintext.
+- Destructive audit events contain operation/request ID, scope class, selected record count, outcome/reason, and timing only; never application names, workspace names, OCR, titles, record contents, prompts, screenshot bytes, or raw scope text.
+- The deletion coordinator never writes decrypted records, previews, or scope metadata to temporary files.
+- Existing #31 remains owner of cryptographic deletion/key destruction/retention secure erase. #30 guarantees logical inaccessibility plus encrypted blob removal and derived-state cleanup.
+
+*** Race/failure analysis
+- Concurrent retrieval started before =hidden= may hold an already-decrypted working copy. Deletion must invalidate/query-gate new work and destructive completion must wait for or cancel coordinator-visible active readers before reporting final success; at minimum, post-decrypt visibility must be revalidated before returning a passage/preview.
+- Stale semantic hits are harmless only while retrieval intersects with canonical ready records; tests must lock this invariant.
+- Activity snapshot replacement is atomic but can fail; the deletion intent remains durable and affected records stay hidden until retry succeeds.
+- Cancellation before durable admission has no effect. Cancellation after =hidden= cannot roll back visibility; cleanup continues/retries as recovery work and reports a sanitized incomplete/recovering outcome.
+- Duplicate delete requests must be idempotent by record ID/request identity.
+
+*** Migration/configuration
+- No plaintext content columns are permitted.
+- Any catalog schema extension stores only opaque request/record identifiers, closed phase/state, fixed reason/version fields, and bounded timestamps if needed for recovery.
+- No new remote provider/network dependency.
+
+*** Verification gates
+- RED before each behavior implementation.
+- Focused unit/contract/integration/security tests for scope validation, timeline filtering, memory-only preview, derived-state removal, crash after each phase, cancellation, concurrent retrieval, idempotency, sanitized audit, and no plaintext artifacts.
+- Canonical =./scripts/check= must pass.
+- =nix flake check= when the branch changes Nix/package surfaces.
+- Exact-head GitHub Actions must be green before merge.
 
 ** Execute / TDD
 Pending.
