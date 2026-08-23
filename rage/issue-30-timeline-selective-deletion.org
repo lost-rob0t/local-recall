@@ -27,7 +27,7 @@
 - Canonical storage already has a crash-recoverable single-record deletion state: mark the catalog row =deleting=, unlink the encrypted blob, fsync the shard, then remove the catalog row. =get= and day-range candidate enumeration expose only =ready= records.
 - The storage catalog deliberately contains only coarse/opaque metadata. Exact timestamps, application/workspace names, OCR, titles, summaries, embeddings, and deletion scope are not catalog columns. Scope selection therefore must happen only after bounded decrypt-on-demand, not by adding plaintext metadata columns.
 - Retrieval treats storage as authoritative: semantic hits are intersected with canonical storage candidate IDs and every returned passage requires a still-present encrypted envelope. A stale semantic entry therefore cannot by itself resurrect a deleted record into answers.
-- The semantic index is one encrypted authenticated snapshot replaced atomically under an operation lock. It currently supports add/search/rebuild but no record-removal operation.
+- The semantic index is one encrypted authenticated snapshot replaced atomically under an operation lock. It originally supported add/search/rebuild but no record-removal operation.
 - Activity clusters/summaries are another encrypted replace-in-full snapshot. =ActivityReconciler= already knows how to regenerate clusters/summaries from a supplied tuple of remaining redacted records and replaces the complete snapshot.
 - The authenticated owner-only IPC boundary from #29 already separates capabilities and supplies the correct transport authority for destructive CLI/API calls.
 
@@ -38,10 +38,10 @@
 
 *** Adversarial conclusions
 1. Rejected: one in-memory "transaction" that mutates catalog, semantic index, activity snapshot, and blobs and rolls back on exceptions. The resources are independent files; rollback after a blob unlink cannot recreate the original ciphertext safely without inventing a second plaintext/ciphertext cache.
-2. Rejected: delete blob first, then repair derived state. A crash after unlink but before catalog/derived updates produces ambiguous orphaned references and weakens the already-proven storage recovery ordering.
+2. Rejected: delete blob first without durable intent, then repair derived state. A crash after unlink but before repair creates no durable coordinator evidence.
 3. Rejected: store application/workspace/time-range deletion predicates in the plaintext catalog. This violates the catalog leakage boundary from #11.
-4. Rejected: treat semantic index removal as the authoritative deletion. Retrieval correctly treats encrypted storage as canonical, so the storage visibility transition must remain the authority.
-5. Accepted: resolve an explicit bounded deletion scope to opaque record IDs while decrypted records are memory-only; durably make those records non-query-visible first; then reconcile every derived encrypted snapshot from the surviving canonical records; finally complete encrypted-blob removal and clear the durable intent. Crash recovery always resumes forward.
+4. Rejected: treat semantic index removal as the authoritative deletion. Retrieval correctly treats encrypted storage as canonical, so storage visibility/existence must remain authoritative.
+5. Accepted: resolve an explicit bounded deletion scope to opaque record IDs while decrypted records are memory-only; record a content-free durable intent; use the already-proven canonical storage deletion state machine for every selected record; then reconcile every derived encrypted snapshot from surviving canonical records; finally clear the durable intent. Crash recovery always resumes forward.
 
 ** Design
 *** Authority and state ownership
@@ -49,16 +49,19 @@
 - A new deletion coordinator owns orchestration only; it does not duplicate storage crypto, indexing, clustering, answering, or IPC authorization.
 - Destructive requests are closed typed scopes: record IDs, activity cluster ID/source IDs, application, or bounded time range. Empty/implicit "everything" scopes are invalid in #30.
 - Scope resolution uses bounded candidate enumeration + decrypt-on-demand and keeps selected plaintext only for the operation lifetime.
-- Once a deletion intent is durably admitted, selected records become non-query-visible before any derived-state mutation.
+- Once canonical deletion begins, no later cleanup failure is allowed to resurrect a selected record.
 
-*** Forward-only deletion state machine
-1. =resolved=: explicit request has been validated and reduced to unique opaque record IDs.
-2. =hidden=: selected catalog records are durably non-ready, so retrieval/search/answer paths cannot return them.
-3. =derived-reconciled=: semantic index no longer contains those IDs and activity snapshot is rebuilt from surviving records; citations/summaries therefore cannot reference deleted IDs.
-4. =blobs-removed=: encrypted blobs are unlinked/fsynced using the existing storage deletion mechanics.
-5. =complete=: durable intent/tombstone metadata is cleared only after all prior phases succeed.
+*** Forward-only deletion state machine — refined after storage audit
+The initial five-phase hidden/blob split would duplicate the storage state machine. The repository already has a stronger per-record crash-safe sequence (=ready -> deleting -> blob unlink/fsync -> catalog removal=). Reuse it rather than introduce a second visibility authority.
 
-A crash at any phase resumes forward from durable state. No rollback may make a hidden record visible again merely because a later derived-state cleanup failed.
+1. =planned=: an owner-only content-free deletion journal durably binds an opaque request ID to the exact selected record UUIDs.
+2. For every selected UUID invoke the existing idempotent canonical storage delete. A crash here leaves the journal =planned=; storage recovery completes any per-record =deleting= state, and coordinator retry safely repeats already-completed deletes.
+3. =records-deleted=: written only after every canonical delete succeeds. At this point retrieval cannot newly load those records even if derived snapshots are stale.
+4. Remove the IDs from the encrypted semantic snapshot and reconcile the encrypted activity snapshot from surviving canonical records.
+5. =derived-reconciled=: written only after both derived-state operations succeed.
+6. Clear the journal and fsync its owner-only directory.
+
+A crash at any phase resumes forward. No rollback makes a deleted record visible again merely because later derived-state repair fails. This avoids a catalog migration/version bump and preserves #11's proven storage recovery logic.
 
 *** Privacy invariants
 - Timeline list output may expose only user-requested redacted fields and provenance through the authenticated query capability; status/audit remain content-free.
@@ -68,15 +71,16 @@ A crash at any phase resumes forward from durable state. No rollback may make a 
 - Existing #31 remains owner of cryptographic deletion/key destruction/retention secure erase. #30 guarantees logical inaccessibility plus encrypted blob removal and derived-state cleanup.
 
 *** Race/failure analysis
-- Concurrent retrieval started before =hidden= may hold an already-decrypted working copy. Deletion must invalidate/query-gate new work and destructive completion must wait for or cancel coordinator-visible active readers before reporting final success; at minimum, post-decrypt visibility must be revalidated before returning a passage/preview.
+- Concurrent retrieval started before canonical deletion may hold an already-decrypted working copy. A post-decrypt canonical-visibility recheck is required before returning a passage/preview.
 - Stale semantic hits are harmless only while retrieval intersects with canonical ready records; tests must lock this invariant.
-- Activity snapshot replacement is atomic but can fail; the deletion intent remains durable and affected records stay hidden until retry succeeds.
-- Cancellation before durable admission has no effect. Cancellation after =hidden= cannot roll back visibility; cleanup continues/retries as recovery work and reports a sanitized incomplete/recovering outcome.
-- Duplicate delete requests must be idempotent by record ID/request identity.
+- Activity snapshot replacement is atomic but can fail; the deletion journal remains durable and deleted records remain unavailable until retry succeeds.
+- Cancellation before journal admission has no effect. Cancellation after canonical deletion begins cannot roll back visibility; the durable journal allows later recovery to continue cleanup.
+- Duplicate delete requests must be idempotent by selected record identity; one active journal transaction is allowed at a time.
+- A stale journal temporary file must not permanently wedge recovery; journal write/recovery tests must cover interrupted replacement.
 
 *** Migration/configuration
 - No plaintext content columns are permitted.
-- Any catalog schema extension stores only opaque request/record identifiers, closed phase/state, fixed reason/version fields, and bounded timestamps if needed for recovery.
+- The refined design requires no catalog migration: durable transaction metadata lives in a bounded owner-only content-free journal containing only opaque request/record identifiers and a closed phase/version.
 - No new remote provider/network dependency.
 
 *** Verification gates
@@ -87,7 +91,21 @@ A crash at any phase resumes forward from durable state. No rollback may make a 
 - Exact-head GitHub Actions must be green before merge.
 
 ** Execute / TDD
-Pending.
+*** Slice 1 — selective encrypted semantic-index removal
+- Valid RED: head =53b2da5322f7efe9981ab6c9d612cbe041628be4=, CI run 784. Formatting, Ruff, ShellCheck passed; strict Pyright failed specifically because =EncryptedSemanticIndex.remove= did not exist.
+- Production: add an operation-locked removal path that validates a non-empty unique UUID scope, decrypts the existing authenticated snapshot, filters selected IDs, and atomically rewrites the encrypted snapshot without invoking an embedding provider.
+- First production run exposed a test-oracle mistake: semantic search intentionally returns zero-score surviving hits, so an =alpha= query after deleting the alpha record may still return beta at score zero. The oracle was corrected to assert the deleted record ID is absent rather than demanding an empty result.
+- GREEN: head =fd1ee9472eacaa0fe62b3c9a10af1fbd80b8086f=, CI run 786. Both Ubuntu matrices, canonical gate, strict typing, unit/contract/integration/security tests, security scans, and failure-propagation passed.
+
+*** Slice 2 — durable deletion journal and forward recovery coordinator
+- Invalid RED attempts =330f8c9a6064e28c1632a06a8180b01a4c808871=, =47267823c3eeb256aed28d520ac903d7b60febe6=, and =c2bda7e1ca68f3ab04b8113be9caa46ad9fad2e6= were rejected because Ruff import sorting failed before behavior validation.
+- Added only package/module scaffolding to let static analysis reach the intended missing API.
+- Valid RED: head =9e11927ad677056fecb124b9a3735531170ec99e=, CI run 792. Formatting, Ruff, and ShellCheck passed; strict Pyright failed specifically because =DeletionCoordinator=, =DeletionJournal=, and =DeletionPhase= were absent.
+- Production implements an owner-only 0700 journal directory, 0600 bounded/closed JSON intent, atomic fsync+replace writes, monotonic phases, idempotent canonical storage deletion, derived semantic/activity cleanup, and =recover()= that resumes forward after an interruption.
+- Production run 793 exposed formatting only; the next exact-formatted run exposed two strict-Pyright unknown-element errors at the untrusted JSON list boundary. These are implementation typing defects, not accepted RED evidence; the boundary was tightened through explicit =object -> list[object] -> validated list[str]= narrowing.
+- Current production head: =e62c0ded0167b96c9296f130cedd12e1600b95be=. Exact-head green verification pending.
 
 ** Verify
-Pending.
+- Slice 1 exact-head CI is green.
+- Slice 2 exact-head CI is pending on =e62c0ded0167b96c9296f130cedd12e1600b95be=.
+- Full issue acceptance remains open: concrete activity rebuild, typed timeline/scope/preview service, deletion IPC/CLI capability, sanitized destructive audit, concurrent retrieval visibility race, journal interruption/security cases, docs, full canonical/final exact-head gates.
