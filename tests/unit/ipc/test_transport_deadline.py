@@ -6,7 +6,6 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
 
 from local_recall import ipc, ipc_transport
 from local_recall.cli_contract import (
@@ -31,10 +30,7 @@ def _server_and_invoke(
         expected_uid=os.getuid(),
         handler=handler,
     )
-    invoke = cast(
-        Callable[[CliRequest], CliResponse],
-        getattr(server, "_invoke_handler"),
-    )
+    invoke = server._invoke_handler  # pyright: ignore[reportPrivateUsage]
     return server, invoke
 
 
