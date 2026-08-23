@@ -221,7 +221,9 @@ def privacy_off() -> None:
 @app.command()
 def ask(
     question: Annotated[str, typer.Argument(help="Question about recorded activity.")],
-    json_output: Annotated[bool, typer.Option("--json", help="Emit machine-readable JSON.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
     """Ask a cited question about recorded activity."""
     _run_query_command(
@@ -238,7 +240,9 @@ def search(
     query: Annotated[str, typer.Argument(help="Search text.")],
     start: Annotated[str | None, typer.Option(help="ISO-8601 start time.")] = None,
     end: Annotated[str | None, typer.Option(help="ISO-8601 end time.")] = None,
-    json_output: Annotated[bool, typer.Option("--json", help="Emit machine-readable JSON.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
     """Search recorded activity with optional explicit time bounds."""
     _run_query_command(
@@ -254,7 +258,9 @@ def search(
 def timeline(
     start: Annotated[str | None, typer.Option(help="ISO-8601 start time.")] = None,
     end: Annotated[str | None, typer.Option(help="ISO-8601 end time.")] = None,
-    json_output: Annotated[bool, typer.Option("--json", help="Emit machine-readable JSON.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
     """Render a cited activity timeline."""
     _run_query_command(
@@ -268,7 +274,9 @@ def timeline(
 
 @app.command()
 def providers(
-    json_output: Annotated[bool, typer.Option("--json", help="Emit machine-readable JSON.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
     """Inspect configured provider health without exposing credentials."""
     _run_diagnostic_command(CliCommand.PROVIDERS, json_output=json_output)
@@ -276,7 +284,9 @@ def providers(
 
 @app.command()
 def health(
-    json_output: Annotated[bool, typer.Option("--json", help="Emit machine-readable JSON.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
     """Inspect sanitized daemon health."""
     _run_diagnostic_command(CliCommand.HEALTH, json_output=json_output)
@@ -284,7 +294,9 @@ def health(
 
 @storage_app.command("stats")
 def storage_stats(
-    json_output: Annotated[bool, typer.Option("--json", help="Emit machine-readable JSON.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
 ) -> None:
     """Inspect sanitized storage statistics."""
     _run_diagnostic_command(CliCommand.STORAGE_STATS, json_output=json_output)
@@ -297,7 +309,7 @@ def config_validate(
     """Validate a Local Recall configuration file without printing its contents."""
     try:
         load_configuration_file(path)
-    except (ConfigurationError, OSError, ValueError):
+    except ConfigurationError, OSError, ValueError:
         typer.echo("invalid-configuration")
         raise typer.Exit(2) from None
     typer.echo("valid")
