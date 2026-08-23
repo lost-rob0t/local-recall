@@ -245,6 +245,8 @@ class RetrievalService:
                 )
             if not record_decision.allowed:
                 continue
+            if await self._storage.get(record_id) is None:
+                continue
             remote_provider_eligible = (
                 remote_provider_eligible and record_decision.remote_provider_eligible
             )
