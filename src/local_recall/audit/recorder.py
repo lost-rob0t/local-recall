@@ -113,12 +113,14 @@ class AuditRecorder:
         self,
         *,
         authorized: bool,
-        capability: str,
+        capability: str | None,
         urgent: bool,
         correlation_id: UUID | None = None,
     ) -> AuditEvent:
-        if capability not in {"control", "query", "diagnostic"}:
+        if capability is not None and capability not in {"control", "query", "diagnostic"}:
             raise ValueError("unsupported IPC capability")
+        if authorized and capability is None:
+            raise ValueError("authorized IPC request requires capability")
         return self._emit(
             category=AuditCategory.IPC,
             action=AuditAction.IPC_REQUEST,
