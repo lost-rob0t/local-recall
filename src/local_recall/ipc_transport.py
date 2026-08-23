@@ -177,6 +177,7 @@ class ZmqIpcServer:
             except zmq.ZMQError:
                 break
             if len(frames) != 4:
+                self._audit_malformed_request()
                 continue
             identity, *request_frames = frames
             try:
@@ -247,6 +248,16 @@ class ZmqIpcServer:
         while pending and time.monotonic() < deadline:
             self._flush_completed(socket, pending)
             time.sleep(0.005)
+
+    def _audit_malformed_request(self) -> None:
+        if self.audit is None:
+            return
+        try:
+            self.audit.rejected(capability=None, urgent=False, correlation_id=None)
+        except AuditFailure, ValueError:
+            # The malformed packet is already rejected; audit failure must not
+            # make untrusted framing executable or tear down the service loop.
+            return
 
     def _invoke_handler(self, request: CliRequest) -> CliResponse:
         try:
