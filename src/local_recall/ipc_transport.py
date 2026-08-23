@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import stat
 import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Callable, cast
+from typing import cast
 
 import zmq
 
@@ -225,10 +226,8 @@ class ZmqIpcServer:
                     .to_json()
                     .encode("utf-8")
                 )
-            try:
+            with contextlib.suppress(zmq.Again, zmq.ZMQError):
                 socket.send_multipart([item.identity, payload], flags=zmq.NOBLOCK)
-            except zmq.Again, zmq.ZMQError:
-                pass
         pending[:] = remaining
 
     @staticmethod
@@ -240,10 +239,10 @@ class ZmqIpcServer:
             outcome=CliOutcome.INVALID,
             reason_code=reason_code,
         )
-        try:
-            socket.send_multipart([identity, response.to_json().encode("utf-8")], flags=zmq.NOBLOCK)
-        except zmq.Again, zmq.ZMQError:
-            pass
+        with contextlib.suppress(zmq.Again, zmq.ZMQError):
+            socket.send_multipart(
+                [identity, response.to_json().encode("utf-8")], flags=zmq.NOBLOCK
+            )
 
     def _endpoint(self) -> str:
         return f"ipc://{self.paths.socket_path}"
@@ -280,10 +279,8 @@ class ZmqIpcServer:
         except OSError:
             return
         if stat.S_ISSOCK(metadata.st_mode) and metadata.st_uid == self.expected_uid:
-            try:
+            with contextlib.suppress(OSError):
                 self.paths.socket_path.unlink()
-            except OSError:
-                pass
 
     def _require_socket(self) -> zmq.Socket[bytes]:
         if self._socket is None:
