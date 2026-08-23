@@ -26,9 +26,11 @@ from local_recall.ipc_protocol import MAX_REQUEST_PAYLOAD_BYTES
 class MemoryAuditSink:
     def __init__(self) -> None:
         self.events: list[AuditEvent] = []
+        self.emitted = threading.Event()
 
     def emit(self, event: AuditEvent) -> None:
         self.events.append(event)
+        self.emitted.set()
 
 
 def _paths(tmp_path: Path) -> ipc.IpcPaths:
@@ -99,6 +101,52 @@ def test_router_enforces_native_inbound_message_limit(tmp_path: Path) -> None:
         assert socket.getsockopt(zmq.MAXMSGSIZE) == MAX_REQUEST_PAYLOAD_BYTES
     finally:
         server.close()
+
+
+def test_malformed_multipart_is_audited_and_server_remains_available(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    sink = MemoryAuditSink()
+    audit = IpcAuditAdapter(AuditRecorder(sink))
+
+    def handler(request: CliRequest) -> CliResponse:
+        return CliResponse.success(
+            request_id=request.request_id,
+            lifecycle_state=CliLifecycleState.PAUSED,
+        )
+
+    server = ipc_transport.ZmqIpcServer(
+        paths=paths,
+        expected_uid=os.getuid(),
+        handler=handler,
+        audit=audit,
+    )
+    server.start()
+    context: zmq.Context[zmq.Socket[bytes]] = zmq.Context()
+    attacker = context.socket(zmq.DEALER)
+    attacker.setsockopt(zmq.LINGER, 0)
+    try:
+        attacker.connect(f"ipc://{paths.socket_path}")
+        attacker.send(b"synthetic-malformed-frame")
+        assert sink.emitted.wait(timeout=1)
+
+        client = ipc_transport.ZmqDaemonClient(paths=paths, expected_uid=os.getuid())
+        response = client.request(_request(CliCommand.STATUS))
+        assert response.lifecycle_state is CliLifecycleState.PAUSED
+    finally:
+        attacker.close(linger=0)
+        context.term()
+        server.close()
+
+    assert len(sink.events) == 2
+    rejected = sink.events[0]
+    assert rejected.attributes == {
+        "authorized": False,
+        "control": False,
+        "diagnostic": False,
+        "query": False,
+        "urgent": False,
+    }
+    assert "synthetic-malformed-frame" not in repr(rejected)
 
 
 def test_authorized_request_emits_content_free_ipc_audit_event(tmp_path: Path) -> None:
