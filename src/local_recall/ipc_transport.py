@@ -240,9 +240,7 @@ class ZmqIpcServer:
             reason_code=reason_code,
         )
         with contextlib.suppress(zmq.Again, zmq.ZMQError):
-            socket.send_multipart(
-                [identity, response.to_json().encode("utf-8")], flags=zmq.NOBLOCK
-            )
+            socket.send_multipart([identity, response.to_json().encode("utf-8")], flags=zmq.NOBLOCK)
 
     def _endpoint(self) -> str:
         return f"ipc://{self.paths.socket_path}"
