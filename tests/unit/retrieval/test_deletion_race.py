@@ -9,7 +9,13 @@ from local_recall.domain.frames import PixelFormat, RedactedFrame, RedactedRecor
 from local_recall.domain.lifecycle import CaptureGeneration
 from local_recall.domain.metadata import ContextMetadata
 from local_recall.ports.encryption import DecryptionRequest, EncryptionRequest
-from local_recall.ports.storage import CatalogRecord, DayRangeQuery, DeleteRequest, DeleteResult
+from local_recall.ports.storage import (
+    CatalogRecord,
+    DayRangeQuery,
+    DeleteRequest,
+    DeleteResult,
+    StorageIntegrityReport,
+)
 from local_recall.retrieval.service import (
     RetrievalPolicyDecision,
     RetrievalQuery,
@@ -54,8 +60,8 @@ class RaceStorage:
         self.envelope = envelope
         return StoredRecordRef(envelope.record_id, self.backend_id, envelope.schema_version)
 
-    async def recover(self) -> object:
-        return object()
+    async def recover(self) -> StorageIntegrityReport:
+        return StorageIntegrityReport()
 
 
 class DeleteDuringDecrypt:
