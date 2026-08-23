@@ -112,3 +112,65 @@ def test_stop_is_not_starved_by_blocked_query(tmp_path: Path) -> None:
     finally:
         release_query.set()
         server.close()
+
+
+def test_stop_has_reserved_capacity_when_query_lane_is_saturated(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    all_queries_started = threading.Event()
+    release_queries = threading.Event()
+    started_count = 0
+    started_lock = threading.Lock()
+
+    def handler(request: CliRequest) -> CliResponse:
+        nonlocal started_count
+        if request.command is CliCommand.SEARCH:
+            with started_lock:
+                started_count += 1
+                if started_count == 4:
+                    all_queries_started.set()
+            if not release_queries.wait(timeout=2):
+                raise RuntimeError("synthetic saturated queries were never released")
+            return CliResponse.success(
+                request_id=request.request_id,
+                query_payload=CliQueryPayload(text="synthetic result"),
+            )
+        return CliResponse.success(
+            request_id=request.request_id,
+            lifecycle_state=CliLifecycleState.OFF,
+        )
+
+    server = ipc_transport.ZmqIpcServer(
+        paths=paths,
+        expected_uid=os.getuid(),
+        handler=handler,
+        max_pending=4,
+    )
+    server.start()
+    query_threads: list[threading.Thread] = []
+    query_responses: list[CliResponse] = []
+
+    def run_query(index: int) -> None:
+        client = ipc_transport.ZmqDaemonClient(paths=paths, expected_uid=os.getuid())
+        query_responses.append(
+            client.request(_request(CliCommand.SEARCH, query=f"synthetic-{index}"))
+        )
+
+    try:
+        for index in range(4):
+            thread = threading.Thread(target=run_query, args=(index,))
+            query_threads.append(thread)
+            thread.start()
+        assert all_queries_started.wait(timeout=1)
+
+        control_client = ipc_transport.ZmqDaemonClient(paths=paths, expected_uid=os.getuid())
+        stop_response = control_client.request(_request(CliCommand.STOP))
+
+        assert stop_response.lifecycle_state is CliLifecycleState.OFF
+        assert all(thread.is_alive() for thread in query_threads)
+    finally:
+        release_queries.set()
+        for thread in query_threads:
+            thread.join(timeout=2)
+        server.close()
+
+    assert len(query_responses) == 4
