@@ -6,8 +6,8 @@ from uuid import UUID
 
 import pytest
 
-from local_recall.timeline.deletion import DeletionCoordinator, DeletionJournal, DeletionPhase
 from local_recall.ports.storage import DeleteRequest, DeleteResult
+from local_recall.timeline.deletion import DeletionCoordinator, DeletionJournal, DeletionPhase
 
 FIRST = UUID("00000000-0000-4000-8000-000000000001")
 SECOND = UUID("00000000-0000-4000-8000-000000000002")
