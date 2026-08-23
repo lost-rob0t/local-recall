@@ -37,6 +37,7 @@ from local_recall.cli_contract import (
 )
 from local_recall.ipc import IpcCredentialStore, IpcPaths, IpcSecurityError
 from local_recall.ipc_protocol import (
+    MAX_REQUEST_PAYLOAD_BYTES,
     IpcCapability,
     IpcProtocolError,
     IpcRequestCodec,
@@ -96,6 +97,7 @@ class ZmqIpcServer:
         socket.setsockopt(zmq.LINGER, 0)
         socket.setsockopt(zmq.SNDHWM, self.max_pending + _MAX_URGENT_PENDING)
         socket.setsockopt(zmq.RCVHWM, self.max_pending + _MAX_URGENT_PENDING)
+        socket.setsockopt(zmq.MAXMSGSIZE, MAX_REQUEST_PAYLOAD_BYTES)
         if hasattr(zmq, "IPC_FILTER_UID"):
             socket.setsockopt(zmq.IPC_FILTER_UID, self.expected_uid)
         try:
