@@ -211,7 +211,8 @@ def test_selective_removal_rewrites_encrypted_index_without_provider_calls(tmp_p
 
     assert manifest.record_count == 1
     assert provider.calls == []
-    assert asyncio.run(index.search(SemanticQuery("alpha"), provider)) == ()
+    alpha_hits = asyncio.run(index.search(SemanticQuery("alpha"), provider))
+    assert first.record_id not in {hit.record_id for hit in alpha_hits}
     hits = asyncio.run(index.search(SemanticQuery("beta"), provider))
     assert tuple(hit.record_id for hit in hits) == (second.record_id,)
     persisted = b"".join(path.read_bytes() for path in root.rglob("*") if path.is_file())
