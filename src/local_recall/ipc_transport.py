@@ -24,6 +24,7 @@ from local_recall.cli_contract import (
     CliDiagnosticPayload,
     CliLifecycleState,
     CliOutcome,
+    CliPriority,
     CliQueryPayload,
     CliRequest,
     CliResponse,
@@ -38,6 +39,7 @@ from local_recall.ipc_protocol import (
 
 _MAX_RESPONSE_BYTES = 1_310_720
 _MAX_PENDING = 32
+_MAX_URGENT_PENDING = 4
 _POLL_MS = 25
 
 
@@ -53,6 +55,7 @@ class _PendingReply:
     identity: bytes
     request_id: str
     future: Future[CliResponse]
+    urgent: bool
 
 
 @dataclass(slots=True, repr=False)
@@ -68,6 +71,7 @@ class ZmqIpcServer:
     _thread: threading.Thread | None = field(default=None, init=False, repr=False)
     _stop: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
     _executor: ThreadPoolExecutor | None = field(default=None, init=False, repr=False)
+    _urgent_executor: ThreadPoolExecutor | None = field(default=None, init=False, repr=False)
     _codec: IpcRequestCodec | None = field(default=None, init=False, repr=False)
 
     def start(self) -> None:
@@ -84,8 +88,8 @@ class ZmqIpcServer:
         context: zmq.Context[zmq.Socket[bytes]] = zmq.Context()
         socket = context.socket(zmq.ROUTER)
         socket.setsockopt(zmq.LINGER, 0)
-        socket.setsockopt(zmq.SNDHWM, self.max_pending)
-        socket.setsockopt(zmq.RCVHWM, self.max_pending)
+        socket.setsockopt(zmq.SNDHWM, self.max_pending + _MAX_URGENT_PENDING)
+        socket.setsockopt(zmq.RCVHWM, self.max_pending + _MAX_URGENT_PENDING)
         if hasattr(zmq, "IPC_FILTER_UID"):
             socket.setsockopt(zmq.IPC_FILTER_UID, self.expected_uid)
         try:
@@ -110,6 +114,7 @@ class ZmqIpcServer:
             ),
         )
         self._executor = ThreadPoolExecutor(max_workers=min(self.max_pending, 8))
+        self._urgent_executor = ThreadPoolExecutor(max_workers=2)
         self._stop.clear()
         self._thread = threading.Thread(target=self._serve, name="local-recall-ipc", daemon=True)
         self._thread.start()
@@ -123,6 +128,9 @@ class ZmqIpcServer:
         executor = self._executor
         if executor is not None:
             executor.shutdown(wait=False, cancel_futures=True)
+        urgent_executor = self._urgent_executor
+        if urgent_executor is not None:
+            urgent_executor.shutdown(wait=False, cancel_futures=True)
         socket = self._socket
         if socket is not None:
             socket.close(linger=0)
@@ -132,6 +140,7 @@ class ZmqIpcServer:
         self._cleanup_socket()
         self._thread = None
         self._executor = None
+        self._urgent_executor = None
         self._socket = None
         self._context = None
         self._codec = None
@@ -140,6 +149,7 @@ class ZmqIpcServer:
         socket = self._require_socket()
         codec = self._require_codec()
         executor = self._require_executor()
+        urgent_executor = self._require_urgent_executor()
         pending: list[_PendingReply] = []
         poller = zmq.Poller()
         poller.register(socket, zmq.POLLIN)
@@ -161,11 +171,6 @@ class ZmqIpcServer:
             if len(frames) != 4:
                 continue
             identity, *request_frames = frames
-            if len(pending) >= self.max_pending:
-                self._send_failure(
-                    socket, identity, _request_id_hint(request_frames), "ipc-overloaded"
-                )
-                continue
             try:
                 request = codec.decode(tuple(request_frames), now=datetime.now(UTC))
             except IpcProtocolError:
@@ -173,9 +178,29 @@ class ZmqIpcServer:
                     socket, identity, _request_id_hint(request_frames), "ipc-rejected"
                 )
                 continue
-            future = executor.submit(self._invoke_handler, request)
+
+            urgent = request.priority is CliPriority.URGENT_CONTROL
+            lane_pending = sum(item.urgent is urgent for item in pending)
+            lane_limit = _MAX_URGENT_PENDING if urgent else self.max_pending
+            if lane_pending >= lane_limit:
+                self._send_failure(
+                    socket,
+                    identity,
+                    request.request_id,
+                    "ipc-overloaded",
+                    outcome=CliOutcome.OVERLOADED,
+                )
+                continue
+
+            lane_executor = urgent_executor if urgent else executor
+            future = lane_executor.submit(self._invoke_handler, request)
             pending.append(
-                _PendingReply(identity=identity, request_id=request.request_id, future=future)
+                _PendingReply(
+                    identity=identity,
+                    request_id=request.request_id,
+                    future=future,
+                    urgent=urgent,
+                )
             )
 
         deadline = time.monotonic() + 0.25
@@ -232,11 +257,16 @@ class ZmqIpcServer:
 
     @staticmethod
     def _send_failure(
-        socket: zmq.Socket[bytes], identity: bytes, request_id: str, reason_code: str
+        socket: zmq.Socket[bytes],
+        identity: bytes,
+        request_id: str,
+        reason_code: str,
+        *,
+        outcome: CliOutcome = CliOutcome.INVALID,
     ) -> None:
         response = CliResponse.failure(
             request_id=request_id,
-            outcome=CliOutcome.INVALID,
+            outcome=outcome,
             reason_code=reason_code,
         )
         with contextlib.suppress(zmq.Again, zmq.ZMQError):
@@ -298,6 +328,11 @@ class ZmqIpcServer:
         if self._executor is None:
             raise IpcTransportError("not-started")
         return self._executor
+
+    def _require_urgent_executor(self) -> ThreadPoolExecutor:
+        if self._urgent_executor is None:
+            raise IpcTransportError("not-started")
+        return self._urgent_executor
 
     def __repr__(self) -> str:
         return "ZmqIpcServer(paths=<private>, expected_uid=<uid>)"
