@@ -123,9 +123,7 @@ class AuditRecorder:
             category=AuditCategory.IPC,
             action=AuditAction.IPC_REQUEST,
             outcome=AuditOutcome.ACCEPTED if authorized else AuditOutcome.REJECTED,
-            reason=(
-                AuditReasonCode.IPC_AUTHORIZED if authorized else AuditReasonCode.IPC_REJECTED
-            ),
+            reason=(AuditReasonCode.IPC_AUTHORIZED if authorized else AuditReasonCode.IPC_REJECTED),
             correlation_id=correlation_id,
             attributes={
                 "authorized": authorized,
