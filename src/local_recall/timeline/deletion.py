@@ -121,9 +121,7 @@ class DeletionJournal:
             if raw["version"] != _JOURNAL_VERSION:
                 raise ValueError
             raw_ids = raw["record_ids"]
-            if not isinstance(raw_ids, list) or not all(
-                isinstance(item, str) for item in raw_ids
-            ):
+            if not isinstance(raw_ids, list) or not all(isinstance(item, str) for item in raw_ids):
                 raise ValueError
             request_id = raw["request_id"]
             phase = raw["phase"]
