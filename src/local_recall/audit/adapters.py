@@ -138,7 +138,7 @@ class IpcAuditAdapter:
     def rejected(
         self,
         *,
-        capability: str,
+        capability: str | None,
         urgent: bool,
         correlation_id: UUID | None = None,
     ) -> AuditEvent:
