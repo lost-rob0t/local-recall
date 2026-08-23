@@ -227,7 +227,7 @@ class ZmqIpcServer:
                     .encode("utf-8")
                 )
             with contextlib.suppress(zmq.Again, zmq.ZMQError):
-                socket.send_multipart([item.identity, payload], flags=zmq.NOBLOCK)
+                _send_frames(socket, (item.identity, payload), flags=zmq.NOBLOCK)
         pending[:] = remaining
 
     @staticmethod
@@ -240,7 +240,11 @@ class ZmqIpcServer:
             reason_code=reason_code,
         )
         with contextlib.suppress(zmq.Again, zmq.ZMQError):
-            socket.send_multipart([identity, response.to_json().encode("utf-8")], flags=zmq.NOBLOCK)
+            _send_frames(
+                socket,
+                (identity, response.to_json().encode("utf-8")),
+                flags=zmq.NOBLOCK,
+            )
 
     def _endpoint(self) -> str:
         return f"ipc://{self.paths.socket_path}"
@@ -334,7 +338,7 @@ class ZmqDaemonClient:
         socket.setsockopt(zmq.RCVTIMEO, timeout_ms)
         try:
             socket.connect(f"ipc://{self.paths.socket_path}")
-            socket.send_multipart(list(frames))
+            _send_frames(socket, frames)
             response_frames = socket.recv_multipart()
         except zmq.Again:
             raise IpcTransportError("timeout") from None
@@ -353,6 +357,17 @@ class ZmqDaemonClient:
 
     def __repr__(self) -> str:
         return "ZmqDaemonClient(paths=<private>, expected_uid=<uid>)"
+
+
+def _send_frames(
+    socket: zmq.Socket[bytes], frames: tuple[bytes, ...], *, flags: int = 0
+) -> None:
+    if not frames:
+        raise IpcTransportError("empty-message")
+    last_index = len(frames) - 1
+    for index, frame in enumerate(frames):
+        send_flags = flags | (zmq.SNDMORE if index != last_index else 0)
+        socket.send(frame, flags=send_flags)
 
 
 def _request_id_hint(frames: list[bytes]) -> str:
@@ -415,7 +430,7 @@ def _decode_query_payload(value: object) -> CliQueryPayload | None:
     if not isinstance(citations_raw, list):
         raise ValueError
     citations: list[CliCitation] = []
-    for item in citations_raw:
+    for item in cast(list[object], citations_raw):
         citation = _mapping(item)
         citations.append(
             CliCitation(
@@ -435,7 +450,7 @@ def _decode_diagnostic_payload(value: object) -> CliDiagnosticPayload | None:
     if not isinstance(entries_raw, list):
         raise ValueError
     entries: list[CliDiagnosticEntry] = []
-    for item in entries_raw:
+    for item in cast(list[object], entries_raw):
         entry = _mapping(item)
         entries.append(
             CliDiagnosticEntry(
