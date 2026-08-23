@@ -120,16 +120,20 @@ class DeletionJournal:
                 raise ValueError
             if raw["version"] != _JOURNAL_VERSION:
                 raise ValueError
-            raw_ids = raw["record_ids"]
-            if not isinstance(raw_ids, list) or not all(isinstance(item, str) for item in raw_ids):
+            raw_ids_value = raw["record_ids"]
+            if not isinstance(raw_ids_value, list):
                 raise ValueError
+            raw_ids_objects = cast(list[object], raw_ids_value)
+            if not all(isinstance(item, str) for item in raw_ids_objects):
+                raise ValueError
+            raw_ids = cast(list[str], raw_ids_objects)
             request_id = raw["request_id"]
             phase = raw["phase"]
             if not isinstance(request_id, str) or not isinstance(phase, str):
                 raise ValueError
             return DeletionState(
                 request_id=request_id,
-                record_ids=tuple(UUID(cast(str, item)) for item in raw_ids),
+                record_ids=tuple(UUID(item) for item in raw_ids),
                 phase=DeletionPhase(phase),
             )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
