@@ -268,6 +268,12 @@ class ZmqIpcServer:
                 outcome=CliOutcome.INTERNAL_FAILURE,
                 reason_code="handler-failed",
             )
+        if datetime.now(UTC) >= request.deadline:
+            return CliResponse.failure(
+                request_id=request.request_id,
+                outcome=CliOutcome.TIMEOUT,
+                reason_code="deadline-expired",
+            )
         if response.request_id != request.request_id:
             return CliResponse.failure(
                 request_id=request.request_id,
