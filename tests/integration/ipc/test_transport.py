@@ -7,6 +7,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from local_recall import ipc, ipc_transport
+from local_recall.audit import AuditEvent, AuditRecorder
+from local_recall.audit.adapters import IpcAuditAdapter
 from local_recall.cli_contract import (
     CliCommand,
     CliLifecycleState,
@@ -15,6 +17,14 @@ from local_recall.cli_contract import (
     CliResponse,
     CliStatusPayload,
 )
+
+
+class MemoryAuditSink:
+    def __init__(self) -> None:
+        self.events: list[AuditEvent] = []
+
+    def emit(self, event: AuditEvent) -> None:
+        self.events.append(event)
 
 
 def _paths(tmp_path: Path) -> ipc.IpcPaths:
@@ -62,6 +72,44 @@ def test_authenticated_owner_only_ipc_round_trip(tmp_path: Path) -> None:
         assert stat.S_IMODE(socket_metadata.st_mode) == 0o600
     finally:
         server.close()
+
+
+def test_authorized_request_emits_content_free_ipc_audit_event(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    sink = MemoryAuditSink()
+    audit = IpcAuditAdapter(AuditRecorder(sink))
+    private_marker = "SYNTHETIC-PRIVATE-QUERY-MARKER"
+
+    def handler(request: CliRequest) -> CliResponse:
+        return CliResponse.success(
+            request_id=request.request_id,
+            query_payload=CliQueryPayload(text="synthetic result"),
+        )
+
+    server = ipc_transport.ZmqIpcServer(
+        paths=paths,
+        expected_uid=os.getuid(),
+        handler=handler,
+        audit=audit,
+    )
+    server.start()
+    try:
+        client = ipc_transport.ZmqDaemonClient(paths=paths, expected_uid=os.getuid())
+        response = client.request(_request(CliCommand.SEARCH, query=private_marker))
+    finally:
+        server.close()
+
+    assert response.query_payload == CliQueryPayload(text="synthetic result")
+    assert len(sink.events) == 1
+    event = sink.events[0]
+    assert event.attributes == {
+        "authorized": True,
+        "control": False,
+        "diagnostic": False,
+        "query": True,
+        "urgent": False,
+    }
+    assert private_marker not in repr(event)
 
 
 def test_stop_is_not_starved_by_blocked_query(tmp_path: Path) -> None:
