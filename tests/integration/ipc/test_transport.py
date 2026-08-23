@@ -6,6 +6,8 @@ import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import zmq
+
 from local_recall import ipc, ipc_transport
 from local_recall.audit import AuditEvent, AuditRecorder
 from local_recall.audit.adapters import IpcAuditAdapter
@@ -18,6 +20,7 @@ from local_recall.cli_contract import (
     CliResponse,
     CliStatusPayload,
 )
+from local_recall.ipc_protocol import MAX_REQUEST_PAYLOAD_BYTES
 
 
 class MemoryAuditSink:
@@ -71,6 +74,29 @@ def test_authenticated_owner_only_ipc_round_trip(tmp_path: Path) -> None:
         assert stat.S_ISSOCK(socket_metadata.st_mode)
         assert socket_metadata.st_uid == os.getuid()
         assert stat.S_IMODE(socket_metadata.st_mode) == 0o600
+    finally:
+        server.close()
+
+
+def test_router_enforces_native_inbound_message_limit(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+
+    def handler(request: CliRequest) -> CliResponse:
+        return CliResponse.success(
+            request_id=request.request_id,
+            lifecycle_state=CliLifecycleState.PAUSED,
+        )
+
+    server = ipc_transport.ZmqIpcServer(
+        paths=paths,
+        expected_uid=os.getuid(),
+        handler=handler,
+    )
+    server.start()
+    try:
+        socket = server._socket
+        assert socket is not None
+        assert socket.getsockopt(zmq.MAXMSGSIZE) == MAX_REQUEST_PAYLOAD_BYTES
     finally:
         server.close()
 
