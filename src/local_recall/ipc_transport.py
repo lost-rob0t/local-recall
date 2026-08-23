@@ -14,12 +14,16 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
+from uuid import UUID
 
 import zmq
 
+from local_recall.audit.adapters import IpcAuditAdapter
+from local_recall.audit.errors import AuditFailure
 from local_recall.cli_contract import (
     PROTOCOL_VERSION,
     CliCitation,
+    CliCommand,
     CliDiagnosticCategory,
     CliDiagnosticEntry,
     CliDiagnosticPayload,
@@ -66,6 +70,7 @@ class ZmqIpcServer:
     paths: IpcPaths
     expected_uid: int
     handler: RequestHandler
+    audit: IpcAuditAdapter | None = None
     max_pending: int = _MAX_PENDING
     _context: zmq.Context[zmq.Socket[bytes]] | None = field(default=None, init=False, repr=False)
     _socket: zmq.Socket[bytes] | None = field(default=None, init=False, repr=False)
@@ -181,6 +186,23 @@ class ZmqIpcServer:
                 continue
 
             urgent = request.priority is CliPriority.URGENT_CONTROL
+            if self.audit is not None:
+                try:
+                    self.audit.accepted(
+                        capability=_audit_capability(request.command),
+                        urgent=urgent,
+                        correlation_id=UUID(hex=request.request_id),
+                    )
+                except AuditFailure, ValueError:
+                    self._send_failure(
+                        socket,
+                        identity,
+                        request.request_id,
+                        "audit-failed",
+                        outcome=CliOutcome.INTERNAL_FAILURE,
+                    )
+                    continue
+
             lane_pending = sum(item.urgent is urgent for item in pending)
             lane_limit = _MAX_URGENT_PENDING if urgent else self.max_pending
             if lane_pending >= lane_limit:
@@ -425,6 +447,24 @@ def daemon_client_from_environment() -> ZmqDaemonClient:
     except IpcSecurityError, OSError, ValueError:
         raise IpcTransportError("runtime-unavailable") from None
     return ZmqDaemonClient(paths=paths, expected_uid=expected_uid)
+
+
+def _audit_capability(command: CliCommand) -> str:
+    if command in {
+        CliCommand.START,
+        CliCommand.PAUSE,
+        CliCommand.RESUME,
+        CliCommand.STOP,
+        CliCommand.STATUS,
+        CliCommand.PRIVACY_ON,
+        CliCommand.PRIVACY_OFF,
+    }:
+        return "control"
+    if command in {CliCommand.ASK, CliCommand.TIMELINE, CliCommand.SEARCH}:
+        return "query"
+    if command in {CliCommand.PROVIDERS, CliCommand.HEALTH, CliCommand.STORAGE_STATS}:
+        return "diagnostic"
+    raise ValueError("unsupported IPC capability")
 
 
 def _send_frames(socket: zmq.Socket[bytes], frames: tuple[bytes, ...], *, flags: int = 0) -> None:
