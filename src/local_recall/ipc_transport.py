@@ -403,7 +403,7 @@ def daemon_client_from_environment() -> ZmqDaemonClient:
     expected_uid = os.getuid()
     try:
         paths = IpcPaths.from_runtime_dir(Path(runtime), expected_uid=expected_uid)
-    except (IpcSecurityError, OSError, ValueError):
+    except IpcSecurityError, OSError, ValueError:
         raise IpcTransportError("runtime-unavailable") from None
     return ZmqDaemonClient(paths=paths, expected_uid=expected_uid)
 
