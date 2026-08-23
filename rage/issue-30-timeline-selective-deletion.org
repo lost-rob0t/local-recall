@@ -103,9 +103,16 @@ A crash at any phase resumes forward. No rollback makes a deleted record visible
 - Valid RED: head =9e11927ad677056fecb124b9a3735531170ec99e=, CI run 792. Formatting, Ruff, and ShellCheck passed; strict Pyright failed specifically because =DeletionCoordinator=, =DeletionJournal=, and =DeletionPhase= were absent.
 - Production implements an owner-only 0700 journal directory, 0600 bounded/closed JSON intent, atomic fsync+replace writes, monotonic phases, idempotent canonical storage deletion, derived semantic/activity cleanup, and =recover()= that resumes forward after an interruption.
 - Production run 793 exposed formatting only; the next exact-formatted run exposed two strict-Pyright unknown-element errors at the untrusted JSON list boundary. These are implementation typing defects, not accepted RED evidence; the boundary was tightened through explicit =object -> list[object] -> validated list[str]= narrowing.
-- Current production head: =e62c0ded0167b96c9296f130cedd12e1600b95be=. Exact-head green verification pending.
+- Later branch head =3b5b1d0cc74ae7f9763e3fe5265a443c396e74d6= passed exact-head CI run 800 across both Ubuntu matrices, canonical gate, all populated test layers, security checks, and failure-propagation.
+
+*** Slice 3 — stale journal temporary-file crash recovery
+- The design already required interrupted journal replacement not to wedge recovery. A concrete audit found =_write_sync= used =O_EXCL= for =.deletion-intent.json.tmp= without handling an orphan left by a crash before =os.replace=.
+- Valid RED: head =5ac3f97b32fc10adaa9066d6157de7ad83860915=, CI run 801. Formatting, Ruff, ShellCheck, and strict Pyright passed. Unit tests then failed exactly at =test_deletion_journal_recovers_from_stale_temporary_file=: 703 passed / 1 failed, with =FileExistsError= from the stale =.tmp= path.
+- Production: before creating the replacement with =O_EXCL=, remove only the journal's fixed private temporary path when it exists (including a dangling symlink path), fsync the owner-only journal directory, then create/write/fsync/replace as before. Non-file objects that cannot be unlinked still fail closed rather than being silently bypassed.
+- GREEN: head =5b42296dde2ee27913757639376250501d46fd8d=, CI run 802. Both Ubuntu matrices, canonical repository gate, unit/contract/integration/security suites, security checks, strict typing, and failure-propagation all passed.
 
 ** Verify
 - Slice 1 exact-head CI is green.
-- Slice 2 exact-head CI is pending on =e62c0ded0167b96c9296f130cedd12e1600b95be=.
-- Full issue acceptance remains open: concrete activity rebuild, typed timeline/scope/preview service, deletion IPC/CLI capability, sanitized destructive audit, concurrent retrieval visibility race, journal interruption/security cases, docs, full canonical/final exact-head gates.
+- Slice 2 coordinator/recovery implementation is green on later exact branch head =3b5b1d0cc74ae7f9763e3fe5265a443c396e74d6= (CI run 800).
+- Slice 3 stale-temp recovery is green on =5b42296dde2ee27913757639376250501d46fd8d= (CI run 802).
+- Full issue acceptance remains open: concrete activity rebuild, typed timeline/scope/preview service, deletion IPC/CLI capability, sanitized destructive audit, journal permission/symlink abuse cases, docs, and full final exact-head gates.
