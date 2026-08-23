@@ -153,6 +153,9 @@ class DeletionJournal:
         if len(payload) > _MAX_JOURNAL_BYTES:
             raise ValueError("deletion journal exceeds the size limit")
         temporary = self._path.with_name(f".{self._path.name}.tmp")
+        if temporary.exists() or temporary.is_symlink():
+            temporary.unlink()
+            _fsync_directory(self._root)
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
             view = memoryview(payload)
