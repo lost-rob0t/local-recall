@@ -12,6 +12,7 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import cast
 
 import zmq
@@ -392,6 +393,19 @@ class ZmqDaemonClient:
 
     def __repr__(self) -> str:
         return "ZmqDaemonClient(paths=<private>, expected_uid=<uid>)"
+
+
+def daemon_client_from_environment() -> ZmqDaemonClient:
+    """Construct the authenticated local client from the private XDG runtime directory."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime is None or not runtime:
+        raise IpcTransportError("runtime-unavailable")
+    expected_uid = os.getuid()
+    try:
+        paths = IpcPaths.from_runtime_dir(Path(runtime), expected_uid=expected_uid)
+    except (IpcSecurityError, OSError, ValueError):
+        raise IpcTransportError("runtime-unavailable") from None
+    return ZmqDaemonClient(paths=paths, expected_uid=expected_uid)
 
 
 def _send_frames(socket: zmq.Socket[bytes], frames: tuple[bytes, ...], *, flags: int = 0) -> None:
