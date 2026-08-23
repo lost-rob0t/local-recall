@@ -244,7 +244,8 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
         capability_count = sum(
             1 for key in ("control", "diagnostic", "query") if attributes[key] is True
         )
-        if capability_count != 1:
+        authorized = attributes["authorized"]
+        if (authorized and capability_count != 1) or (not authorized and capability_count > 1):
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.KEY_OPERATION and (
