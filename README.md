@@ -25,6 +25,7 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [Explicit remote provider routing and egress](docs/remote-providers.md)
 - [CLI controls and query contract](docs/cli.md)
 - [Recording status indicator](docs/indicator.md)
+- [Authenticated local daemon IPC](docs/ipc.md)
 - [Testing policy](docs/testing.md)
 
 ## Development
