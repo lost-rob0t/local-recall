@@ -180,9 +180,24 @@ class ZmqIpcServer:
             try:
                 request = codec.decode(tuple(request_frames), now=datetime.now(UTC))
             except IpcProtocolError:
-                self._send_failure(
-                    socket, identity, _request_id_hint(request_frames), "ipc-rejected"
-                )
+                request_id = _request_id_hint(request_frames)
+                if self.audit is not None:
+                    try:
+                        self.audit.rejected(
+                            capability=None,
+                            urgent=False,
+                            correlation_id=_correlation_id_hint(request_frames),
+                        )
+                    except AuditFailure, ValueError:
+                        self._send_failure(
+                            socket,
+                            identity,
+                            request_id,
+                            "audit-failed",
+                            outcome=CliOutcome.INTERNAL_FAILURE,
+                        )
+                        continue
+                self._send_failure(socket, identity, request_id, "ipc-rejected")
                 continue
 
             urgent = request.priority is CliPriority.URGENT_CONTROL
@@ -491,6 +506,17 @@ def _request_id_hint(frames: list[bytes]) -> str:
     if any(character not in "0123456789abcdef" for character in value):
         return "0" * 32
     return value
+
+
+def _correlation_id_hint(frames: list[bytes]) -> UUID | None:
+    value = _request_id_hint(frames)
+    try:
+        correlation_id = UUID(hex=value)
+    except ValueError:
+        return None
+    if correlation_id.version != 4:
+        return None
+    return correlation_id
 
 
 def _decode_response(frame: bytes) -> CliResponse:
