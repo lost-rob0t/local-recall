@@ -121,7 +121,9 @@ class DeletionJournal:
             if raw["version"] != _JOURNAL_VERSION:
                 raise ValueError
             raw_ids = raw["record_ids"]
-            if not isinstance(raw_ids, list) or not all(isinstance(item, str) for item in raw_ids):
+            if not isinstance(raw_ids, list) or not all(
+                isinstance(item, str) for item in raw_ids
+            ):
                 raise ValueError
             request_id = raw["request_id"]
             phase = raw["phase"]
@@ -237,7 +239,10 @@ class DeletionCoordinator:
 def _validate_request_id(request_id: str) -> None:
     if not 1 <= len(request_id) <= 128:
         raise ValueError("request_id must be between 1 and 128 characters")
-    if not all(character.isascii() and (character.isalnum() or character in "-_") for character in request_id):
+    if not all(
+        character.isascii() and (character.isalnum() or character in "-_")
+        for character in request_id
+    ):
         raise ValueError("request_id must be an opaque ASCII identifier")
 
 
