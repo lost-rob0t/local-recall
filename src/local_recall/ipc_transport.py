@@ -359,9 +359,7 @@ class ZmqDaemonClient:
         return "ZmqDaemonClient(paths=<private>, expected_uid=<uid>)"
 
 
-def _send_frames(
-    socket: zmq.Socket[bytes], frames: tuple[bytes, ...], *, flags: int = 0
-) -> None:
+def _send_frames(socket: zmq.Socket[bytes], frames: tuple[bytes, ...], *, flags: int = 0) -> None:
     if not frames:
         raise IpcTransportError("empty-message")
     last_index = len(frames) - 1
