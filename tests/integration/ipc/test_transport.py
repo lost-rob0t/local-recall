@@ -94,8 +94,8 @@ def test_router_enforces_native_inbound_message_limit(tmp_path: Path) -> None:
     )
     server.start()
     try:
-        socket = server._socket
-        assert socket is not None
+        socket = getattr(server, "_socket", None)
+        assert isinstance(socket, zmq.Socket)
         assert socket.getsockopt(zmq.MAXMSGSIZE) == MAX_REQUEST_PAYLOAD_BYTES
     finally:
         server.close()
