@@ -119,3 +119,12 @@
 - Canonical =./scripts/check= must pass with nonzero test counts and security/failure-propagation gates.
 - =nix flake check= is not required for this issue because no Nix packaging/service definition changed; packaging remains #40.
 - Exact final PR head GitHub Actions green before merge.
+
+* Closeout
+- Final implementation/documentation head: =67fc57bf67372b96f914d0c9d81bc7b909a4b331=.
+- Final exact-head CI: run #780, fully green on Ubuntu 22.04 and 24.04, canonical =./scripts/check=, security checks, and failure-propagation.
+- Review gate immediately before merge: PR #87 mergeable; no issue/PR comments, submitted reviews, or unresolved review threads.
+- Implementation PR: #87, squash-merged into =main= as =437314d7356e64a73ab1c96bd6ea6445664aea8e=.
+- Issue #29 auto-closed as =completed= at merge.
+- Acceptance result: all four issue acceptance criteria satisfied by merged code/tests/docs.
+- No #30 or later issue was consumed during this closeout transaction.
