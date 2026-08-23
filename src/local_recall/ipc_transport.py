@@ -348,7 +348,14 @@ class ZmqDaemonClient:
 
     def request(self, request: CliRequest) -> CliResponse:
         store = IpcCredentialStore(self.paths, self.expected_uid)
-        token = store.load()
+        try:
+            token = store.load()
+        except IpcSecurityError, OSError:
+            return CliResponse.failure(
+                request_id=request.request_id,
+                outcome=CliOutcome.UNAVAILABLE,
+                reason_code="daemon-unavailable",
+            )
         codec = IpcRequestCodec(
             token=token,
             capabilities=frozenset(
@@ -362,7 +369,11 @@ class ZmqDaemonClient:
         frames = codec.encode(request)
         remaining = (request.deadline - datetime.now(UTC)).total_seconds()
         if remaining <= 0:
-            raise IpcTransportError("deadline-expired")
+            return CliResponse.failure(
+                request_id=request.request_id,
+                outcome=CliOutcome.TIMEOUT,
+                reason_code="deadline-expired",
+            )
         timeout_ms = max(1, min(int(remaining * 1000), 30_000))
 
         context: zmq.Context[zmq.Socket[bytes]] = zmq.Context()
@@ -377,9 +388,17 @@ class ZmqDaemonClient:
             _send_frames(socket, frames)
             response_frames = socket.recv_multipart()
         except zmq.Again:
-            raise IpcTransportError("timeout") from None
+            return CliResponse.failure(
+                request_id=request.request_id,
+                outcome=CliOutcome.TIMEOUT,
+                reason_code="ipc-timeout",
+            )
         except zmq.ZMQError:
-            raise IpcTransportError("unavailable") from None
+            return CliResponse.failure(
+                request_id=request.request_id,
+                outcome=CliOutcome.UNAVAILABLE,
+                reason_code="daemon-unavailable",
+            )
         finally:
             socket.close(linger=0)
             context.term()
