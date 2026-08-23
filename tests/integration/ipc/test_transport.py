@@ -6,6 +6,7 @@ import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from local_recall import ipc, ipc_transport
 from local_recall.cli_contract import (
     CliCommand,
     CliLifecycleState,
@@ -14,15 +15,13 @@ from local_recall.cli_contract import (
     CliResponse,
     CliStatusPayload,
 )
-from local_recall.ipc import IpcPaths
-from local_recall.ipc_transport import ZmqDaemonClient, ZmqIpcServer
 
 
-def _paths(tmp_path: Path) -> IpcPaths:
+def _paths(tmp_path: Path) -> ipc.IpcPaths:
     runtime_dir = tmp_path / "runtime"
     runtime_dir.mkdir(mode=0o700)
     runtime_dir.chmod(0o700)
-    return IpcPaths.from_runtime_dir(runtime_dir, expected_uid=os.getuid())
+    return ipc.IpcPaths.from_runtime_dir(runtime_dir, expected_uid=os.getuid())
 
 
 def _request(command: CliCommand, *, query: str | None = None) -> CliRequest:
@@ -45,10 +44,14 @@ def test_authenticated_owner_only_ipc_round_trip(tmp_path: Path) -> None:
             status_payload=CliStatusPayload(privacy_mode=False),
         )
 
-    server = ZmqIpcServer(paths=paths, expected_uid=os.getuid(), handler=handler)
+    server = ipc_transport.ZmqIpcServer(
+        paths=paths,
+        expected_uid=os.getuid(),
+        handler=handler,
+    )
     server.start()
     try:
-        client = ZmqDaemonClient(paths=paths, expected_uid=os.getuid())
+        client = ipc_transport.ZmqDaemonClient(paths=paths, expected_uid=os.getuid())
         response = client.request(_request(CliCommand.STATUS))
 
         assert response.lifecycle_state is CliLifecycleState.PAUSED
@@ -80,11 +83,15 @@ def test_stop_is_not_starved_by_blocked_query(tmp_path: Path) -> None:
             lifecycle_state=CliLifecycleState.OFF,
         )
 
-    server = ZmqIpcServer(paths=paths, expected_uid=os.getuid(), handler=handler)
+    server = ipc_transport.ZmqIpcServer(
+        paths=paths,
+        expected_uid=os.getuid(),
+        handler=handler,
+    )
     server.start()
     query_response: list[CliResponse] = []
     try:
-        query_client = ZmqDaemonClient(paths=paths, expected_uid=os.getuid())
+        query_client = ipc_transport.ZmqDaemonClient(paths=paths, expected_uid=os.getuid())
         query_thread = threading.Thread(
             target=lambda: query_response.append(
                 query_client.request(_request(CliCommand.SEARCH, query="synthetic"))
@@ -93,7 +100,7 @@ def test_stop_is_not_starved_by_blocked_query(tmp_path: Path) -> None:
         query_thread.start()
         assert query_started.wait(timeout=1)
 
-        control_client = ZmqDaemonClient(paths=paths, expected_uid=os.getuid())
+        control_client = ipc_transport.ZmqDaemonClient(paths=paths, expected_uid=os.getuid())
         stop_response = control_client.request(_request(CliCommand.STOP))
 
         assert stop_response.lifecycle_state is CliLifecycleState.OFF
