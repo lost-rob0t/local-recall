@@ -260,6 +260,12 @@ class ZmqIpcServer:
             return
 
     def _invoke_handler(self, request: CliRequest) -> CliResponse:
+        if datetime.now(UTC) >= request.deadline:
+            return CliResponse.failure(
+                request_id=request.request_id,
+                outcome=CliOutcome.TIMEOUT,
+                reason_code="deadline-expired",
+            )
         try:
             response = self.handler(request)
         except Exception:
