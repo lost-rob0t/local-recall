@@ -21,6 +21,7 @@ class AuditCategory(StrEnum):
     EXPORT = "export"
     KEY = "key"
     SYSTEM = "system"
+    IPC = "ipc"
 
 
 class AuditAction(StrEnum):
@@ -35,6 +36,7 @@ class AuditAction(StrEnum):
     SYSTEM_HARDENING = "system_hardening"
     STORAGE_PERMISSION_CHECK = "storage_permission_check"
     LOG_ROTATION = "log_rotation"
+    IPC_REQUEST = "ipc_request"
 
 
 class AuditOutcome(StrEnum):
@@ -82,6 +84,8 @@ class AuditReasonCode(StrEnum):
     CORE_DUMPS_DISABLED = "core_dumps_disabled"
     HARDENING_FAILED = "hardening_failed"
     CRITICAL_FAULT = "critical_fault"
+    IPC_AUTHORIZED = "ipc_authorized"
+    IPC_REJECTED = "ipc_rejected"
 
 
 _ACTION_CATEGORIES: dict[AuditAction, AuditCategory] = {
@@ -96,6 +100,7 @@ _ACTION_CATEGORIES: dict[AuditAction, AuditCategory] = {
     AuditAction.SYSTEM_HARDENING: AuditCategory.SYSTEM,
     AuditAction.STORAGE_PERMISSION_CHECK: AuditCategory.SYSTEM,
     AuditAction.LOG_ROTATION: AuditCategory.SYSTEM,
+    AuditAction.IPC_REQUEST: AuditCategory.IPC,
 }
 
 _ALLOWED_ATTRIBUTE_KEYS = frozenset(
@@ -110,6 +115,10 @@ _ALLOWED_ATTRIBUTE_KEYS = frozenset(
         "attempt",
         "queue_depth",
         "quarantined",
+        "control",
+        "query",
+        "diagnostic",
+        "urgent",
     }
 )
 
@@ -224,6 +233,18 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
         remote = attributes["remote"]
         authorized = attributes["authorized"]
         if type(remote) is not bool or type(authorized) is not bool:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action is AuditAction.IPC_REQUEST:
+        required = {"authorized", "control", "diagnostic", "query", "urgent"}
+        if set(attributes) != required:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if any(type(attributes[key]) is not bool for key in required):
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        capability_count = sum(
+            1 for key in ("control", "diagnostic", "query") if attributes[key] is True
+        )
+        if capability_count != 1:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.KEY_OPERATION and (
