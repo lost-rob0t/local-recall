@@ -61,6 +61,20 @@ def test_deletion_journal_is_owner_only_content_free_and_round_trips(tmp_path: P
     assert oct((root / "deletion-intent.json").stat().st_mode & 0o777) == "0o600"
 
 
+def test_deletion_journal_recovers_from_stale_temporary_file(tmp_path: Path) -> None:
+    root = tmp_path / "deletion"
+    journal = DeletionJournal(root)
+    temporary = root / ".deletion-intent.json.tmp"
+    temporary.write_bytes(b"interrupted-private-state")
+    temporary.chmod(0o600)
+
+    state = asyncio.run(journal.begin("request-1", (FIRST, SECOND)))
+
+    assert state.phase is DeletionPhase.PLANNED
+    assert asyncio.run(journal.load()) == state
+    assert not temporary.exists()
+
+
 def test_deletion_resumes_forward_after_derived_state_failure(tmp_path: Path) -> None:
     async def exercise() -> None:
         journal = DeletionJournal(tmp_path / "deletion")
