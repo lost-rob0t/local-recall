@@ -115,6 +115,41 @@ class RemoteProviderAuditAdapter:
         )
 
 
+class IpcAuditAdapter:
+    """Record content-free authentication/authorization outcomes for IPC requests."""
+
+    def __init__(self, recorder: AuditRecorder) -> None:
+        self._recorder = recorder
+
+    def accepted(
+        self,
+        *,
+        capability: str,
+        urgent: bool,
+        correlation_id: UUID | None = None,
+    ) -> AuditEvent:
+        return self._recorder.ipc_request(
+            authorized=True,
+            capability=capability,
+            urgent=urgent,
+            correlation_id=correlation_id,
+        )
+
+    def rejected(
+        self,
+        *,
+        capability: str,
+        urgent: bool,
+        correlation_id: UUID | None = None,
+    ) -> AuditEvent:
+        return self._recorder.ipc_request(
+            authorized=False,
+            capability=capability,
+            urgent=urgent,
+            correlation_id=correlation_id,
+        )
+
+
 def _pipeline_fault_reason(event: PipelineFaultEvent) -> AuditReasonCode:
     if event.fault_code is PipelineFaultCode.PROTOCOL_FAILURE:
         return AuditReasonCode.INVALID_RECORD
