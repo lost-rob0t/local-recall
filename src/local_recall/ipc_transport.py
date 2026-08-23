@@ -161,15 +161,21 @@ class ZmqIpcServer:
                 continue
             identity, *request_frames = frames
             if len(pending) >= self.max_pending:
-                self._send_failure(socket, identity, _request_id_hint(request_frames), "ipc-overloaded")
+                self._send_failure(
+                    socket, identity, _request_id_hint(request_frames), "ipc-overloaded"
+                )
                 continue
             try:
                 request = codec.decode(tuple(request_frames), now=datetime.now(UTC))
             except IpcProtocolError:
-                self._send_failure(socket, identity, _request_id_hint(request_frames), "ipc-rejected")
+                self._send_failure(
+                    socket, identity, _request_id_hint(request_frames), "ipc-rejected"
+                )
                 continue
             future = executor.submit(self._invoke_handler, request)
-            pending.append(_PendingReply(identity=identity, request_id=request.request_id, future=future))
+            pending.append(
+                _PendingReply(identity=identity, request_id=request.request_id, future=future)
+            )
 
         deadline = time.monotonic() + 0.25
         while pending and time.monotonic() < deadline:
@@ -210,11 +216,15 @@ class ZmqIpcServer:
                 )
             payload = response.to_json().encode("utf-8")
             if len(payload) > _MAX_RESPONSE_BYTES:
-                payload = CliResponse.failure(
-                    request_id=item.request_id,
-                    outcome=CliOutcome.INTERNAL_FAILURE,
-                    reason_code="response-too-large",
-                ).to_json().encode("utf-8")
+                payload = (
+                    CliResponse.failure(
+                        request_id=item.request_id,
+                        outcome=CliOutcome.INTERNAL_FAILURE,
+                        reason_code="response-too-large",
+                    )
+                    .to_json()
+                    .encode("utf-8")
+                )
             try:
                 socket.send_multipart([item.identity, payload], flags=zmq.NOBLOCK)
             except zmq.Again, zmq.ZMQError:
