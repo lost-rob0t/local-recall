@@ -18,7 +18,7 @@
 - Authenticate clients and authorize control, query, export, and deletion operations separately where useful.
 - Bind no TCP listener by default.
 - Bound request size, concurrency, and deadlines/timeouts.
-- Prioritize stop/privacy commands over query/model work.
+- Prioritize stop/privacy requests over query/model work.
 - Sanitize all errors and audit security-relevant requests.
 - Keep a transport abstraction so a loopback transport may be added deliberately later.
 
@@ -47,7 +47,7 @@
 - Framing: versioned multipart message with bounded routing frame, authentication frame, and bounded content frame. No pickle or arbitrary Python objects. Unknown frame count, oversized frames, malformed UTF-8/JSON, protocol mismatch, priority mismatch, expired deadline, or invalid command fail with fixed sanitized reason codes.
 - Scheduling: urgent stop/privacy requests enter a dedicated bounded urgent lane serviced before ordinary control/query lanes; no unbounded retry or hidden queue. Query concurrency is separately bounded.
 - Audit: accepted/rejected authentication, authorization, overload, timeout, malformed request, and completion produce fixed event/reason/capability metadata only. Request text, response text, token bytes, endpoint paths, usernames, titles, and provider payloads are forbidden from audit events.
-- CLI/indicator: default client factory becomes the authenticated IPC client; both keep depending only on =DaemonClient= / typed CLI contracts and never import daemon internals.
+- CLI/indicator: default CLI client factory becomes the authenticated IPC client. Indicator presentation remains transport-agnostic and consumes only the shared =DaemonClient= boundary; it imports no lifecycle/capture/storage/provider internals. Packaging/runtime composition may inject the same authenticated client without creating a second daemon authority.
 
 *** Rejected alternatives
 1. Raw =asyncio.start_unix_server= protocol beside ZeroMQ: rejected as a second transport stack conflicting with ADR-0006/architecture.
@@ -62,6 +62,7 @@
 - Token file replacement/permission drift: server owns creation; clients require regular non-symlink file, same UID, mode 0600, bounded exact token length.
 - Client disconnect/cancel: finite deadlines and zero linger; no successful result may be synthesized after timeout/cancellation.
 - Query saturation cannot starve STOP/privacy: separate urgent bounded lane and explicit priority validation.
+- Executor queue delay may consume the remaining request deadline. Therefore a request is rechecked immediately before handler entry and again after handler return; expired queued work never enters the handler and a late handler result cannot be reported as success.
 
 ** RED
 *** Slice 1 — owner-only IPC paths
@@ -73,7 +74,12 @@
 
 *** Slice 3 — bounded authenticated request protocol
 - Invalid attempts: CI #728 through #731 failed import-order/lint noise and were rejected as RED evidence.
-- Valid RED: test-only head =3a59993cae35c6f0dbcc8533a45c2a8319734a92=, CI #732. Formatting, Ruff, and ShellCheck passed; strict Pyright then failed specifically because =local_recall.ipc_protocol= did not exist.
+- Valid RED: test-only head =3a59993cae35c6f0dbcc8533a45c2a8319734a92=, CI #732. Formatting, Ruff, and ShellCheck passed; strict Pyright failed specifically because =local_recall.ipc_protocol= did not exist.
+
+*** Slice 4 — end-to-end request deadline authority
+- CI #774 and #775 were rejected as RED evidence because strict Pyright failed on the test's direct protected-method access before the behavioral assertion ran.
+- CI #777 was rejected because Ruff B009 failed before the behavioral assertion ran.
+- Valid RED: head =aedd3b915f73f3468b547a7df6027037d68ef6ac=, CI #778. Formatting, Ruff, ShellCheck, and strict Pyright all passed. Unit tests then failed specifically because an already-expired queued request still entered the handler. This proved admission-time deadline validation plus post-handler validation was insufficient.
 
 ** GREEN
 *** Slice 1
@@ -89,14 +95,27 @@
 - Final production head =3130e9ea0fc7c5bc45c37a8a92e19e854729d095=, CI #735: fully green on both Ubuntu matrices, canonical gate, security checks, and failure-propagation.
 - Added three-frame request protocol: content-free routing metadata, dedicated secret token frame, and bounded content payload. Authentication occurs before payload parsing. Closed command capabilities enforce control/query/diagnostic separation; priority spoofing, oversized payloads, invalid protocol/request IDs/deadlines, and malformed routing/payload fail with fixed sanitized errors.
 
+*** Slice 4
+- Production head =028893219a705d7a4a5423410978caa4012dcef8=, CI #779: both Ubuntu matrices, canonical repository gate, security checks, and failure-propagation all green.
+- Added deadline revalidation immediately before handler entry and retained post-handler validation. Queued work whose deadline expires cannot begin application work, and a handler result arriving after the deadline cannot be reported as success.
+
 ** Current implementation state
-- Complete and green: secure runtime endpoint path model, rotating owner-only daemon-session credential store, authenticated/versioned request codec, capability authorization, request-size/deadline/priority validation.
-- Still issue-owned and not yet complete: actual ZeroMQ ROUTER/DEALER transport, post-bind socket owner/type/mode verification and UID filter, response framing/decoding, bounded concurrency and urgent dispatch, sanitized IPC audit events, real synthetic integration/fuzz tests, CLI default-client wiring, indicator transport construction path, documentation, and final exact-head merge gate.
+- Secure runtime endpoint path model and stale-socket handling: complete.
+- Rotating owner-only daemon-session credential store: complete.
+- Authenticated/versioned bounded request protocol and response decoding/correlation: complete.
+- Linux UID filter where supported plus post-bind owner/type/mode verification: complete.
+- Bounded concurrency with separately reserved urgent STOP/privacy capacity: complete.
+- Deadline handling at decode, client transport, pre-handler dispatch, and post-handler response: complete.
+- Sanitized IPC audit events and malformed/authentication failure behavior: complete.
+- Synthetic integration coverage for authenticated round-trip, malformed multipart survival, audit sanitization, authentication failure, native inbound-size bound, and urgent-lane starvation resistance: complete.
+- CLI default-client wiring through authenticated IPC: complete.
+- Recording indicator remains on the shared =DaemonClient= service boundary with no daemon-internal imports; no second transport or authority was added: complete for #29. Runtime desktop-process packaging/composition remains issue #40.
+- Documentation: =docs/ipc.md= plus README index: complete.
 
 ** Verification gates
 - Focused unit/security/contract tests for endpoint validation, token handling, frame limits, UID filter/socket options, authorization, malformed input, timeout/cancellation, and priority behavior.
 - Integration fixture using only synthetic CLI requests over a temporary owner-only runtime directory.
-- Structural test: CLI/indicator use =DaemonClient= and authenticated IPC client, no daemon-internal imports.
+- Structural boundary: CLI uses authenticated default client; indicator uses =DaemonClient= and imports no lifecycle/capture/storage/provider internals.
 - Canonical =./scripts/check= must pass with nonzero test counts and security/failure-propagation gates.
-- =nix flake check= when the issue changes Nix packaging/service definitions.
+- =nix flake check= is not required for this issue because no Nix packaging/service definition changed; packaging remains #40.
 - Exact final PR head GitHub Actions green before merge.
