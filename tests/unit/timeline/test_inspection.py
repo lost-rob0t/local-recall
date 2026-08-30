@@ -120,12 +120,13 @@ class FakeStorage:
 
     def __init__(self, *records: RedactedRecord) -> None:
         self.records: dict[UUID, RedactedRecord] = {r.record_id: r for r in records}
-        self._present: set[UUID] = set(self.records)
+        self.present: set[UUID] = set(self.records)
+        self.deleted: list[UUID] = []
 
     async def list_candidates(self, request: DayRangeQuery) -> tuple[CatalogRecord, ...]:
         found: list[CatalogRecord] = []
         for record_id, record in self.records.items():
-            if record_id not in self._present:
+            if record_id not in self.present:
                 continue
             captured_day = record.frame.captured_at.astimezone(UTC).date()
             if request.start_day <= captured_day <= request.end_day:
@@ -142,13 +143,14 @@ class FakeStorage:
         return tuple(sorted(found, key=lambda item: (item.day_bucket, str(item.record.record_id))))
 
     async def get(self, record_id: UUID) -> EncryptedRecordEnvelope | None:
-        if record_id not in self._present:
+        if record_id not in self.present:
             return None
         return _envelope(self.records[record_id])
 
     async def delete(self, request: DeleteRequest) -> DeleteResult:
-        deleted = request.record_id in self._present
-        self._present.discard(request.record_id)
+        deleted = request.record_id in self.present
+        self.present.discard(request.record_id)
+        self.deleted.append(request.record_id)
         return DeleteResult(request.record_id, deleted, False)
 
     async def put(self, envelope: EncryptedRecordEnvelope):
@@ -306,7 +308,7 @@ def test_timeline_lists_entries_newest_first_with_provenance(tmp_path: Path) -> 
     assert newest.redaction_finding_count == 1
     assert newest.provenance[0].field_name == "application"
     assert newest.provenance[0].source_id == "synthetic"
-    assert newest.provenance[0].confidence == pytest.approx(0.9)
+    assert newest.provenance[0].confidence == 0.9
     assert newest.provenance[0].adapter_revision == "test-v1"
     oldest = page.entries[1]
     assert oldest.workspace is None
@@ -441,7 +443,7 @@ def test_previews_are_memory_only_between_calls(tmp_path: Path) -> None:
     asyncio.run(harness.inspector.preview_text(record.record_id))
     asyncio.run(harness.inspector.preview_screenshot(record.record_id))
 
-    harness.storage._present.clear()
+    harness.storage.present.clear()
 
     with pytest.raises(PreviewUnavailable):
         asyncio.run(harness.inspector.preview_text(record.record_id))
