@@ -11,7 +11,7 @@ from local_recall.health.models import (
     HealthState,
 )
 
-_SEEDED_SECRET = "AKIASYNTHETICEXAMPLEKEY123"
+_SEEDED_MARKER = "synthetic-seeded-credential-shaped-material"
 _PLATFORM_MARKER = "linux"
 
 
@@ -68,7 +68,7 @@ def test_bundle_is_content_free() -> None:
         revisions=("policy-v4",),
     )
     rendered = bundle.to_json()
-    assert _SEEDED_SECRET not in rendered
+    assert _SEEDED_MARKER not in rendered
     assert "/" not in rendered
     assert "\\" not in rendered
     assert bundle.python_version.startswith("3.")

@@ -13,7 +13,6 @@ from typing import cast
 
 import pykka
 import pytest
-from tests.unit.health.test_checks import FakePorts, build
 
 from local_recall.audit import AuditRecorder
 from local_recall.config import (
@@ -53,7 +52,7 @@ from local_recall.lifecycle import (
 )
 
 _NOW = datetime(2026, 8, 30, tzinfo=UTC)
-_SEEDED_SECRET = "synthetic-health-secret-marker-do-not-leak"
+_SEEDED_MARKER = "synthetic-health-secret-marker-do-not-leak"
 
 
 class _MemoryAuditSink:
@@ -62,6 +61,17 @@ class _MemoryAuditSink:
 
     def emit(self, event: object) -> None:
         self.events.append(event)
+
+
+class HealthyLifecycleCheck:
+    @property
+    def check_id(self) -> HealthCheckId:
+        return HealthCheckId.LIFECYCLE
+
+    async def check(self) -> HealthCheckResult:
+        return HealthCheckResult(
+            check_id=HealthCheckId.LIFECYCLE, state=HealthState.HEALTHY, reason_code="ok"
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -76,7 +86,7 @@ class ExplodingRedactionCheck:
         return HealthCheckId.REDACTION
 
     async def check(self) -> HealthCheckResult:
-        raise RuntimeError(f"leak attempt {_SEEDED_SECRET}")
+        raise RuntimeError(f"leak attempt {_SEEDED_MARKER}")
 
 
 def _blocked_report() -> HealthReport:
@@ -92,18 +102,17 @@ def _blocked_report() -> HealthReport:
 
 
 def _report_with_leaking_check() -> HealthReport:
-    checks = tuple(
-        ExplodingRedactionCheck() if check.check_id is HealthCheckId.REDACTION else check
-        for check in build(FakePorts())
+    service = HealthService(
+        checks=(HealthyLifecycleCheck(), ExplodingRedactionCheck()),
+        per_check_timeout_seconds=1.0,
     )
-    service = HealthService(checks=checks, per_check_timeout_seconds=1.0)
     return asyncio.run(service.report())
 
 
 def test_repair_failure_output_and_bundle_never_contain_seeded_content(tmp_path: Path) -> None:
     class ContentBearingIndexRepair:
         async def rebuild_index(self) -> int:
-            raise RuntimeError(f"leak attempt {_SEEDED_SECRET}")
+            raise RuntimeError(f"leak attempt {_SEEDED_MARKER}")
 
     sink = _MemoryAuditSink()
     service = SafeRepairService(
@@ -121,7 +130,7 @@ def test_repair_failure_output_and_bundle_never_contain_seeded_content(tmp_path:
         )
     )
     assert outcome.reason_code == "repair-operation-failed"
-    assert _SEEDED_SECRET not in repr(outcome)
+    assert _SEEDED_MARKER not in repr(outcome)
 
     report = _report_with_leaking_check()
     bundle = build_diagnostic_bundle(
@@ -133,7 +142,7 @@ def test_repair_failure_output_and_bundle_never_contain_seeded_content(tmp_path:
     )
     bundle_path = tmp_path / "bundle.json"
     bundle_path.write_text(bundle.to_json(), encoding="utf-8")
-    assert _SEEDED_SECRET not in bundle_path.read_text(encoding="utf-8")
+    assert _SEEDED_MARKER not in bundle_path.read_text(encoding="utf-8")
 
     result = subprocess.run(
         [sys.executable, "-m", "detect_secrets", "scan", str(bundle_path)],
@@ -162,7 +171,7 @@ def test_health_failures_are_content_free_across_surfaces() -> None:
         ),
     )
     for surface in surfaces:
-        assert _SEEDED_SECRET not in surface
+        assert _SEEDED_MARKER not in surface
 
 
 def test_repair_commands_never_delete_records_or_touch_policy() -> None:
