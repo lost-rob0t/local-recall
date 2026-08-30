@@ -16,6 +16,7 @@ from local_recall.domain.metadata import (
     MetadataProvenance,
     SourceConfidence,
 )
+from local_recall.ports.encryption import DecryptionRequest, EncryptionRequest
 from local_recall.retention.planner import (
     ContextRetentionRule,
     RetentionPlanner,
@@ -76,12 +77,12 @@ class Decryptor:
         self._records = records
         self.decrypted: list[UUID] = []
 
-    async def decrypt(self, request) -> RedactedRecord:
+    async def decrypt(self, request: DecryptionRequest) -> RedactedRecord:
         record = self._records[request.envelope.record_id]
         self.decrypted.append(record.record_id)
         return record
 
-    async def encrypt(self, request):
+    async def encrypt(self, request: EncryptionRequest[RedactedRecord]) -> EncryptedRecordEnvelope:
         raise AssertionError("retention must never encrypt")
 
 

@@ -1,6 +1,7 @@
 # pyright: reportPrivateUsage=false, reportUnusedClass=false
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import sqlite3
 from datetime import UTC, date
@@ -235,6 +236,23 @@ class _SQLiteStorageRetention(_SQLiteStorageOperations):
         return StorageUsageReport(
             ready_records=cast(int, row["ready_records"]),
             ready_bytes=cast(int, row["ready_bytes"]),
+        )
+
+    async def stats(self) -> StorageUsageReport:
+        return await asyncio.to_thread(self._stats_sync)
+
+    async def page_ready(
+        self,
+        *,
+        after_day: date | None = None,
+        after_id: UUID | None = None,
+        limit: int,
+    ) -> CatalogPage:
+        return await asyncio.to_thread(
+            self._page_ready_sync,
+            after_day=after_day.isoformat() if after_day is not None else None,
+            after_id=str(after_id) if after_id is not None else None,
+            limit=limit,
         )
 
     def _page_ready_sync(
