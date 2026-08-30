@@ -31,6 +31,7 @@ class AuditAction(StrEnum):
     PROVIDER_SELECTION = "provider_selection"
     RECORD_REJECTED = "record_rejected"
     RECORD_DELETED = "record_deleted"
+    DELETION_REQUEST = "deletion_request"
     EXPORT_DECISION = "export_decision"
     KEY_OPERATION = "key_operation"
     SYSTEM_HARDENING = "system_hardening"
@@ -95,6 +96,7 @@ _ACTION_CATEGORIES: dict[AuditAction, AuditCategory] = {
     AuditAction.PROVIDER_SELECTION: AuditCategory.PROVIDER,
     AuditAction.RECORD_REJECTED: AuditCategory.RECORD,
     AuditAction.RECORD_DELETED: AuditCategory.RECORD,
+    AuditAction.DELETION_REQUEST: AuditCategory.RECORD,
     AuditAction.EXPORT_DECISION: AuditCategory.EXPORT,
     AuditAction.KEY_OPERATION: AuditCategory.KEY,
     AuditAction.SYSTEM_HARDENING: AuditCategory.SYSTEM,
@@ -119,6 +121,11 @@ _ALLOWED_ATTRIBUTE_KEYS = frozenset(
         "query",
         "diagnostic",
         "urgent",
+        "records",
+        "cluster",
+        "application",
+        "time_range",
+        "success",
     }
 )
 
@@ -226,6 +233,30 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
         and event.record_id is None
     ):
         raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action is AuditAction.DELETION_REQUEST:
+        required = {
+            "records",
+            "cluster",
+            "application",
+            "time_range",
+            "success",
+            "count",
+        }
+        if set(attributes) != required:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        for key in ("records", "cluster", "application", "time_range", "success"):
+            if type(attributes[key]) is not bool:
+                raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if type(attributes["count"]) is not int or attributes["count"] < 0:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        scope_classes = sum(
+            1
+            for key in ("records", "cluster", "application", "time_range")
+            if attributes[key] is True
+        )
+        if scope_classes != 1:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.PROVIDER_SELECTION:
         if set(attributes) != {"remote", "authorized"}:

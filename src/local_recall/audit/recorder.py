@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from local_recall.domain.lifecycle import CaptureState
 
+from .errors import AuditFailure, AuditFailureCode
 from .models import (
     AuditAction,
     AuditCategory,
@@ -199,6 +200,36 @@ class AuditRecorder:
             correlation_id=correlation_id,
         )
 
+    def deletion_request(
+        self,
+        *,
+        scope_kind: str,
+        count: int,
+        succeeded: bool,
+        correlation_id: UUID | None = None,
+    ) -> AuditEvent:
+        flags = _DELETION_SCOPE_FLAGS.get(scope_kind)
+        if flags is None:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        attributes: dict[str, int | bool] = {
+            "records": flags == "records",
+            "cluster": flags == "cluster",
+            "application": flags == "application",
+            "time_range": flags == "time_range",
+            "success": succeeded,
+            "count": count,
+        }
+        return self._emit(
+            category=AuditCategory.RECORD,
+            action=AuditAction.DELETION_REQUEST,
+            outcome=AuditOutcome.SUCCEEDED if succeeded else AuditOutcome.FAILED,
+            reason=(
+                AuditReasonCode.DELETION_COMPLETED if succeeded else AuditReasonCode.USER_REQUEST
+            ),
+            correlation_id=correlation_id,
+            attributes=attributes,
+        )
+
     def export_decision(
         self,
         *,
@@ -289,6 +320,14 @@ class AuditRecorder:
         )
         self._sink.emit(event)
         return event
+
+
+_DELETION_SCOPE_FLAGS = {
+    "record-ids": "records",
+    "activity-cluster": "cluster",
+    "application": "application",
+    "time-range": "time_range",
+}
 
 
 def _digest(value: str | None) -> str | None:
