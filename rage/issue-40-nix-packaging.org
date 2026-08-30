@@ -1,0 +1,91 @@
+#+title: RAGE Issue 40 — Package the Daemon, CLI, and Desktop Integrations for NixOS
+
+* Transaction
+- Issue: #40 — Package the daemon, CLI, and desktop integrations for NixOS
+- Branch: =agent/issue-40-nix-packaging=
+- PR: #99
+- Dependencies: #27, #28, #29, #37, #39 (satisfied)
+
+* Acceptance criteria
+- =nix flake check= passes.
+- A clean NixOS test VM can install, start, control, capture synthetic Xorg content, stop, and query.
+- Service sandboxing does not grant unnecessary home-directory or network access.
+- Uninstalling preserves or removes encrypted user data only according to an explicit choice.
+
+* Issue status
+- OPEN by design. The packaging, hardening, completions, VM test, and uninstall
+  semantics are implemented and verified (=nix flake check= green, VM test 15
+  assertions green under KVM).
+- Criterion 2 requires the long-running daemon process ("start, control,
+  capture, stop, query"). No prior issue built a =local-recall daemon= command:
+  every command in the closed CLI set is a client of the authenticated IPC
+  boundary, and the server process hosting the actor/IPC loop is the pending
+  release-gate item. Adding a stub daemon command to make the VM test look
+  complete would be exactly the false-green the repo policy forbids, so the VM
+  test instead verifies clean install, CLI fail-closed behavior (exit 3 +
+  sanitized =daemon-unavailable=), unit hardening, state-directory ownership,
+  config generation, and the non-enabled destroy unit. The remaining human
+  blocker is the daemon process implementation.
+
+* Design decisions
+- Package: =buildPythonPackage= on =python314Packages= (pydantic, pykka, pynacl,
+  pyzmq, typer from nixpkgs), hatchling build, =pythonImportsCheck=, and
+  bash/zsh/fish completions generated in =postInstall= from the installed CLI
+  itself (typer =--show-completion=).
+- Overlay: =overlays.default= exposes =local-recall= via =callPackage= so the
+  module and other configurations share one definition (=nix/package.nix=).
+- Module (=nix/module.nix=): dedicated system user with linger owning
+  =/var/lib/local-recall=; generated TOML config at
+  =/etc/local-recall/config.toml=; hardened systemd =user= unit. =startMode=
+  defaults to ="off"= and writes =capture.enabled=false=. =networkAllowLoopback=
+  defaults to false (=IPAddressDeny=any=) with an explicit loopback opt-in for
+  the IPC endpoint and local providers.
+- Hardening set: NoNewPrivileges, PrivateTmp/PrivateDevices, ProtectClock/
+  Hostname/KernelLogs/KernelModules/KernelTunables/ControlGroups,
+  ProtectProc=invisible, RestrictSUIDSGID/Realtime/Namespaces, LockPersonality,
+  RemoveIPC, UMask=0077, empty CapabilityBoundingSet, SystemCallFilter
+  @system-service minus privileged/obsolete/resources/mount,
+  SystemCallArchitectures=native, ProtectHome=read-only (no home writes;
+  state dir is the only ReadWritePaths entry).
+- Uninstall: removing the module preserves the encrypted state directory. Data
+  destruction exists only as the =local-recall-destroy-data= oneshot with
+  =wantedBy = []= — it can never trigger implicitly.
+- VM test (=nix/vm-test.nix=): boots a clean NixOS VM under KVM, asserts
+  =local-recall version=, fail-closed =status= (exit 3 + sanitized reason),
+  every hardening directive in the rendered unit, state-directory ownership,
+  generated config content (=enabled = false=), and that the destroy unit is
+  wanted by nothing.
+
+* Execute / TDD
+- Valid RED: on the pre-change flake, =nix build .#local-recall= fails with
+  "flake does not provide attribute ... local-recall" and =nix flake show=
+  lists only the dev shell (evidence captured before implementation). The
+  check-policy-style prohibition on false-green constructs applies to scripts;
+  the nix layer's RED/GREEN is the build/check failure boundary above.
+- Iterative GREEN with real failures fixed: missing tracked files in the git
+  tree (flake source filtering), =lib.generators.toTOML= absent in this
+  nixpkgs (wrote a minimal two-level TOML emitter), unfree-license evaluation
+  refusal (meta.license dropped; the repository has no LICENSE), driver
+  =set -e=/pipefail interactions in the test script (exit-code assertions
+  restructured without =|| true=), unit-file path assumptions (assert against
+  =/etc/systemd/user/local-recall.service=).
+- GREEN: =nix flake check= passes (package check + VM test run under KVM);
+  repository canonical gate =./scripts/check= unaffected and green.
+
+* Verification mapping
+- =nix flake check= passes: package + VM check, run locally with Nix 2.33.
+- Clean VM: =nixos/lib/testing-python.nix= VM boots, package installed from
+  the flake overlay, CLI behaves fail-closed, unit hardening asserted.
+- Sandboxing: ProtectHome=read-only (no home writes), IPAddressDeny=any with
+  explicit loopback opt-in, empty capability set, syscall filter — all
+  asserted from the rendered unit inside the VM.
+- Uninstall choice: module never references a delete path except the manual
+  destroy oneshot; =wantedBy = []= asserted in the VM test.
+- Optional dependencies (OCR/tesseract, Ollama, ActivityWatch, GPG, Wayland
+  portals, Xorg helpers) documented with activation notes in =docs/nix.md=.
+
+* Human blocker (why #40 stays open)
+- The daemon process mode (=local-recall daemon= hosting the actor system and
+  the authenticated IPC server loop) is not yet implemented; once it exists,
+  the VM test extends to start/control/capture-synthetic-Xorg/stop/query and
+  the issue can close.
