@@ -105,10 +105,33 @@ The default branch and release gate require zero skipped and zero expected-failu
 - signal termination;
 - timeout;
 - teardown failure;
-- zero-test selection;
+- zero-test directory selection;
+- zero-test `-k` selection inside a populated directory;
 - piped-output status preservation.
 
 The fixtures use a non-Python extension so normal pytest discovery can never execute them directly.
+
+## Fuzz targets
+
+`tests/security/test_fuzz_targets.py` property-fuzzes the required parser surfaces with Hypothesis in deterministic mode (`derandomize=True`, fixed example budget), so CI corpus runs are reproducible:
+
+- configuration loader (`load_configuration_mapping`) — bounded, content-free errors; input values never echoed;
+- regex redaction detector (`DeterministicSecretDetector.scan`) — never raises on hostile text; matches stay within input bounds;
+- backup archive reader (`BackupArchive.read`) — arbitrary bytes map only to the fixed `RestoreFailure` reason set;
+- IPC diagnostic payload decoder — fail-closed (`None` or typed payload, or `ValueError`), never a foreign exception;
+- script-adapter output parser (`_parse`) — fail-closed with the single fixed reason, or a strictly shaped payload.
+
+Reproduce or extend a corpus deterministically with:
+
+```bash
+uv run --no-sync pytest tests/security/test_fuzz_targets.py --hypothesis-seed=<N> -k <target>
+```
+
+Any failing example is printed with the seed and replays exactly with the same command.
+
+## Seeded-secret invariants
+
+`tests/security/test_seeded_secret_invariant.py` seeds a deterministic marker through the real encryption path (envelope cipher → SQLite storage → backup archive) plus audit logs and diagnostic bundles, then byte-scans every produced file: the plaintext marker may exist only inside the encrypted envelope and must never surface in persisted files, logs, archives, or bundles. Diagnostic bundles additionally reject content-shaped tokens so free-form text can never masquerade as a reason code.
 
 ## Session-safety tests
 

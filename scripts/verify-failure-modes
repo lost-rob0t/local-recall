@@ -30,6 +30,7 @@ SCENARIOS = (
     Scenario("timeout", "timeout.py.txt", ("--timeout=0.1",)),
     Scenario("teardown", "teardown.py.txt"),
     Scenario("zero-tests", None),
+    Scenario("zero-selection", "assertion.py.txt", ("-k", "zzz_no_matching_test_zzz")),
     Scenario("piped-assertion", "assertion.py.txt", piped=True),
 )
 

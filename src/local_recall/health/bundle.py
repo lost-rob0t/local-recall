@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -12,6 +13,7 @@ from local_recall.health.models import HealthReport
 
 _MAX_REVISIONS = 16
 _MAX_REVISION_LENGTH = 128
+_SAFE_TOKEN = re.compile(r"^[a-z0-9][a-z0-9.-]{0,127}$")
 
 
 def application_version() -> str:
@@ -29,6 +31,12 @@ def _sanitize_revision(revision: object) -> str:
     if any(character in revision for character in ("/", "\\", "\x00", " ", "=")):
         raise ValueError("diagnostic bundle revision is invalid")
     return revision
+
+
+def _safe_result_token(value: object) -> str:
+    if not isinstance(value, str) or _SAFE_TOKEN.fullmatch(value) is None:
+        raise ValueError("diagnostic bundle result token is invalid")
+    return value
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -92,7 +100,11 @@ def build_diagnostic_bundle(
         python_version=".".join(str(part) for part in sys.version_info[:3]),
         platform_family=sys.platform,
         results=tuple(
-            (result.check_id.value, result.state.value, result.reason_code)
+            (
+                _safe_result_token(result.check_id.value),
+                _safe_result_token(result.state.value),
+                _safe_result_token(result.reason_code),
+            )
             for result in report.results
         ),
         record_count=record_count,
