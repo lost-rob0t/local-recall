@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -23,7 +24,7 @@ def _delete_request() -> CliRequest:
     )
 
 
-def _expect_denied(action: object) -> None:
+def _expect_denied(action: Callable[[], object]) -> None:
     try:
         action()
     except ipc_protocol.IpcProtocolError as exc:

@@ -1,0 +1,77 @@
+#+title: RAGE Issue 38 — Security Regression, Fuzz, and Privacy-Invariant Tests
+
+* Transaction
+- Issue: #38 — Add security regression, fuzz, and privacy-invariant tests
+- Branch: =agent/issue-38-security-fuzz-integrity=
+- PR: #96
+- Dependencies: #2, #4, #9–#12, #23, #29, #32, #34 (satisfied)
+
+* Acceptance criteria
+- Privacy invariants run in CI using synthetic data.
+- A seeded secret cannot appear in persisted files, logs, diagnostic bundles, exports, model requests, or test artifacts.
+- Fuzz targets have deterministic seeds and documented reproduction commands.
+- A seeded assertion failure, sanitizer finding, crash, timeout, and empty corpus/test selection each fail the canonical security-test command.
+- No required security test is skipped or marked expected-failure at release time.
+- Critical invariant or test-integrity failures block merges and releases.
+
+* Design decisions
+- Extend, don't duplicate: existing security suites (17 files) were kept; new
+  coverage targets the genuine gaps. The =tests/security= suite grew with four
+  focused files: =test_fuzz_targets.py=, =test_seeded_secret_invariant.py=,
+  =test_ipc_delete_capability.py=, =test_test_integrity.py=.
+- Fuzzing: Hypothesis in deterministic mode (=derandomize=True=, fixed example
+  budget) over the five required parser surfaces (config loader, redaction
+  detector, backup archive reader, IPC diagnostic decoder, script-adapter
+  output parser). Reproduction commands documented in =docs/testing.md=
+  (=--hypothesis-seed=<N>=).
+- Seeded-secret invariant uses the REAL crypto path (EnvelopeCipher + keyring
+  provider + SQLite storage + BackupArchive), not test-only ciphertext: the
+  marker must exist only inside the envelope and never in any file on disk.
+  Audit-log and diagnostic-bundle surfaces are byte-scanned as well.
+- Diagnostic bundles were hardened with strict result-token validation
+  (=^[a-z0-9][a-z0-9.-]{0,127}$= per check id/state/reason code) so free-form
+  content can never masquerade as a sanitized reason code.
+- IPC delete capability: encode-side enforcement added (defense in depth);
+  the server-side decode check already existed and is now covered by focused
+  tests including wrong-token and server-capability-denied paths.
+- Test integrity: =scripts/verify-failure-modes= extended to nine modes with
+  the zero-selection scenario (a populated directory where =-k= selects
+  nothing must still fail). check-policy pattern set is itself meta-tested.
+
+* Genuine defects found by the new tests (fixed in this change)
+1. =IpcRequestCodec.encode= accepted delete commands for tokens without the
+   delete capability (only the server-side =decode= checked). Fixed: encode now
+   denies with =capability-denied=.
+2. =DiagnosticBundle= copied health-check reason codes verbatim; a content-
+   shaped string could enter the bundle. Fixed: token validation rejects it.
+3. =scripts/verify-failure-modes= had no zero-selection scenario. Added.
+4. A stray =scripts/__pycache__= crashed =check-policy= with a decode error —
+   fail-closed direction, and the meta-test now cleans up its bytecode cache.
+   (check-policy intentionally still fails loudly on unreadable files.)
+
+* Execute / TDD
+- Valid RED (head =the RED commit on PR #96=): six failing tests, four of them
+  proving real gaps (encode capability, bundle reason-code content,
+  missing ninth failure mode, missing scenario list) plus two intentional
+  capability-gating assertions. CI run recorded on the PR.
+- GREEN (this commit): full suite =1088 passed= (1067 + 21 new), strict Pyright
+  0 errors, ruff/shellcheck clean, =verify-failure-modes= 9/9, bandit,
+  detect-secrets, repo policy clean; canonical =./scripts/check= green.
+- Cross-package test imports were deliberately avoided so each suite directory
+  stays runnable standalone (CI runs suites per directory).
+
+* Verification mapping
+- Privacy invariants in CI on synthetic data: all new suites; no real session,
+  no real secrets.
+- Seeded secret containment: storage/audit/archive byte-scan tests + bundle
+  rejection of hostile-shaped tokens; detect-secrets scans the tree in the
+  canonical gate.
+- Deterministic fuzz + reproduction docs: =docs/testing.md= § Fuzz targets.
+- Injected failure modes all fail the canonical command: nine-mode
+  verify-failure-modes incl. zero-tests, zero-selection, piped, crash, signal,
+  timeout, teardown, collection, assertion; meta-test asserts the count and
+  the scenario list.
+- No skipped/xfail'd required tests: check-policy patterns meta-tested; whole
+  repository passes =scripts/check-policy=; no =pytestmark= anywhere.
+- Integrity failures block merges: all of the above run in the required CI
+  jobs (checks, canonical gate, failure propagation).

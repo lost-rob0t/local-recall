@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import string
 import tempfile
 from pathlib import Path
@@ -8,12 +7,12 @@ from pathlib import Path
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from local_recall import ipc_transport
 from local_recall.backup.archive import BackupArchive, RestoreFailure
 from local_recall.cli_contract import CliDiagnosticPayload
 from local_recall.config.errors import ConfigurationError
 from local_recall.config.loader import load_configuration_mapping
-from local_recall.ipc_transport import _decode_diagnostic_payload
-from local_recall.metadata.script_adapter import ScriptAdapterFailure, _parse
+from local_recall.metadata import script_adapter
 from local_recall.redaction.detector import DeterministicSecretDetector
 
 # Deterministic property-based fuzzing for the required parser surfaces.
@@ -48,8 +47,9 @@ _json_scalars = st.recursive(
     | st.booleans()
     | st.integers(min_value=-(2**31), max_value=2**31)
     | st.text(max_size=64),
-    lambda children: st.lists(children, max_size=8)
-    | st.dictionaries(st.text(max_size=16), children, max_size=8),
+    lambda children: (
+        st.lists(children, max_size=8) | st.dictionaries(st.text(max_size=16), children, max_size=8)
+    ),
     max_leaves=12,
 )
 
@@ -88,15 +88,15 @@ def test_archive_reader_rejects_garbage_with_fixed_reasons(data: bytes) -> None:
             BackupArchive.read(path, max_blob_bytes=4096)
         except RestoreFailure as error:
             assert str(error) in _ARCHIVE_REASONS
-        except OSError:
-            raise AssertionError("archive reader raised an unexpected OSError")
+        except OSError as exc:
+            raise AssertionError("archive reader raised an unexpected OSError") from exc
 
 
 @settings(derandomize=True, max_examples=MAX_EXAMPLES, deadline=None)
 @given(_json_scalars)
 def test_ipc_diagnostic_decoder_is_fail_closed(value: object) -> None:
     try:
-        decoded = _decode_diagnostic_payload(value)
+        decoded = ipc_transport._decode_diagnostic_payload(value)  # pyright: ignore[reportPrivateUsage]
     except ValueError:
         return
     if decoded is not None:
@@ -107,8 +107,8 @@ def test_ipc_diagnostic_decoder_is_fail_closed(value: object) -> None:
 @given(st.binary(max_size=256), st.integers(min_value=0, max_value=9))
 def test_script_adapter_output_parser_is_fail_closed(stdout: bytes, schema: int) -> None:
     try:
-        payload = _parse(stdout, schema)
-    except ScriptAdapterFailure as error:
+        payload = script_adapter._parse(stdout, schema)  # pyright: ignore[reportPrivateUsage]
+    except script_adapter.ScriptAdapterFailure as error:
         assert str(error) == "script output is invalid"
         return
     assert set(payload) == {"application", "workspace"}

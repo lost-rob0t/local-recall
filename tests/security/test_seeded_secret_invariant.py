@@ -128,6 +128,7 @@ def test_seeded_secret_never_reaches_audit_logs(tmp_path: Path) -> None:
         reason=AuditReasonCode.INVALID_RECORD,
         correlation_id=uuid4(),
         occurred_at=_NOW,
+        record_id=uuid4(),
         generation=1,
         attributes={"count": 1},
     )

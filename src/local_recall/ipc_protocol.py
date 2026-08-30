@@ -66,6 +66,8 @@ class IpcRequestCodec:
     capabilities: frozenset[IpcCapability]
 
     def encode(self, request: CliRequest) -> tuple[bytes, bytes, bytes]:
+        if _required_capability(request.command) not in self.capabilities:
+            raise IpcProtocolError("capability-denied")
         routing = request.routing_json().encode("utf-8")
         payload = json.dumps(
             {

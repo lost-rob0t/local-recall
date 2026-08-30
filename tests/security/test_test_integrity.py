@@ -72,7 +72,9 @@ def test_check_policy_rejects_disabled_tests_and_false_green_constructs() -> Non
     imperative_skip = "pytest.skip" + "("
     probes = {
         "pytest skip marker": skip_marker + "(reason='x')\n",
-        "pytest expected failure": "@" + xfail_marker + "\ndef test_x() -> None:\n    raise AssertionError\n",
+        "pytest expected failure": "@"
+        + xfail_marker
+        + "\ndef test_x() -> None:\n    raise AssertionError\n",
         "imperative pytest skip": "def test_x() -> None:\n    " + imperative_skip + "no')\n",
         "ignored shell failure": "cmd || " + "true\n",
         "unconditional shell success": "\nexit " + "0\n",
