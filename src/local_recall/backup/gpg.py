@@ -43,7 +43,7 @@ class GpgRecipientCrypter:
         return args
 
     async def encrypt(self, data: bytes) -> bytes:
-        process = await asyncio.create_subprocess_exec(
+        process: asyncio.subprocess.Process = await asyncio.create_subprocess_exec(
             *self._base_args(),
             "--trust-model",
             "always",
@@ -60,7 +60,7 @@ class GpgRecipientCrypter:
         return stdout
 
     async def decrypt(self, data: bytes) -> bytes:
-        process = await asyncio.create_subprocess_exec(
+        process: asyncio.subprocess.Process = await asyncio.create_subprocess_exec(
             *self._base_args(),
             "--output",
             "-",
@@ -73,7 +73,10 @@ class GpgRecipientCrypter:
         return stdout
 
 
-async def _communicate(process, data: bytes) -> tuple[bytes, bytes]:
+async def _communicate(
+    process: asyncio.subprocess.Process,
+    data: bytes,
+) -> tuple[bytes, bytes]:
     try:
         stdout, stderr = await asyncio.wait_for(
             process.communicate(input=data), timeout=_GPG_TIMEOUT_SECONDS

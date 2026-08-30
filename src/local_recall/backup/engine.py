@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Protocol
 from uuid import UUID
 
 from local_recall.audit.models import AuditReasonCode
@@ -16,6 +17,14 @@ from local_recall.retention.planner import RetentionStorage
 from local_recall.storage import CURRENT_STORAGE_SCHEMA_VERSION, SQLiteEncryptedStorage
 from local_recall.storage.codec import encode_envelope
 from local_recall.storage.errors import StorageFailure, StorageFailureCode
+
+
+class BackupCrypter(Protocol):
+    """Archive byte-transform for portable encrypted exports."""
+
+    async def encrypt(self, data: bytes) -> bytes: ...
+
+    async def decrypt(self, data: bytes) -> bytes: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +55,7 @@ class BackupEngine:
         audit: AuditRecorder | None = None,
         key_provider: KeyProvider | None = None,
         max_blob_bytes: int = 1_000_000,
-        crypter: object | None = None,
+        crypter: BackupCrypter | None = None,
     ) -> None:
         self._storage = source_storage
         self._audit = audit
