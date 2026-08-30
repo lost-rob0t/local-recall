@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import uuid4
-
-from local_recall.timeline.ipc import TimelineDeletionHandler
+from uuid import UUID, uuid4
 
 from local_recall import ipc, ipc_transport
 from local_recall.activity import reconcile as activity_reconcile
@@ -16,7 +16,7 @@ from local_recall.activity.summaries import ActivitySummarizer
 from local_recall.audit import AuditEvent, AuditRecorder
 from local_recall.audit.adapters import IpcAuditAdapter
 from local_recall.audit.models import AuditAction
-from local_recall.cli_contract import CliCommand, CliOutcome
+from local_recall.cli_contract import CliCommand, CliOutcome, CliRequest
 from local_recall.crypto import OSKeyringProvider
 from local_recall.domain.crypto import EncryptedRecordEnvelope, KeyHandle
 from local_recall.domain.frames import PixelFormat, RedactedFrame, RedactedRecord
@@ -37,9 +37,12 @@ from local_recall.domain.providers import (
     ProviderCapabilities,
 )
 from local_recall.index.semantic import EncryptedSemanticIndex
+from local_recall.ports.encryption import DecryptionRequest, EncryptionRequest
 from local_recall.storage import SQLiteEncryptedStorage
+from local_recall.timeline.activity_rebuild import SurvivingRecordActivityReconciler
 from local_recall.timeline.deletion import DeletionCoordinator, DeletionJournal
 from local_recall.timeline.inspection import TimelineInspector
+from local_recall.timeline.ipc import TimelineDeletionHandler
 from local_recall.timeline.scope import DeletionScopeResolver
 
 
@@ -170,13 +173,13 @@ def _envelope(record: RedactedRecord) -> EncryptedRecordEnvelope:
 class Decryptor:
     provider_id = "ipc-integration-decryptor"
 
-    def __init__(self, records: dict) -> None:
+    def __init__(self, records: dict[UUID, RedactedRecord]) -> None:
         self._records = records
 
-    async def decrypt(self, request) -> RedactedRecord:
+    async def decrypt(self, request: DecryptionRequest) -> RedactedRecord:
         return self._records[request.envelope.record_id]
 
-    async def encrypt(self, request):
+    async def encrypt(self, request: EncryptionRequest[RedactedRecord]) -> EncryptedRecordEnvelope:
         raise AssertionError("IPC handler must never encrypt")
 
 
@@ -188,8 +191,6 @@ class SeedStorage:
 
     def seed(self, *records: RedactedRecord) -> None:
         for record in records:
-            import asyncio
-
             asyncio.run(self._backend.put(_envelope(record)))
 
 
@@ -219,27 +220,24 @@ def _wire(tmp_path: Path, *records: RedactedRecord):
     index_root = tmp_path / "semantic"
     semantic_index = EncryptedSemanticIndex(index_root, key_provider)
 
-    class SemanticOnlyIndex:
-        async def remove(self, record_ids) -> object:
-            return asyncio.run(_remove(record_ids))
-
-    async def _remove(record_ids):
-        return await semantic_index.remove(record_ids)
-
-    del SemanticOnlyIndex, _remove
-
     class SyncRemoveAdapter:
-        async def remove(self, record_ids) -> object:
+        async def remove(self, record_ids: tuple[UUID, ...]) -> object:
             return await semantic_index.remove(record_ids)
 
+    decryptor = Decryptor({record.record_id: record for record in records})
+    rebuild = SurvivingRecordActivityReconciler(
+        storage=backend,
+        encryption=decryptor,
+        reconciler=reconciler,
+        store=activity_store,
+    )
     journal = DeletionJournal(tmp_path / "deletion")
     coordinator = DeletionCoordinator(
         journal=journal,
         storage=backend,
         semantic_index=SyncRemoveAdapter(),
-        activity_reconciler=reconciler,
+        activity_reconciler=rebuild,
     )
-    decryptor = Decryptor({record.record_id: record for record in records})
     inspector = TimelineInspector(
         storage=backend,
         encryption=decryptor,
@@ -268,20 +266,20 @@ def _paths(tmp_path: Path) -> ipc.IpcPaths:
     return ipc.IpcPaths.from_runtime_dir(runtime_dir, expected_uid=os.getuid())
 
 
-def _request(command: CliCommand, **kwargs):
+def _request(command: CliCommand, **kwargs: object):
     now = datetime.now(UTC)
     return CliRequest.create(
         command=command,
         now=now,
         deadline=now + timedelta(seconds=5),
-        **kwargs,
+        **kwargs,  # type: ignore[arg-type]
     )
 
 
 def test_authenticated_ipc_inspection_and_deletion_round_trip(tmp_path: Path) -> None:
     victim = _record(1, captured_at=_BASE, text="IPC-VICTIM-MARKER-77a2")
     survivor = _record(2, captured_at=_BASE + timedelta(minutes=1), text="IPC-SURVIVOR-MARKER")
-    handler, audit_sink, backend, decryptor = _wire(tmp_path, victim, survivor)
+    handler, audit_sink, backend, _decryptor = _wire(tmp_path, victim, survivor)
     paths = _paths(tmp_path)
 
     server = ipc_transport.ZmqIpcServer(
@@ -303,8 +301,11 @@ def test_authenticated_ipc_inspection_and_deletion_round_trip(tmp_path: Path) ->
         )
         assert timeline_response.outcome is CliOutcome.SUCCESS
         assert timeline_response.query_payload is not None
-        assert "IPC-VICTIM-MARKER-77a2" in timeline_response.query_payload.text
-        assert "IPC-SURVIVOR-MARKER" in timeline_response.query_payload.text
+        timeline_ids = {
+            entry["record_id"] for entry in json.loads(timeline_response.query_payload.text)
+        }
+        assert str(victim.record_id) in timeline_ids
+        assert str(survivor.record_id) in timeline_ids
 
         preview_response = client.request(
             _request(
@@ -338,8 +339,9 @@ def test_authenticated_ipc_inspection_and_deletion_round_trip(tmp_path: Path) ->
         )
         assert after_response.outcome is CliOutcome.SUCCESS
         assert after_response.query_payload is not None
-        assert "IPC-VICTIM-MARKER-77a2" not in after_response.query_payload.text
-        assert "IPC-SURVIVOR-MARKER" in after_response.query_payload.text
+        after_ids = {entry["record_id"] for entry in json.loads(after_response.query_payload.text)}
+        assert str(victim.record_id) not in after_ids
+        assert str(survivor.record_id) in after_ids
 
         missing_preview = client.request(
             _request(
@@ -366,7 +368,7 @@ def test_authenticated_ipc_inspection_and_deletion_round_trip(tmp_path: Path) ->
 
 def test_authenticated_ipc_survives_deletion_scope_conflicts(tmp_path: Path) -> None:
     record = _record(1, captured_at=_BASE, text="conflict-entry")
-    handler, audit_sink, backend, decryptor = _wire(tmp_path, record)
+    handler, audit_sink, backend, _decryptor = _wire(tmp_path, record)
     paths = _paths(tmp_path)
 
     server = ipc_transport.ZmqIpcServer(paths=paths, expected_uid=os.getuid(), handler=handler)

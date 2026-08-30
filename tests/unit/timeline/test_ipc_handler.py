@@ -1,18 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
+import json
+from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
-
-from local_recall.timeline.ipc import TimelineDeletionHandler
-from tests.unit.timeline.test_activity_rebuild import (
-    Embeddings,
-    FakeEncryption,
-    FakeStorage,
-    MemoryKeyringBackend,
-    _record,
-)
-from tests.unit.timeline.test_deletion import FakeSemanticIndex
+from uuid import UUID, uuid4
 
 from local_recall.activity import reconcile as activity_reconcile
 from local_recall.activity.clustering import ActivityClusteringPolicy, ActivitySegmenter
@@ -23,9 +16,168 @@ from local_recall.audit import AuditEvent, AuditRecorder
 from local_recall.audit.models import AuditAction
 from local_recall.cli_contract import CliCommand, CliOutcome, CliRequest
 from local_recall.crypto import OSKeyringProvider
+from local_recall.domain.crypto import EncryptedRecordEnvelope, KeyHandle, StoredRecordRef
+from local_recall.domain.frames import PixelFormat, RedactedFrame, RedactedRecord
+from local_recall.domain.lifecycle import CaptureGeneration
+from local_recall.domain.metadata import ContextMetadata
+from local_recall.domain.privacy import PrivacyClass, ProviderLocation
+from local_recall.domain.providers import (
+    EmbeddingRequest,
+    EmbeddingResponse,
+    GenerationRequest,
+    GenerationResponse,
+    ModelCapability,
+    ProviderCapabilities,
+)
+from local_recall.ports.encryption import DecryptionRequest, EncryptionRequest
+from local_recall.ports.storage import (
+    CatalogRecord,
+    DayRangeQuery,
+    DeleteRequest,
+    DeleteResult,
+    StorageIntegrityReport,
+)
+from local_recall.timeline.activity_rebuild import SurvivingRecordActivityReconciler
 from local_recall.timeline.deletion import DeletionCoordinator, DeletionJournal
 from local_recall.timeline.inspection import TimelineInspector
+from local_recall.timeline.ipc import TimelineDeletionHandler
 from local_recall.timeline.scope import DeletionScopeResolver
+
+
+class MemoryKeyringBackend:
+    def __init__(self) -> None:
+        self.values: dict[tuple[str, str], str] = {}
+
+    def get_password(self, service: str, username: str) -> str | None:
+        return self.values.get((service, username))
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        self.values[(service, username)] = password
+
+    def delete_password(self, service: str, username: str) -> None:
+        self.values.pop((service, username), None)
+
+
+class Embeddings:
+    async def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider_id="local-embedding",
+            location=ProviderLocation.LOCAL,
+            capabilities=frozenset({ModelCapability.EMBEDDING}),
+            accepted_privacy_classes=frozenset({PrivacyClass.REDACTED_CONTENT}),
+            max_input_bytes=65_536,
+            supports_vision=False,
+        )
+
+    async def embed(self, request: EmbeddingRequest) -> EmbeddingResponse:
+        return EmbeddingResponse(
+            provider_id="local-embedding",
+            model_id="embed-v1",
+            vectors=tuple((1.0, 0.0) for _ in request.inputs),
+        )
+
+
+class FakeStorage:
+    backend_id = "handler-storage"
+
+    def __init__(self, *records: RedactedRecord) -> None:
+        self.records: dict[UUID, RedactedRecord] = {r.record_id: r for r in records}
+        self._present: set[UUID] = set(self.records)
+        self.deleted: list[UUID] = []
+
+    async def list_candidates(self, request: DayRangeQuery) -> tuple[CatalogRecord, ...]:
+        found: list[CatalogRecord] = []
+        for record_id, record in self.records.items():
+            if record_id not in self._present:
+                continue
+            captured_day = record.frame.captured_at.astimezone(UTC).date()
+            if request.start_day <= captured_day <= request.end_day:
+                found.append(
+                    CatalogRecord(
+                        record=StoredRecordRef(record_id, self.backend_id, 1),
+                        day_bucket=captured_day,
+                        blob_bytes=128,
+                        key_provider_id="fake-key-provider",
+                        key_id="record-key",
+                        key_version=1,
+                    )
+                )
+        return tuple(sorted(found, key=lambda item: (item.day_bucket, str(item.record.record_id))))
+
+    async def get(self, record_id: UUID) -> EncryptedRecordEnvelope | None:
+        if record_id not in self._present:
+            return None
+        return _envelope(self.records[record_id])
+
+    async def delete(self, request: DeleteRequest) -> DeleteResult:
+        deleted = request.record_id in self._present
+        self._present.discard(request.record_id)
+        self.deleted.append(request.record_id)
+        return DeleteResult(request.record_id, deleted, False)
+
+    async def put(self, envelope: EncryptedRecordEnvelope) -> StoredRecordRef:
+        raise AssertionError("handler must never encrypt")
+
+    async def recover(self) -> StorageIntegrityReport:
+        return StorageIntegrityReport()
+
+
+class FakeEncryption:
+    provider_id = "handler-encryption"
+
+    def __init__(self, records: dict[UUID, RedactedRecord]) -> None:
+        self._records = records
+
+    async def decrypt(self, request: DecryptionRequest) -> RedactedRecord:
+        return self._records[request.envelope.record_id]
+
+    async def encrypt(self, request: EncryptionRequest[RedactedRecord]) -> EncryptedRecordEnvelope:
+        raise AssertionError("handler must never encrypt")
+
+
+class FakeSemanticIndex:
+    def __init__(self) -> None:
+        self.removed: list[tuple[UUID, ...]] = []
+
+    async def remove(self, record_ids: tuple[UUID, ...]) -> object:
+        self.removed.append(record_ids)
+        return object()
+
+
+def _envelope(record: RedactedRecord) -> EncryptedRecordEnvelope:
+    return EncryptedRecordEnvelope(
+        record_id=record.record_id,
+        generation=record.frame.generation,
+        configuration_revision="config-v1",
+        schema_version=1,
+        algorithm="test-only",
+        key=KeyHandle("record-key", "fake-key-provider", 1),
+        plaintext_frame_sizes=(1,),
+        wrapped_data_key=b"wrapped",
+        nonce=b"nonce",
+        ciphertext=b"ciphertext",
+        associated_data_digest=b"digest",
+        created_at=record.created_at,
+    )
+
+
+def _record(index: int, *, captured_at: datetime, text: str) -> RedactedRecord:
+    frame = RedactedFrame(
+        frame_id=uuid4(),
+        generation=CaptureGeneration(1),
+        captured_at=captured_at,
+        width=1,
+        height=1,
+        stride=3,
+        pixel_format=PixelFormat.RGB8,
+        pixels=b"PIX",
+        metadata=ContextMetadata(observed_at=captured_at, fields=()),
+        ocr_text=(text,),
+        findings=(),
+        policy_revision="redaction-policy-v1",
+    )
+    return RedactedRecord(record_id=uuid4(), frame=frame, created_at=captured_at)
+
 
 _BASE = dt.datetime(2026, 8, 22, 10, 0, tzinfo=dt.UTC)
 
@@ -39,7 +191,7 @@ class MemoryAuditSink:
 
 
 class EchoGenerator:
-    async def capabilities(self):
+    async def capabilities(self) -> ProviderCapabilities:
         from local_recall.domain.privacy import PrivacyClass, ProviderLocation
         from local_recall.domain.providers import ModelCapability, ProviderCapabilities
 
@@ -53,7 +205,7 @@ class EchoGenerator:
             supports_structured_output=True,
         )
 
-    async def generate(self, request):
+    async def generate(self, request: GenerationRequest) -> GenerationResponse:
         import json
         import re
 
@@ -78,7 +230,7 @@ def _request(command: CliCommand, **kwargs: object) -> CliRequest:
         command=command,
         now=now,
         deadline=now + dt.timedelta(seconds=5),
-        **kwargs,
+        **kwargs,  # type: ignore[arg-type]
     )
 
 
@@ -102,12 +254,18 @@ class Harness:
             store=self.store,
         )
         self.semantic_index = FakeSemanticIndex()
+        self.rebuild = SurvivingRecordActivityReconciler(
+            storage=self.storage,
+            encryption=self.encryption,
+            reconciler=self.reconciler,
+            store=self.store,
+        )
         self.journal = DeletionJournal(tmp_path / "deletion")
         self.coordinator = DeletionCoordinator(
             journal=self.journal,
             storage=self.storage,
             semantic_index=self.semantic_index,
-            activity_reconciler=self.reconciler,
+            activity_reconciler=self.rebuild,
         )
         self.inspector = TimelineInspector(
             storage=self.storage,
@@ -144,9 +302,11 @@ def test_timeline_request_lists_entries_through_handler(tmp_path: Path) -> None:
 
     assert response.outcome is CliOutcome.SUCCESS
     assert response.query_payload is not None
-    assert "handler-entry-one" in response.query_payload.text
-    citation_ids = {citation.record_id for citation in response.query_payload.citations}
-    assert citation_ids == {str(first.record_id), str(second.record_id)}
+    entries = json.loads(response.query_payload.text)
+    listed_ids = {entry["record_id"] for entry in entries}
+    assert listed_ids == {str(first.record_id), str(second.record_id)}
+    assert "handler-entry-one" not in response.query_payload.text
+    assert all(entry["redaction_finding_count"] == 0 for entry in entries)
 
 
 def test_preview_request_returns_text_through_handler(tmp_path: Path) -> None:

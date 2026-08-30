@@ -159,7 +159,7 @@ class EncryptedSemanticIndex:
         async with self._operation_lock:
             current = await self._load(self._active)
             if current is None:
-                raise IndexFailure("semantic index is not initialized")
+                return IndexManifest("uninitialized", 0, 0)
             replacement = _Snapshot(
                 current.model_id,
                 current.dimensions,

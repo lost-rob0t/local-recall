@@ -233,3 +233,13 @@ def test_selective_removal_is_idempotent_and_rejects_duplicate_scope(tmp_path: P
     assert second_result.record_count == 1
     with pytest.raises(ValueError, match="duplicate"):
         asyncio.run(index.remove((second.record_id, second.record_id)))
+
+
+def test_removal_on_uninitialized_index_is_a_vacuous_no_op(tmp_path: Path) -> None:
+    index = make_index(tmp_path / "index")
+    provider = FixedEmbeddingProvider()
+
+    manifest = asyncio.run(index.remove((UUID(int=1),)))
+
+    assert manifest.record_count == 0
+    assert provider.calls == []

@@ -503,7 +503,12 @@ def _audit_capability(command: CliCommand) -> str:
         CliCommand.PRIVACY_OFF,
     }:
         return "control"
-    if command in {CliCommand.ASK, CliCommand.TIMELINE, CliCommand.SEARCH}:
+    if command in {
+        CliCommand.ASK,
+        CliCommand.TIMELINE,
+        CliCommand.SEARCH,
+        CliCommand.PREVIEW_RECORD,
+    }:
         return "query"
     if command in {CliCommand.PROVIDERS, CliCommand.HEALTH, CliCommand.STORAGE_STATS}:
         return "diagnostic"

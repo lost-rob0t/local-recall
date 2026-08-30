@@ -50,7 +50,9 @@ _CONTROL_COMMANDS = frozenset(
         CliCommand.PRIVACY_OFF,
     }
 )
-_QUERY_COMMANDS = frozenset({CliCommand.ASK, CliCommand.TIMELINE, CliCommand.SEARCH})
+_QUERY_COMMANDS = frozenset(
+    {CliCommand.ASK, CliCommand.TIMELINE, CliCommand.SEARCH, CliCommand.PREVIEW_RECORD}
+)
 _DIAGNOSTIC_COMMANDS = frozenset(
     {CliCommand.PROVIDERS, CliCommand.HEALTH, CliCommand.STORAGE_STATS}
 )
