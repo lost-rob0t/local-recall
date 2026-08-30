@@ -7,6 +7,12 @@ from datetime import UTC, datetime
 import pytest
 
 from local_recall.audit import AuditRecorder
+from local_recall.health.ports import (
+    IndexRepairPort,
+    MigrationRepairPort,
+    ProviderReprobePort,
+    StorageRepairPort,
+)
 from local_recall.health.repair import (
     RepairCommand,
     RepairRequest,
@@ -95,10 +101,10 @@ def _request(command: RepairCommand) -> RepairRequest:
 
 def _service(
     *,
-    index_repair: object | None = None,
-    storage_repair: object | None = None,
-    migration_repair: object | None = None,
-    provider_reprobe: object | None = None,
+    index_repair: IndexRepairPort | None = None,
+    storage_repair: StorageRepairPort | None = None,
+    migration_repair: MigrationRepairPort | None = None,
+    provider_reprobe: ProviderReprobePort | None = None,
 ) -> tuple[SafeRepairService, MemoryAuditSink]:
     sink = MemoryAuditSink()
     service = SafeRepairService(

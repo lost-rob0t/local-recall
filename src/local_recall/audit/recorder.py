@@ -403,6 +403,28 @@ class AuditRecorder:
         self._sink.emit(event)
         return event
 
+    def record_health_check(self, *, healthy: bool) -> AuditEvent:
+        return self._emit(
+            category=AuditCategory.SYSTEM,
+            action=AuditAction.HEALTH_CHECK,
+            outcome=AuditOutcome.SUCCEEDED if healthy else AuditOutcome.FAILED,
+            reason=AuditReasonCode.HEALTH_CHECK,
+            attributes={},
+        )
+
+    def record_repair_operation(
+        self, *, command: str, succeeded: bool, restartable: bool, count: int
+    ) -> AuditEvent:
+        if not _safe_command(command):
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        return self._emit(
+            category=AuditCategory.SYSTEM,
+            action=AuditAction.REPAIR_OPERATION,
+            outcome=AuditOutcome.SUCCEEDED if succeeded else AuditOutcome.FAILED,
+            reason=AuditReasonCode.REPAIR_COMPLETED if succeeded else AuditReasonCode.REPAIR_FAILED,
+            attributes={"count": count, "success": succeeded, "restartable": restartable},
+        )
+
 
 _DELETION_SCOPE_FLAGS = {
     "record-ids": "records",
@@ -410,6 +432,14 @@ _DELETION_SCOPE_FLAGS = {
     "application": "application",
     "time-range": "time_range",
 }
+
+_REPAIR_COMMANDS = frozenset(
+    {"index-rebuild", "orphan-cleanup", "migration-resume", "provider-reprobe"}
+)
+
+
+def _safe_command(command: str) -> bool:
+    return command in _REPAIR_COMMANDS
 
 
 def _digest(value: str | None) -> str | None:

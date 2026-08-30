@@ -1,0 +1,73 @@
+#+title: RAGE Issue 37 — Health Checks, Diagnostics, and Safe Repair
+
+* Transaction
+- Issue: #37 — Add health checks, diagnostics, and safe repair commands
+- Branch: =agent/issue-37-health-diagnostics-repair=
+- PR: #95
+- Dependencies: #12, #22, #27, #29, #31 (satisfied)
+
+* Acceptance criteria
+- =health= distinguishes degraded optional features from capture-blocking failures.
+- Diagnostic bundles pass automated secret/content scanning.
+- Repair operations are restartable and audited.
+- A failing encryption or redaction health check prevents persistence.
+
+* Design decisions
+- New =src/local_recall/health/= subsystem: closed =HealthCheckId= enum with
+  exactly the eleven required surfaces; =HealthState= ∈ {healthy, degraded,
+  capture-blocking}; criticality is derived (only metadata, OCR, indexes,
+  providers, IPC are optional) so a future check cannot silently become
+  optional.
+- Checks are narrow ports (no daemon required to exist); the composition maps
+  real subsystems onto them. Encryption reuses =KeyProvider.health()=; redaction
+  is a functional self-test (detector must classify a fixed synthetic sample —
+  catches a broken detector without embedding real secrets); storage health is
+  strictly read-only (health never calls the mutating =recover()=; that
+  primitive is reserved for the =orphan-cleanup= repair).
+- =HealthService= runs checks concurrently with a per-check timeout; failures
+  and timeouts collapse to fixed reason codes with state derived from
+  criticality.
+- Guards: =ensure_capture_allowed= (any blocking check) and
+  =ensure_persistence_allowed= (encryption/redaction/storage blocking). The
+  lifecycle =FaultCapture= path provides the enforcement point (state faulted,
+  =critical_dependencies_healthy=false=, generation invalidated) — integration
+  test drives the real =CaptureGate=/=LifecycleActor=.
+- Diagnostic bundle: versions + closed check results + opaque counts + strict
+  charset-validated revision tokens. Paths/hostnames/user text are impossible
+  by construction (no =/= or =\= can appear anywhere in the JSON).
+- Repairs: closed four-command enum over explicit ports; =RepairLedger= journals
+  outcomes; every run audited via new =HEALTH_CHECK= / =REPAIR_OPERATION= audit
+  actions with strict attribute schemas (added to the closed audit model with
+  validation). Nothing is scheduled; nothing deletes; nothing touches policy.
+- IPC surface: =health_report_diagnostic_payload= renders into the existing
+  closed =CliDiagnosticPayload= (category health) so the daemon can serve the
+  =health= CLI command without contract changes.
+
+* Execute / TDD
+- Valid RED (head =a4321dc=, CI run =33302036912=): =tests/unit/health= and the
+  security/integration files fail at collection on the missing
+  =local_recall.health= API; audit event tests fail on the missing actions;
+  strict Pyright fails exactly on the unknown import symbols. Baseline 1006
+  tests unaffected.
+- GREEN (this commit): full suite =1067 passed= (1006 + 61 new), strict Pyright
+  0 errors, ruff/shellcheck clean, verify-failure-modes 8/8, bandit,
+  detect-secrets, repo policy clean. Canonical gate =./scripts/check= green.
+- Test-side defects fixed during GREEN: FakePorts index manifest shape (tuple vs
+  =IndexHealth=), audit attribute allowlist missing =restartable=, a plain list
+  used as an audit sink in one security test.
+
+* Verification mapping
+- Degraded vs capture-blocking: =HealthReport.overall/capture_blocked= unit
+  tests; per-check state table in =test_checks.py=; docs table in
+  =docs/health.md=.
+- Bundles pass scanning: =detect-secrets= subprocess scan over a bundle built
+  with seeded marker content; marker-leak probes across report/bundle/payload
+  surfaces; structural no-path invariant asserted on the JSON.
+- Restartable + audited: flaky-port test (fail → FAILED sanitized → rerun →
+  COMPLETED), audit event per run (success and failure), =RepairLedger= state.
+- Failing encryption/redaction prevents persistence: guard unit tests
+  (parametrized over the three privacy-critical checks) and the security-level
+  persistence-path test proving no record is written; capture fault integration
+  through the real lifecycle actor.
+- No automatic/destructive repair: closed command set assertions, spy storage
+  proving no delete call, no scheduler exists in the module.

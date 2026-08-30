@@ -4,15 +4,18 @@ import json
 from typing import cast
 
 from local_recall.health.bundle import build_diagnostic_bundle
-from local_recall.health.models import HealthCheckId, HealthCheckResult, HealthState
+from local_recall.health.models import (
+    HealthCheckId,
+    HealthCheckResult,
+    HealthReport,
+    HealthState,
+)
 
 _SEEDED_SECRET = "AKIASYNTHETICEXAMPLEKEY123"
 _PLATFORM_MARKER = "linux"
 
 
-def _report() -> object:
-    from local_recall.health.models import HealthReport
-
+def _report() -> HealthReport:
     return HealthReport(
         results=(
             HealthCheckResult(
@@ -31,7 +34,7 @@ def test_bundle_contains_versions_and_results_only() -> None:
     from datetime import UTC, datetime
 
     bundle = build_diagnostic_bundle(
-        _report(),  # type: ignore[arg-type]
+        _report(),
         now=lambda: datetime(2026, 8, 30, tzinfo=UTC),
         record_count=42,
         storage_bytes=1024,

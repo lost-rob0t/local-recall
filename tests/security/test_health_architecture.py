@@ -8,6 +8,7 @@ import threading
 import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import cast
 
 import pykka
@@ -55,6 +56,14 @@ _NOW = datetime(2026, 8, 30, tzinfo=UTC)
 _SEEDED_SECRET = "synthetic-health-secret-marker-do-not-leak"
 
 
+class _MemoryAuditSink:
+    def __init__(self) -> None:
+        self.events: list[object] = []
+
+    def emit(self, event: object) -> None:
+        self.events.append(event)
+
+
 @pytest.fixture(autouse=True)
 def stop_actors() -> Iterator[None]:
     yield
@@ -91,12 +100,12 @@ def _report_with_leaking_check() -> HealthReport:
     return asyncio.run(service.report())
 
 
-def test_repair_failure_output_and_bundle_never_contain_seeded_content(tmp_path) -> None:
+def test_repair_failure_output_and_bundle_never_contain_seeded_content(tmp_path: Path) -> None:
     class ContentBearingIndexRepair:
         async def rebuild_index(self) -> int:
             raise RuntimeError(f"leak attempt {_SEEDED_SECRET}")
 
-    sink: list[object] = []
+    sink = _MemoryAuditSink()
     service = SafeRepairService(
         index_repair=ContentBearingIndexRepair(),
         audit=AuditRecorder(sink),

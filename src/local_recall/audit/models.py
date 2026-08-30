@@ -42,6 +42,8 @@ class AuditAction(StrEnum):
     STORAGE_PERMISSION_CHECK = "storage_permission_check"
     LOG_ROTATION = "log_rotation"
     IPC_REQUEST = "ipc_request"
+    HEALTH_CHECK = "health_check"
+    REPAIR_OPERATION = "repair_operation"
 
 
 class AuditOutcome(StrEnum):
@@ -94,6 +96,9 @@ class AuditReasonCode(StrEnum):
     CRITICAL_FAULT = "critical_fault"
     IPC_AUTHORIZED = "ipc_authorized"
     IPC_REJECTED = "ipc_rejected"
+    HEALTH_CHECK = "health_check"
+    REPAIR_COMPLETED = "repair_completed"
+    REPAIR_FAILED = "repair_failed"
 
 
 _ACTION_CATEGORIES: dict[AuditAction, AuditCategory] = {
@@ -114,6 +119,8 @@ _ACTION_CATEGORIES: dict[AuditAction, AuditCategory] = {
     AuditAction.STORAGE_PERMISSION_CHECK: AuditCategory.SYSTEM,
     AuditAction.LOG_ROTATION: AuditCategory.SYSTEM,
     AuditAction.IPC_REQUEST: AuditCategory.IPC,
+    AuditAction.HEALTH_CHECK: AuditCategory.SYSTEM,
+    AuditAction.REPAIR_OPERATION: AuditCategory.SYSTEM,
 }
 
 _ALLOWED_ATTRIBUTE_KEYS = frozenset(
@@ -140,6 +147,7 @@ _ALLOWED_ATTRIBUTE_KEYS = frozenset(
         "success",
         "dry_run",
         "key_destroyed",
+        "restartable",
     }
 )
 
@@ -329,6 +337,19 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
         )
         authorized = attributes["authorized"]
         if (authorized and capability_count != 1) or (not authorized and capability_count > 1):
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action is AuditAction.HEALTH_CHECK and set(attributes) != set():
+        raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action is AuditAction.REPAIR_OPERATION:
+        required = {"count", "success", "restartable"}
+        if set(attributes) != required:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        for key in ("success", "restartable"):
+            if type(attributes[key]) is not bool:
+                raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if type(attributes["count"]) is not int or attributes["count"] < 0:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.KEY_OPERATION and (

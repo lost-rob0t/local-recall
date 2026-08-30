@@ -6,11 +6,12 @@ from datetime import UTC, datetime
 
 from local_recall.domain.crypto import KeyHandle, KeyRequest
 from local_recall.domain.lifecycle import CaptureGeneration, CaptureState, CaptureStateSnapshot
-from local_recall.health.checks import build_health_checks
+from local_recall.health.checks import HealthCheck, build_health_checks
 from local_recall.health.models import HealthCheckId, HealthCheckResult, HealthState
 from local_recall.health.ports import (
     CaptureBackendHealth,
     DiskUsage,
+    IndexHealth,
     IpcHealth,
     MetadataSourceHealth,
     OcrHealth,
@@ -69,7 +70,9 @@ class FakePorts:
             indexed_orphans=0,
         )
     )
-    index: tuple[str, int, int] | None = ("text-model-v1", 8, 3)
+    index: IndexHealth | None = field(
+        default_factory=lambda: IndexHealth(model_id="text-model-v1", dimensions=8, record_count=3)
+    )
     providers: tuple[ProviderHealth, ...] = field(
         default_factory=lambda: (ProviderHealth(provider_id="ollama-local", available=True),)
     )
@@ -96,7 +99,7 @@ class FakePorts:
     async def storage_report(self) -> StorageHealth:
         return self.storage
 
-    async def index_manifest(self) -> tuple[str, int, int] | None:
+    async def index_manifest(self) -> IndexHealth | None:
         return self.index
 
     async def providers_report(self) -> tuple[ProviderHealth, ...]:
@@ -109,7 +112,7 @@ class FakePorts:
         return self.ipc
 
 
-def build(ports: FakePorts, *, min_free_bytes: int = 1_000_000) -> tuple:
+def build(ports: FakePorts, *, min_free_bytes: int = 1_000_000) -> tuple[HealthCheck, ...]:
     return build_health_checks(
         lifecycle_state_port=ports,
         capture_backend_port=ports,
@@ -197,7 +200,7 @@ def test_low_disk_is_capture_blocking() -> None:
 
 def test_index_divergence_is_degraded() -> None:
     ports = FakePorts()
-    ports.index = ("text-model-v1", 8, 1)
+    ports.index = IndexHealth(model_id="text-model-v1", dimensions=8, record_count=1)
     result = asyncio.run(
         next(c for c in build(ports) if c.check_id is HealthCheckId.INDEXES).check()
     )

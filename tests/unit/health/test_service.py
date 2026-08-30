@@ -4,6 +4,7 @@ import asyncio
 import json
 from typing import cast
 
+from local_recall.health.checks import HealthCheck
 from local_recall.health.models import (
     HealthCheckId,
     HealthCheckResult,
@@ -31,12 +32,13 @@ class _BlockingRedactionCheck:
 
     async def check(self) -> HealthCheckResult:
         await asyncio.Event().wait()
+        raise AssertionError("unreachable")
 
 
-def _with_replacement(check_id: HealthCheckId, replacement: object) -> tuple:
+def _with_replacement(check_id: HealthCheckId, replacement: object) -> tuple[HealthCheck, ...]:
     return tuple(
         replacement if check.check_id is check_id else check for check in build(FakePorts())
-    )
+    )  # type: ignore[return-value]
 
 
 def test_service_returns_full_report_with_all_checks() -> None:
