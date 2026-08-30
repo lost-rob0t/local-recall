@@ -13,11 +13,6 @@ from local_recall.backup.gpg import GpgRecipientCrypter
 from local_recall.storage import SQLiteEncryptedStorage
 from tests.unit.retention.test_planner import make_record
 
-pytestmark = pytest.mark.skipif(
-    __import__("shutil").which("gpg") is None,
-    reason="gpg binary is not installed in this environment",
-)
-
 
 def _make_key(home: Path) -> str:
     home.mkdir(mode=0o700, parents=True, exist_ok=True)
