@@ -27,6 +27,13 @@ Local-first, encrypted desktop activity recall with explicit capture controls an
 - [Recording status indicator](docs/indicator.md)
 - [Authenticated local daemon IPC](docs/ipc.md)
 - [Testing policy](docs/testing.md)
+- [Installation and first run](docs/installation.md)
+- [Troubleshooting and safe diagnostics](docs/troubleshooting.md)
+- [Nix packaging](docs/nix.md)
+- [Local timeline UI](docs/ui.md)
+- [Zara visual-context integration](docs/zara-visual-context.md)
+- [End-to-end scenarios and budgets](docs/e2e.md)
+- [v0.1 release report](docs/release/v0.1.md)
 
 ## Development
 

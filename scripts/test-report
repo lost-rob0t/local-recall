@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Generate the release test report counts for every required suite."""
+
+from __future__ import annotations
+
+import re
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+PYTHON = ROOT / ".venv" / "bin" / "python"
+SUITES = ("unit", "contract", "integration", "security", "e2e")
+_SUMMARY = re.compile(r"=+ (.+?) =+")
+
+
+@dataclass(frozen=True)
+class SuiteReport:
+    name: str
+    collected: int
+    short_summary: str
+
+
+def _run(suite: str) -> SuiteReport:
+    collected = subprocess.run(
+        [str(PYTHON), "-m", "pytest", f"tests/{suite}", "--collect-only", "-q"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+        cwd=str(ROOT),
+    )
+    match = re.search(r"(\d+) tests? collected", collected.stdout)
+    total = int(match.group(1)) if match else 0
+    executed = subprocess.run(
+        [str(PYTHON), "-m", "pytest", f"tests/{suite}", "-q", "--tb=no", "-ra"],
+        capture_output=True,
+        text=True,
+        timeout=900,
+        check=False,
+        cwd=str(ROOT),
+    )
+    summaries = _SUMMARY.findall(executed.stdout)
+    short = summaries[-1] if summaries else executed.stdout.strip().splitlines()[-1]
+    return SuiteReport(name=suite, collected=total, short_summary=short)
+
+
+def main() -> int:
+    rows = [_run(suite) for suite in SUITES]
+
+    print("| suite | collected | summary |")
+    print("| --- | --- | --- |")
+    for row in rows:
+        print(f"| {row.name} | {row.collected} | {row.short_summary} |")
+
+    forbidden = (" skipped", " xfailed", " xpassed")
+    if any(word in row.short_summary for row in rows for word in forbidden):
+        print("release gate: skipped/expected-failure tests are prohibited")
+        return 1
+    print("release gate: zero skipped, zero expected-failure")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
