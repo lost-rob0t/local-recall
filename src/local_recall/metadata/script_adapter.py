@@ -205,9 +205,10 @@ def _parse(stdout: bytes, schema_version: int) -> dict[str, str | None]:
     payload: dict[str, str | None] = {}
     for name in ("application", "workspace"):
         value = mapping[name]
-        if value is not None:
-            if not isinstance(value, str) or not value or len(value) > _MAX_FIELD_LENGTH:
-                raise ScriptAdapterFailure("script output is invalid")
+        if value is not None and (
+            not isinstance(value, str) or not value or len(value) > _MAX_FIELD_LENGTH
+        ):
+            raise ScriptAdapterFailure("script output is invalid")
         payload[name] = value
     return payload
 
