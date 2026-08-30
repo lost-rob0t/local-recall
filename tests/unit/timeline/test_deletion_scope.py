@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
@@ -26,6 +28,8 @@ from local_recall.domain.privacy import PrivacyClass, ProviderLocation
 from local_recall.domain.providers import (
     EmbeddingRequest,
     EmbeddingResponse,
+    GenerationRequest,
+    GenerationResponse,
     ModelCapability,
     ProviderCapabilities,
 )
@@ -91,9 +95,39 @@ class NullGenerator:
             supports_structured_output=True,
         )
 
-    async def generate(self, request):
+    async def generate(self, request: GenerationRequest) -> GenerationResponse:
         del request
         raise AssertionError("scope resolution must never summarize")
+
+
+class EchoGenerator:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider_id="local-generation",
+            location=ProviderLocation.LOCAL,
+            capabilities=frozenset({ModelCapability.GENERATION}),
+            accepted_privacy_classes=frozenset({PrivacyClass.REDACTED_CONTENT}),
+            max_input_bytes=65_536,
+            supports_vision=False,
+            supports_structured_output=True,
+        )
+
+    async def generate(self, request: GenerationRequest) -> GenerationResponse:
+        self.calls += 1
+        source_id = re.findall(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            request.prompt,
+        )[0]
+        return GenerationResponse(
+            provider_id="local-generation",
+            model_id="summary-v1",
+            text=json.dumps(
+                {"evidence": [{"source_id": source_id, "excerpt": request.context[0]}]}
+            ),
+        )
 
 
 class FakeStorage:
@@ -216,7 +250,13 @@ def _envelope(record: RedactedRecord) -> EncryptedRecordEnvelope:
 
 
 class Harness:
-    def __init__(self, tmp_path: Path, *records: RedactedRecord) -> None:
+    def __init__(
+        self,
+        tmp_path: Path,
+        *records: RedactedRecord,
+        generator: NullGenerator | EchoGenerator | None = None,
+    ) -> None:
+        generator = generator if generator is not None else EchoGenerator()
         self.storage = FakeStorage(*records)
         self.encryption = FakeEncryption(self.storage.records)
         self.root = tmp_path / "activity"
@@ -231,7 +271,7 @@ class Harness:
                     minimum_semantic_similarity=0.5,
                 )
             ),
-            summarizer=ActivitySummarizer(NullGenerator()),
+            summarizer=ActivitySummarizer(generator),
             store=self.store,
         )
         self.resolver = DeletionScopeResolver(
@@ -293,7 +333,6 @@ def test_application_scope_selects_matching_records_within_bounds(tmp_path: Path
     other_app = _record(2, captured_at=_BASE + timedelta(minutes=1), text="web-note")
     other_time = _record(3, captured_at=_BASE + timedelta(days=5), text="later-emacs")
     harness = Harness(tmp_path, target, other_app, other_time)
-    harness.seed(target, other_app, other_time)
 
     scope = DeletionScope.for_application(
         "emacs",
