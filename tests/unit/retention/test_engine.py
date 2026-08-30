@@ -13,7 +13,7 @@ from local_recall.domain.frames import RedactedRecord
 from local_recall.retention.engine import RetentionEngine
 from local_recall.retention.planner import RetentionRules
 from local_recall.storage import SQLiteEncryptedStorage
-from tests.unit.retention.test_planner import Decryptor, _envelope, _record
+from tests.unit.retention.test_planner import Decryptor, make_envelope, make_record
 
 
 class MemoryAuditSink:
@@ -29,7 +29,7 @@ def _storage(tmp_path: Path, records: list[RedactedRecord]) -> SQLiteEncryptedSt
         tmp_path / "storage", quota_bytes=100_000_000, max_blob_bytes=1_000_000
     )
     for record in records:
-        asyncio.run(storage.put(_envelope(record)))
+        asyncio.run(storage.put(make_envelope(record)))
     return storage
 
 
@@ -51,8 +51,8 @@ def _engine(
 
 
 def test_engine_applies_plan_and_deletes_expired_records(tmp_path: Path) -> None:
-    expired = _record(1, captured_at=datetime(2026, 1, 5, 10, 0, tzinfo=UTC))
-    fresh = _record(2, captured_at=datetime(2026, 8, 29, 10, 0, tzinfo=UTC))
+    expired = make_record(1, captured_at=datetime(2026, 1, 5, 10, 0, tzinfo=UTC))
+    fresh = make_record(2, captured_at=datetime(2026, 8, 29, 10, 0, tzinfo=UTC))
     storage = _storage(tmp_path, [expired, fresh])
     sink = MemoryAuditSink()
     engine = _engine(
@@ -76,7 +76,7 @@ def test_engine_applies_plan_and_deletes_expired_records(tmp_path: Path) -> None
 
 
 def test_engine_dry_run_touches_nothing(tmp_path: Path) -> None:
-    expired = _record(1, captured_at=datetime(2026, 1, 5, 10, 0, tzinfo=UTC))
+    expired = make_record(1, captured_at=datetime(2026, 1, 5, 10, 0, tzinfo=UTC))
     storage = _storage(tmp_path, [expired])
     engine = _engine(
         storage,
@@ -92,7 +92,7 @@ def test_engine_dry_run_touches_nothing(tmp_path: Path) -> None:
 
 
 def test_engine_is_idempotent_under_repeat_sweeps(tmp_path: Path) -> None:
-    expired = _record(1, captured_at=datetime(2026, 1, 5, 10, 0, tzinfo=UTC))
+    expired = make_record(1, captured_at=datetime(2026, 1, 5, 10, 0, tzinfo=UTC))
     storage = _storage(tmp_path, [expired])
     engine = _engine(
         storage,
@@ -110,7 +110,7 @@ def test_engine_is_idempotent_under_repeat_sweeps(tmp_path: Path) -> None:
 def test_engine_failure_audits_and_propagates(tmp_path: Path) -> None:
     from local_recall.audit.errors import AuditFailure, AuditFailureCode
 
-    expired = _record(1, captured_at=datetime(2026, 1, 5, 10, 0, tzinfo=UTC))
+    expired = make_record(1, captured_at=datetime(2026, 1, 5, 10, 0, tzinfo=UTC))
     storage = _storage(tmp_path, [expired])
 
     class FailingSink:

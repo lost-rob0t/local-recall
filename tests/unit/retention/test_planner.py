@@ -26,7 +26,9 @@ from local_recall.retention.planner import (
 from local_recall.storage import SQLiteEncryptedStorage
 
 
-def _record(index: int, *, captured_at: datetime, application: str | None = None) -> RedactedRecord:
+def make_record(
+    index: int, *, captured_at: datetime, application: str | None = None
+) -> RedactedRecord:
     fields: tuple[ContextField, ...] = ()
     if application is not None:
         provenance = MetadataProvenance(
@@ -53,7 +55,7 @@ def _record(index: int, *, captured_at: datetime, application: str | None = None
     return RedactedRecord(record_id=uuid4(), frame=frame, created_at=captured_at)
 
 
-def _envelope(record: RedactedRecord) -> EncryptedRecordEnvelope:
+def make_envelope(record: RedactedRecord) -> EncryptedRecordEnvelope:
     return EncryptedRecordEnvelope(
         record_id=record.record_id,
         generation=record.frame.generation,
@@ -91,7 +93,7 @@ def _storage(tmp_path: Path, records: list[RedactedRecord]) -> SQLiteEncryptedSt
         tmp_path / "storage", quota_bytes=100_000_000, max_blob_bytes=1_000_000
     )
     for record in records:
-        asyncio.run(storage.put(_envelope(record)))
+        asyncio.run(storage.put(make_envelope(record)))
     return storage
 
 
@@ -99,8 +101,8 @@ _TODAY = date(2026, 8, 30)
 
 
 def test_storage_exposes_usage_and_keyset_pages(tmp_path: Path) -> None:
-    old = _record(1, captured_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC))
-    new = _record(2, captured_at=datetime(2026, 8, 29, 10, 0, tzinfo=UTC))
+    old = make_record(1, captured_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC))
+    new = make_record(2, captured_at=datetime(2026, 8, 29, 10, 0, tzinfo=UTC))
     storage = _storage(tmp_path, [old, new])
 
     usage = asyncio.run(storage.stats())
@@ -125,9 +127,9 @@ def test_storage_exposes_usage_and_keyset_pages(tmp_path: Path) -> None:
 
 
 def test_planner_dry_run_selects_expired_records_without_deleting(tmp_path: Path) -> None:
-    expired_a = _record(1, captured_at=datetime(2026, 1, 5, 10, 0, tzinfo=UTC))
-    expired_b = _record(2, captured_at=datetime(2026, 1, 6, 10, 0, tzinfo=UTC))
-    fresh = _record(3, captured_at=datetime(2026, 8, 29, 10, 0, tzinfo=UTC))
+    expired_a = make_record(1, captured_at=datetime(2026, 1, 5, 10, 0, tzinfo=UTC))
+    expired_b = make_record(2, captured_at=datetime(2026, 1, 6, 10, 0, tzinfo=UTC))
+    fresh = make_record(3, captured_at=datetime(2026, 8, 29, 10, 0, tzinfo=UTC))
     storage = _storage(tmp_path, [expired_a, expired_b, fresh])
     decryptor = Decryptor({r.record_id: r for r in (expired_a, expired_b, fresh)})
     planner = RetentionPlanner(
@@ -148,7 +150,7 @@ def test_planner_dry_run_selects_expired_records_without_deleting(tmp_path: Path
 
 def test_planner_evicts_oldest_first_only_under_watermark(tmp_path: Path) -> None:
     records = [
-        _record(
+        make_record(
             index + 1,
             captured_at=datetime(2026, 8, 1, 10, 0, tzinfo=UTC) + timedelta(minutes=index),
         )
@@ -191,7 +193,7 @@ def test_planner_evicts_oldest_first_only_under_watermark(tmp_path: Path) -> Non
 
 def test_planner_enforces_record_count_cap_oldest_first(tmp_path: Path) -> None:
     records = [
-        _record(
+        make_record(
             index + 1,
             captured_at=datetime(2026, 8, 20, 10, 0, tzinfo=UTC) + timedelta(minutes=index),
         )
@@ -214,11 +216,13 @@ def test_planner_enforces_record_count_cap_oldest_first(tmp_path: Path) -> None:
 
 
 def test_planner_context_rules_keep_named_application_longer(tmp_path: Path) -> None:
-    browser_old = _record(
+    browser_old = make_record(
         1, captured_at=datetime(2026, 6, 1, 10, 0, tzinfo=UTC), application="firefox"
     )
-    emacs_old = _record(2, captured_at=datetime(2026, 6, 1, 11, 0, tzinfo=UTC), application="emacs")
-    browser_new = _record(
+    emacs_old = make_record(
+        2, captured_at=datetime(2026, 6, 1, 11, 0, tzinfo=UTC), application="emacs"
+    )
+    browser_new = make_record(
         3, captured_at=datetime(2026, 8, 29, 10, 0, tzinfo=UTC), application="firefox"
     )
     storage = _storage(tmp_path, [browser_old, emacs_old, browser_new])
@@ -246,10 +250,12 @@ def test_planner_context_rules_keep_named_application_longer(tmp_path: Path) -> 
 
 
 def test_planner_context_rules_expire_named_application_sooner(tmp_path: Path) -> None:
-    ephemeral = _record(
+    ephemeral = make_record(
         1, captured_at=datetime(2026, 8, 10, 10, 0, tzinfo=UTC), application="temp-viewer"
     )
-    keeper = _record(2, captured_at=datetime(2026, 8, 10, 11, 0, tzinfo=UTC), application="emacs")
+    keeper = make_record(
+        2, captured_at=datetime(2026, 8, 10, 11, 0, tzinfo=UTC), application="emacs"
+    )
     storage = _storage(tmp_path, [ephemeral, keeper])
     decryptor = Decryptor({r.record_id: r for r in (ephemeral, keeper)})
     planner = RetentionPlanner(
@@ -273,8 +279,8 @@ def test_planner_context_rules_expire_named_application_sooner(tmp_path: Path) -
 
 
 def test_planner_fails_closed_when_decrypt_budget_exceeded(tmp_path: Path) -> None:
-    first = _record(1, captured_at=datetime(2026, 8, 10, 10, 0, tzinfo=UTC), application="a")
-    second = _record(2, captured_at=datetime(2026, 8, 10, 11, 0, tzinfo=UTC), application="b")
+    first = make_record(1, captured_at=datetime(2026, 8, 10, 10, 0, tzinfo=UTC), application="a")
+    second = make_record(2, captured_at=datetime(2026, 8, 10, 11, 0, tzinfo=UTC), application="b")
     storage = _storage(tmp_path, [first, second])
     decryptor = Decryptor({r.record_id: r for r in (first, second)})
     planner = RetentionPlanner(

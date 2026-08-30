@@ -10,7 +10,13 @@ from uuid import UUID
 from local_recall.domain.crypto import EncryptedRecordEnvelope
 from local_recall.domain.frames import RedactedRecord
 from local_recall.ports.encryption import DecryptionRequest, EncryptionProvider
-from local_recall.ports.storage import CatalogPage, StorageUsageReport
+from local_recall.ports.storage import (
+    CatalogPage,
+    DeleteRequest,
+    DeleteResult,
+    StorageIntegrityReport,
+    StorageUsageReport,
+)
 
 _MAX_DECRYPT_BUDGET = 10_000
 _PAGE_LIMIT = 10_000
@@ -33,6 +39,10 @@ class RetentionStorage(Protocol):
     ) -> CatalogPage: ...
 
     async def get(self, record_id: UUID) -> EncryptedRecordEnvelope | None: ...
+
+    async def delete(self, request: DeleteRequest) -> DeleteResult: ...
+
+    async def recover(self) -> StorageIntegrityReport: ...
 
 
 class ScopeBudgetExceeded(RuntimeError):
@@ -209,7 +219,8 @@ class RetentionPlanner:
         if overflow == 0 and pressure == 0:
             return ()
         low = self._rules.low_watermark_bytes
-        assert low is not None
+        if low is None:
+            raise ValueError("retention low watermark is not configured")
         must_free = max(usage_bytes - low, 0) if pressure > 0 else 0
         evicted: list[UUID] = []
         freed = 0
@@ -229,11 +240,13 @@ class RetentionPlanner:
         global_cutoff: date,
         rule_cutoffs: dict[ContextRetentionRule, date],
     ) -> bool:
-        assert self._encryption is not None
+        encryption = self._encryption
+        if encryption is None:
+            raise ScopeBudgetExceeded("retention context evaluation is unavailable")
         envelope = await self._storage.get(candidate.record_id)
         if envelope is None:
             return True
-        record = await self._encryption.decrypt(DecryptionRequest(envelope, envelope.key))
+        record = await encryption.decrypt(DecryptionRequest(envelope, envelope.key))
         matched = [cutoff for rule, cutoff in rule_cutoffs.items() if _matches_rule(record, rule)]
         effective = max(matched) if matched else global_cutoff
         return candidate.day_bucket < effective

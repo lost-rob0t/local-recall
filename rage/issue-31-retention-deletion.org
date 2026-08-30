@@ -1,0 +1,57 @@
+#+title: RAGE Issue 31 — Retention, Quotas, Garbage Collection, and Cryptographic Deletion
+
+* Transaction
+- Issue: #31 — Implement retention, quotas, garbage collection, and cryptographic deletion
+- Immutable starting main: =74fb629= (merge of #89)
+- Branch: =agent/issue-31-retention-deletion=
+- Dependencies: #10, #11, #30 (satisfied)
+
+* Acceptance criteria
+- Expired records are removed from every derived structure.
+- Quota pressure cannot delete outside the configured policy silently.
+- Interrupted garbage collection resumes safely.
+- Purge-all leaves no decryptable capture records using the active key material.
+
+* Research
+*** Architecture evidence
+- The catalog is deliberately content-free: day buckets, blob sizes, and opaque identifiers only. Age and size selection therefore need no decryption; application/workspace retention requires bounded decrypt-on-demand.
+- Canonical storage already provides an idempotent crash-safe per-record delete and a recovery routine that completes interrupted deletions, repairs intents, and quarantines corruption.
+- #30 established the surviving-record activity rebuild and the content-free deletion journal; the same canonical-deletion path is reused here instead of inventing a second eviction mechanism.
+- KeyProvider supports rotation and destruction; envelopes carry per-record wrapped data keys, so removing an envelope removes the only wrapped copy of its data key.
+
+*** Adversarial conclusions
+1. Rejected: plaintext retention columns or scope predicates in the catalog (violates #11 leakage boundary).
+2. Rejected: delete-blob-first eviction without the canonical state machine (orphans plaintext under crash).
+3. Rejected: unbounded context scans (application/workspace rules decrypt only the disputed age window under a strict budget; overflow fails closed).
+4. Rejected: applying retention from derived-state observers; only canonical catalog state drives selection.
+5. Accepted: plan/execute split with dry-run plans, keyset-paged catalog walks (bounded pages), watermark eviction in canonical (day, record) order, idempotent derived-state reconciliation, and key destruction as the final purge step.
+
+* Execute / TDD
+*** Slice 1 — retention planner with dry-run
+- Valid RED: =tests/unit/retention/test_planner.py= failed at collection on the missing planner API and new storage primitives.
+- Production: keyset-paged =page_ready= and =stats()= on the real SQLite backend; =RetentionPlanner= computes expired/evicted selections from closed =RetentionRules= (age, watermark with low target, record cap, context overrides). Context overrides decrypt only candidates inside the disputed window; budget overflow raises =ScopeBudgetExceeded=. Dry runs touch nothing (asserted against real storage).
+- A first production run surfaced a real defect in test-visible behavior: pagination bound UUID parameters directly (sqlite3 cannot bind UUID) — fixed with explicit string conversion, covered by the pagination test.
+- GREEN locally on the exact head across unit/storage/retention layers plus strict typing.
+
+*** Slice 2 — sweep engine with sanitized audit
+- Valid RED: =tests/unit/retention/test_engine.py= failed on the missing =RetentionEngine= and =AuditAction.RETENTION_SWEEP=.
+- Production: sweep = plan + idempotent canonical deletes + =retention_sweep= audit event (count, bytes, success, dry_run only). Audit failure after deletion propagates (fail closed); dry runs emit no purge event and mutate nothing; repeat sweeps delete zero.
+- GREEN locally on the exact head.
+
+*** Slice 3 — purge-all and garbage collection
+- Valid RED: =tests/unit/retention/test_purge.py= and =tests/unit/retention/test_gc.py= failed on the missing =PurgeAllEngine=, =GarbageCollector=, =EncryptedSemanticIndex.clear/record_ids=, and =AuditAction.PURGE_ALL/GARBAGE_COLLECTION=.
+- Production: purge deletes every ready record via the canonical state machine, invalidates the semantic index (uninitialized = IndexFailure, asserted), replaces the activity snapshot with an empty one, destroys the active record key (health no longer ready, asserted), and emits a sanitized =purge_all= event. Missing active key = key_destroyed=false rather than failure. GC prunes index entries and activity membership not present canonically via the surviving-record rebuild; idempotent second run is a no-op; audit events carry counts only.
+- GREEN locally on the exact head across all layers, strict typing, and security scans.
+
+** Verification
+- Final local canonical gate on the documentation head: =./scripts/check= — 906 tests passed (unit, security, integration, contract), 8 failure modes verified, repository policy checks passed, Bandit clean, detect-secrets clean, ruff clean, strict Pyright clean.
+- Acceptance mapping:
+  - *Expired records removed from every derived structure*: engine deletes canonically; GC/purge prune index and rebuild activity from survivors (tests assert index membership, activity membership, and storage absence).
+  - *Quota pressure cannot delete outside the configured policy silently*: selection computed only from closed rules; watermark tests prove no eviction without pressure and oldest-first eviction with pressure; every sweep emits a sanitized audit event.
+  - *Interrupted garbage collection resumes safely*: every GC step recomputes from canonical state; idempotency tests prove repeat runs are no-ops; storage recovery completes interrupted deletions.
+  - *Purge-all leaves no decryptable records using active key material*: canonical deletes remove envelopes (per-record wrapped keys), index invalidated, activity emptied, active record key destroyed (health check asserted).
+
+** Known scope decisions
+- Record-type retention: the only existing artifact kind is =capture-record=; the age policy applies to it. Catalog =artifact_kind= is content-free, so future typed records can extend the rule set without schema leakage.
+- Scheduling belongs to the daemon composition (#40); the engines are invocable and idempotent by design.
+- Unbounded application-wide purges remain out of scope by design; purge-all is the explicit whole-store operation.
