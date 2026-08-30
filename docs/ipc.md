@@ -23,8 +23,9 @@ Requests use three protocol frames after the ZeroMQ routing identity:
 Authentication is checked before content payload parsing. The closed command set is mapped to explicit capabilities:
 
 - **control**: lifecycle/status/privacy commands;
-- **query**: ask, timeline, and search;
-- **diagnostic**: provider, health, and storage-stat operations.
+- **query**: ask, timeline, search, and record preview;
+- **diagnostic**: provider, health, and storage-stat operations;
+- **delete**: destructive selective-deletion operations (issue #30).
 
 A routing frame cannot upgrade a command into another capability, and priority metadata is checked against the command's canonical priority.
 
@@ -40,7 +41,7 @@ Normal requests use a bounded pending lane and finite worker pool. STOP/privacy 
 
 Malformed framing, authentication failure, authorization failure, overload, handler failure, response mismatch, transport timeout, and unavailable-daemon conditions use fixed sanitized outcomes. They do not include endpoint paths, usernames, tokens, query text, answer text, OCR, window titles, screenshots, provider prompts, or exception content.
 
-Authenticated requests emit content-free IPC audit metadata containing only authorization outcome, one capability class, and whether the request used the urgent lane. Authentication failures and malformed multipart messages emit rejected events with unknown capability rather than parsing attacker-controlled content merely to improve the audit label. Malformed requests are dropped without handler dispatch, and a later valid request can continue to use the server.
+Authenticated requests emit content-free IPC audit metadata containing only authorization outcome, one capability class, and whether the request used the urgent lane. Destructive deletion requests additionally emit a separate sanitized `deletion_request` audit event carrying only the closed scope class, the selected record count, and the outcome; scope text, application or workspace names, and record contents never enter the audit stream. Authentication failures and malformed multipart messages emit rejected events with unknown capability rather than parsing attacker-controlled content merely to improve the audit label. Malformed requests are dropped without handler dispatch, and a later valid request can continue to use the server.
 
 Audit failure never makes a malformed packet executable. For a well-formed authenticated request, an audit failure prevents dispatch and returns a sanitized internal failure.
 
