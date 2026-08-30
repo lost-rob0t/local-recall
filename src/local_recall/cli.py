@@ -12,6 +12,7 @@ import typer
 from local_recall import __version__, ipc_transport
 from local_recall.cli_contract import (
     CliCommand,
+    CliDeletionPayload,
     CliDiagnosticPayload,
     CliOutcome,
     CliQueryPayload,
@@ -81,6 +82,11 @@ def _render_query_payload(payload: CliQueryPayload) -> str:
     return "\n".join(lines)
 
 
+def _render_deletion_payload(payload: CliDeletionPayload) -> str:
+    suffix = " (recovered)" if payload.recovered else ""
+    return f"deleted {payload.deleted_count} record(s) [{payload.scope_kind}]{suffix}"
+
+
 def _render_diagnostic_payload(payload: CliDiagnosticPayload) -> str:
     lines = [payload.category.value]
     for entry in payload.entries:
@@ -121,6 +127,7 @@ def _run_query_command(
     start: str | None,
     end: str | None,
     json_output: bool,
+    application: str | None = None,
 ) -> None:
     parsed_start = _parse_query_bound(start, name="start")
     parsed_end = _parse_query_bound(end, name="end")
@@ -135,6 +142,7 @@ def _run_query_command(
         query=query,
         start=parsed_start,
         end=parsed_end,
+        application=application,
     )
     response = result.response
     if response.outcome is CliOutcome.SUCCESS and response.query_payload is not None:
@@ -258,6 +266,7 @@ def search(
 def timeline(
     start: Annotated[str | None, typer.Option(help="ISO-8601 start time.")] = None,
     end: Annotated[str | None, typer.Option(help="ISO-8601 end time.")] = None,
+    application: Annotated[str | None, typer.Option(help="Filter by application name.")] = None,
     json_output: Annotated[
         bool, typer.Option("--json", help="Emit machine-readable JSON.")
     ] = False,
@@ -268,8 +277,95 @@ def timeline(
         query=None,
         start=start,
         end=end,
+        application=application,
         json_output=json_output,
     )
+
+
+@app.command()
+def preview(
+    record_id: Annotated[str, typer.Argument(help="Opaque record ID to preview.")],
+    image: Annotated[
+        bool, typer.Option("--image", help="Preview the redacted screenshot instead of text.")
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
+) -> None:
+    """Decrypt-on-demand preview of one redacted record."""
+    now = dt.datetime.now(dt.UTC)
+    result = execute_command(
+        client=_client_factory(),
+        command=CliCommand.PREVIEW_RECORD,
+        now=now,
+        timeout=_DEFAULT_TIMEOUT,
+        record_ids=[record_id],
+        target="image" if image else "text",
+    )
+    response = result.response
+    if response.outcome is CliOutcome.SUCCESS and response.query_payload is not None:
+        typer.echo(response.query_payload.to_json() if json_output else response.query_payload.text)
+    else:
+        typer.echo(_render_response(response))
+    if result.exit_code != 0:
+        raise typer.Exit(result.exit_code)
+
+
+@app.command()
+def delete(
+    record_id: Annotated[
+        list[str] | None, typer.Option("--record-id", help="Opaque record ID to delete.")
+    ] = None,
+    cluster: Annotated[
+        str | None, typer.Option("--cluster", help="Opaque activity cluster ID to delete.")
+    ] = None,
+    application: Annotated[
+        str | None, typer.Option("--application", help="Application name to delete.")
+    ] = None,
+    start: Annotated[str | None, typer.Option(help="ISO-8601 start time.")] = None,
+    end: Annotated[str | None, typer.Option(help="ISO-8601 end time.")] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable JSON.")
+    ] = False,
+) -> None:
+    """Delete records with one explicit scope; this cannot be undone."""
+    parsed_start = _parse_query_bound(start, name="start")
+    parsed_end = _parse_query_bound(end, name="end")
+    scope_kinds = sum(
+        (
+            bool(record_id),
+            cluster is not None,
+            application is not None,
+            parsed_start is not None and parsed_end is not None and application is None,
+        )
+    )
+    if scope_kinds == 0:
+        raise typer.BadParameter("delete requires one explicit scope")
+    if scope_kinds > 1:
+        raise typer.BadParameter("delete accepts exactly one scope")
+    now = dt.datetime.now(dt.UTC)
+    result = execute_command(
+        client=_client_factory(),
+        command=CliCommand.DELETE_RECORDS,
+        now=now,
+        timeout=_DEFAULT_TIMEOUT,
+        start=parsed_start,
+        end=parsed_end,
+        record_ids=record_id or [],
+        cluster_id=cluster,
+        application=application,
+    )
+    response = result.response
+    if response.outcome is CliOutcome.SUCCESS and response.deletion_payload is not None:
+        typer.echo(
+            response.deletion_payload.to_json()
+            if json_output
+            else _render_deletion_payload(response.deletion_payload)
+        )
+    else:
+        typer.echo(_render_response(response))
+    if result.exit_code != 0:
+        raise typer.Exit(result.exit_code)
 
 
 @app.command()

@@ -186,8 +186,8 @@ def _validate_cluster_scope(command: CliCommand, cluster_id: str | None) -> str 
 def _validate_application_scope(command: CliCommand, application: str | None) -> str | None:
     if application is None:
         return None
-    if command is not CliCommand.DELETE_RECORDS:
-        raise ValueError("deletion scope fields are only valid for deletion commands")
+    if command not in {CliCommand.DELETE_RECORDS, CliCommand.TIMELINE}:
+        raise ValueError("application filter is only valid for timeline and deletion commands")
     if not application or len(application) > _MAX_APPLICATION_FILTER_LENGTH:
         raise ValueError("deletion scope application value has invalid length")
     if any(character in "\r\n\x00" or ord(character) < 0x20 for character in application):
