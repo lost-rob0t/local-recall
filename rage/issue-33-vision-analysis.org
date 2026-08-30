@@ -1,0 +1,34 @@
+#+title: RAGE Issue 33 — Local Vision-Model Analysis for Redacted Screenshots
+
+* Transaction
+- Issue: #33 — Add local vision-model analysis for redacted screenshots
+- Branch: =agent/issue-33-vision-analysis=
+- Dependencies: #9, #21, #23 (satisfied)
+
+* Acceptance criteria
+- A supported local VLM can enrich synthetic records without network access.
+- Provider unavailability does not block normal OCR-based capture.
+- Outputs are schema validated and linked to the exact source record and model version.
+- Tests prove unredacted frame types cannot be passed to the vision provider.
+
+* Design decisions
+- Single provider abstraction (existing =ModelCapability.VISION= + =supports_vision=) serves local and remote providers; remote execution additionally requires the existing =EgressGate= with a per-query =EgressAuthorization= bound to the provider and granting =REDACTED_IMAGE=. No silent local-to-remote fallback exists; without a grant remote analysis is refused.
+- The request boundary structurally accepts only =RedactedFrame=; raw frames are rejected at construction and re-checked in every service entry point (including tampered request objects).
+- Output is a closed dataclass schema (record link, provider, model version, visible application state, document type, broad task, uncertainty). No identity/biometric/personal-attribute/hidden-content fields exist; the boundary rejects malformed values.
+- Image input budget fails closed; =enrich_optional= makes provider unavailability a non-blocking best-effort so OCR-based capture continues.
+
+* Execute / TDD
+*** Slice 1 — vision service and provider contract
+- Valid RED: =tests/unit/vision/test_service.py= failed at collection on the missing =local_recall.vision.service= API.
+- First production run exposed real defects caught by the tests:
+  1. the synthetic redacted frame had a pixel buffer of the wrong length (frame validation) — test fixture fixed;
+  2. the async validation helper was invoked without =await=, returning a coroutine to callers — fixed and covered by the round-trip assertions;
+  3. remote refusal ordering needed the egress-gate presence check separated from the authorization check so the weak-grant test exercises the image-grant denial specifically.
+- GREEN on exact head: all vision tests plus the full suite, strict Pyright, ruff, bandit clean; canonical =./scripts/check= passed with 923 tests and 8 verified failure modes.
+
+* Verification
+- Local enrichment of a synthetic redacted record runs without any network provider (fake local VLM only).
+- Raw frames rejected at construction and through tampered requests; provider request log asserted empty after tampering.
+- Analyses are linked to the exact record (mismatch rejected) and carry the model version.
+- Provider unavailability raises sanitized =VisionUnavailable= and =enrich_optional= returns =None= (capture unaffected).
+- Remote vision refused without authorization, without an image grant, and on provider mismatch; allowed only through the gate with a valid explicit image grant.
