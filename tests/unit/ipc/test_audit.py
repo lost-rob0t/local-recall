@@ -35,6 +35,7 @@ def test_ipc_audit_records_closed_operational_metadata_only() -> None:
         "control": False,
         "diagnostic": False,
         "query": True,
+        "delete": False,
         "urgent": False,
     }
 
@@ -57,5 +58,6 @@ def test_ipc_audit_cannot_carry_content_bearing_values() -> None:
         "control": True,
         "diagnostic": False,
         "query": False,
+        "delete": False,
         "urgent": True,
     }

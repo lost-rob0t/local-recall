@@ -82,6 +82,10 @@ def execute_command(
     query: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
+    record_ids: tuple[str, ...] | list[str] = (),
+    cluster_id: str | None = None,
+    application: str | None = None,
+    target: str | None = None,
 ) -> CliExecutionResult:
     """Execute one CLI command without taking ownership of daemon behavior."""
     if timeout <= timedelta(0) or timeout > MAX_DEADLINE:
@@ -100,6 +104,10 @@ def execute_command(
             query=query,
             start=start,
             end=end,
+            record_ids=record_ids,
+            cluster_id=cluster_id,
+            application=application,
+            target=target,
         )
     except ValueError:
         response = CliResponse.failure(
@@ -145,7 +153,8 @@ def execute_command(
             reason_code="stop-not-quiescent",
         )
     elif (
-        command in {CliCommand.ASK, CliCommand.TIMELINE, CliCommand.SEARCH}
+        command
+        in {CliCommand.ASK, CliCommand.TIMELINE, CliCommand.SEARCH, CliCommand.PREVIEW_RECORD}
         and response.outcome is CliOutcome.SUCCESS
         and response.query_payload is None
     ):
@@ -153,6 +162,16 @@ def execute_command(
             request_id=request.request_id,
             outcome=CliOutcome.INTERNAL_FAILURE,
             reason_code="query-result-missing",
+        )
+    elif (
+        command is CliCommand.DELETE_RECORDS
+        and response.outcome is CliOutcome.SUCCESS
+        and response.deletion_payload is None
+    ):
+        response = CliResponse.failure(
+            request_id=request.request_id,
+            outcome=CliOutcome.INTERNAL_FAILURE,
+            reason_code="deletion-result-missing",
         )
     elif response.outcome is CliOutcome.SUCCESS:
         expected_category = _expected_diagnostic_category(command)

@@ -118,7 +118,12 @@ class AuditRecorder:
         urgent: bool,
         correlation_id: UUID | None = None,
     ) -> AuditEvent:
-        if capability is not None and capability not in {"control", "query", "diagnostic"}:
+        if capability is not None and capability not in {
+            "control",
+            "query",
+            "diagnostic",
+            "delete",
+        }:
             raise ValueError("unsupported IPC capability")
         if authorized and capability is None:
             raise ValueError("authorized IPC request requires capability")
@@ -133,6 +138,7 @@ class AuditRecorder:
                 "control": capability == "control",
                 "diagnostic": capability == "diagnostic",
                 "query": capability == "query",
+                "delete": capability == "delete",
                 "urgent": urgent,
             },
         )

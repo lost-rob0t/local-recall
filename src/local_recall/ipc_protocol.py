@@ -20,7 +20,9 @@ MAX_ROUTING_BYTES = 4_096
 MAX_REQUEST_PAYLOAD_BYTES = 131_072
 _REQUEST_FRAME_COUNT = 3
 _ROUTING_KEYS = frozenset({"protocol_version", "request_id", "command", "priority", "deadline"})
-_PAYLOAD_KEYS = frozenset({"query", "start", "end"})
+_PAYLOAD_KEYS = frozenset(
+    {"query", "start", "end", "record_ids", "cluster_id", "application", "target"}
+)
 
 
 class IpcProtocolError(RuntimeError):
@@ -65,9 +67,13 @@ class IpcRequestCodec:
         routing = request.routing_json().encode("utf-8")
         payload = json.dumps(
             {
-                "query": request.query,
-                "start": request.start.isoformat() if request.start is not None else None,
+                "application": request.application,
+                "cluster_id": request.cluster_id,
                 "end": request.end.isoformat() if request.end is not None else None,
+                "query": request.query,
+                "record_ids": list(request.record_ids),
+                "start": request.start.isoformat() if request.start is not None else None,
+                "target": request.target,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -113,6 +119,10 @@ class IpcRequestCodec:
         query = _optional_string(payload, "query")
         start = _optional_timestamp(payload, "start")
         end = _optional_timestamp(payload, "end")
+        record_ids = _optional_record_ids(payload, "record_ids")
+        cluster_id = _optional_string(payload, "cluster_id")
+        application = _optional_string(payload, "application")
+        target = _optional_string(payload, "target")
 
         try:
             validated = CliRequest.create(
@@ -122,6 +132,10 @@ class IpcRequestCodec:
                 query=query,
                 start=start,
                 end=end,
+                record_ids=record_ids,
+                cluster_id=cluster_id,
+                application=application,
+                target=target,
             )
         except TypeError, ValueError:
             raise IpcProtocolError("invalid-request") from None
@@ -135,6 +149,10 @@ class IpcRequestCodec:
             query=validated.query,
             start=validated.start,
             end=validated.end,
+            record_ids=validated.record_ids,
+            cluster_id=validated.cluster_id,
+            application=validated.application,
+            target=validated.target,
         )
 
     def __repr__(self) -> str:
@@ -214,6 +232,9 @@ def _optional_timestamp(values: dict[str, object], key: str) -> datetime | None:
     return _timestamp(value, field=key)
 
 
+_DELETION_COMMANDS = frozenset({CliCommand.DELETE_RECORDS})
+
+
 def _required_capability(command: CliCommand) -> IpcCapability:
     if command in _CONTROL_COMMANDS:
         return IpcCapability.CONTROL
@@ -221,4 +242,18 @@ def _required_capability(command: CliCommand) -> IpcCapability:
         return IpcCapability.QUERY
     if command in _DIAGNOSTIC_COMMANDS:
         return IpcCapability.DIAGNOSTIC
+    if command in _DELETION_COMMANDS:
+        return IpcCapability.DELETE
     raise IpcProtocolError("invalid-command")
+
+
+def _optional_record_ids(values: dict[str, object], key: str) -> tuple[str, ...]:
+    value = values.get(key)
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise IpcProtocolError("invalid-payload")
+    raw_items = cast(list[object], value)
+    if any(not isinstance(item, str) for item in raw_items):
+        raise IpcProtocolError("invalid-payload")
+    return tuple(cast(list[str], raw_items))

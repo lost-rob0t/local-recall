@@ -121,6 +121,7 @@ _ALLOWED_ATTRIBUTE_KEYS = frozenset(
         "query",
         "diagnostic",
         "urgent",
+        "delete",
         "records",
         "cluster",
         "application",
@@ -267,13 +268,13 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.IPC_REQUEST:
-        required = {"authorized", "control", "diagnostic", "query", "urgent"}
+        required = {"authorized", "control", "diagnostic", "query", "delete", "urgent"}
         if set(attributes) != required:
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
         if any(type(attributes[key]) is not bool for key in required):
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
         capability_count = sum(
-            1 for key in ("control", "diagnostic", "query") if attributes[key] is True
+            1 for key in ("control", "diagnostic", "query", "delete") if attributes[key] is True
         )
         authorized = attributes["authorized"]
         if (authorized and capability_count != 1) or (not authorized and capability_count > 1):
