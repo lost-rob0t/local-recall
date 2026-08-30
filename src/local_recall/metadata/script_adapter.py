@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import os
@@ -50,9 +51,11 @@ class ScriptAdapterConfig:
             raise ValueError("script output limit is invalid")
         if self.schema_version != 1:
             raise ValueError("script schema version is invalid")
-        if any(not arg for arg in self.args) or len(self.args) > 8:
-            raise ValueError("script argument template is invalid")
-        if any(any(character in "\x00\r\n" for character in arg) for arg in self.args):
+        if (
+            any(not arg for arg in self.args)
+            or len(self.args) > 8
+            or any(character in "\x00\r\n" for arg in self.args for character in arg)
+        ):
             raise ValueError("script argument template is invalid")
         if self.pin_sha256 is not None and (
             len(self.pin_sha256) != 64
@@ -211,7 +214,5 @@ def _parse(stdout: bytes, schema_version: int) -> dict[str, str | None]:
 
 async def _kill(process: asyncio.subprocess.Process) -> None:
     process.kill()
-    try:
+    with contextlib.suppress(TimeoutError):
         await asyncio.wait_for(process.wait(), timeout=_KILL_GRACE_SECONDS)
-    except TimeoutError:
-        pass

@@ -132,14 +132,12 @@ def test_timeout_and_oversized_output_fail_and_kill(tmp_path: Path) -> None:
 
 
 def test_window_values_cannot_alter_arguments_and_env_is_allowlisted(tmp_path: Path) -> None:
-    probe = _write_script(
-        tmp_path,
-        _py(
-            "import json,os\n"
-            "print(json.dumps({'application': os.environ.get('SCRIPT_VALUE', '') + '|' + os.environ.get('HOSTILE', ''), 'schema_version': 1, 'workspace': None}))"
-        ),
-        name="envprobe.py",
+    body = (
+        "import json,os\n"
+        "print(json.dumps({'application': os.environ.get('SCRIPT_VALUE', '') + '|' + "
+        "os.environ.get('HOSTILE', ''), 'schema_version': 1, 'workspace': None}))"
     )
+    probe = _write_script(tmp_path, _py(body), name="envprobe.py")
     recorded: list[list[str]] = []
     real_exec = asyncio.create_subprocess_exec
 
@@ -171,13 +169,12 @@ def test_window_values_cannot_alter_arguments_and_env_is_allowlisted(tmp_path: P
 
 
 def test_working_directory_is_sanitized(tmp_path: Path) -> None:
-    probe = _write_script(
-        tmp_path,
-        _py(
-            "import json,os\nprint(json.dumps({'application': os.getcwd(), 'schema_version': 1, 'workspace': None}))"
-        ),
-        name="cwd.py",
+    body = (
+        "import json,os\n"
+        "print(json.dumps({'application': os.getcwd(), 'schema_version': 1, "
+        "'workspace': None}))"
     )
+    probe = _write_script(tmp_path, _py(body), name="cwd.py")
     adapter = ScriptMetadataAdapter(_config(probe))
 
     async def exercise() -> None:
