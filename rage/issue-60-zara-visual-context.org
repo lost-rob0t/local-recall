@@ -1,0 +1,74 @@
+#+title: RAGE Issue 60 — Expose Policy-Gated Visual Context for Zara
+
+* Transaction
+- Issue: #60 — Expose policy-gated visual context for Zara
+- Branch: =agent/issue-60-zara-visual-context=
+- PR: #100
+- Dependencies: #12 and the query/retrieval/provider-routing/IPC roadmap issues (satisfied)
+
+* Acceptance criteria
+- An owner-authenticated client can request "current desktop explanation" and receive a bounded textual response from a mocked local provider.
+- Locked, private, unauthorized-remote, missing-context, malformed, oversized, expired, and cancelled requests return stable sanitized outcomes.
+- Tests prove query work cannot start or resume capture.
+- Tests seed screenshot text, OCR, titles, usernames, command lines, secrets, and prompts and verify none appear in IPC metadata or audit logs.
+- Remote provider tests prove explicit authorization and =EgressGate= are mandatory.
+- Zara can implement its client against documented fixtures without importing Local Recall internals.
+- Integration documentation identifies the Zara companion issue and protocol versioning rules.
+
+* Design decisions
+- New =vision/context.py=: versioned typed contract
+  (=zara-visual-context-v1=) with closed enums (selector, remote authorization,
+  outcome), strict bounds (maximum_records 1..8, bounded-window ordering,
+  request-id charset), and a response that can carry bounded explanation text
+  only in the =explained= outcome (denials are text-free with fixed reason
+  codes; reprs are content-free).
+- =VisualContextService= consumes narrow ports (lifecycle observation, query
+  policy, minimum working set, vision enrichment, audit) so Local Recall stays
+  the sole authority. Flow: preflight (privacy/lock/state/health/deadline/
+  cancellation) -> query policy -> minimum working set -> local-first vision
+  enrichment -> bounded composed explanation. Remote requires BOTH an explicit
+  request mode AND a per-query egress authorization routed through the existing
+  =EgressGate= (=VisionEnrichmentService=); provider_class labels
+  =local= vs =authorized_remote=. No silent fallback.
+- Working set is memory-only by construction: the port returns decrypted
+  =RedactedRecord= objects that live only inside the request scope.
+- Audit: new closed =VISUAL_CONTEXT_REQUEST= IPC audit action with no
+  attributes and fixed reason codes (acceptance + outcome events); request ids,
+  explanation text, prompts, and content never enter audit logs. =debug=
+  parameters are accepted and provably no-ops.
+- IPC (=vision/ipc.py=): rides the existing owner-only =ipc://= boundary —
+  same =SessionToken= three-frame pattern (routing/auth/payload),
+  constant-time token comparison before any content parse, routing/payload
+  size limits, version checks, deadline checks, fixed =IpcProtocolError=
+  codes. No TCP listener, no new daemon command.
+- Client integration: =docs/zara-visual-context.md= documents the wire format,
+  versioning rules, stable reason codes, and worked JSON fixtures so Zara
+  implements against the contract without importing Local Recall internals.
+
+* Execute / TDD
+- Valid RED (head =c62b0f4-era RED commit on PR #100=, CI run recorded):
+  contract/service/IPC/security tests fail at collection on the missing
+  =vision.context= / =vision.ipc= APIs; Pyright fails on 24 unknown import
+  symbols. Baseline 1122 tests unaffected.
+- GREEN (this commit): full suite =1143 passed= (1122 + 21 new), strict Pyright
+  0 errors, ruff/shellcheck clean, verify-failure-modes 9/9, verify-e2e 6/6,
+  bandit/detect-secrets/policy clean.
+- Contract notes discovered during GREEN: the privacy-mode refusal must
+  recognize both the =privacy_mode= flag and the =PRIVACY= lifecycle state;
+  the response contract forbids text on denials (tested both directions).
+
+* Verification mapping
+- Owner-authenticated current/recent/bounded explanations: codec round-trip +
+  handler tests with a mocked local provider returning bounded text.
+- Sanitized outcomes: parametrized denials (privacy, lock, off, policy,
+  missing-context, expired, cancelled, remote-without-gate) and failures
+  (vision unavailable) all assert fixed reason codes.
+- Capture isolation: the lifecycle port exposes no start/resume path used by
+  the service; the security test counts start/resume calls across allowed and
+  denied requests and asserts zero.
+- Seeded-content non-leakage: title/OCR/secret/command/username/prompt markers
+  absent from =to_dict()/to_json()= output and every audit event.
+- Remote gating: explicit mode without authorization object denied; =EgressGate=
+  remains the only remote path (enforced by =VisionEnrichmentService=).
+- Fixtures + versioning: =docs/zara-visual-context.md= (verified against real
+  service output).

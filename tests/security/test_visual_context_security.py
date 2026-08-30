@@ -16,6 +16,7 @@ from local_recall.domain.metadata import (
     MetadataProvenance,
     SourceConfidence,
 )
+from local_recall.retrieval.service import RetrievalPolicyDecision
 from local_recall.routing import EgressGate
 from local_recall.vision.context import (
     PROTOCOL_VERSION,
@@ -28,13 +29,13 @@ from local_recall.vision.service import VisionAnalysis
 
 _NOW = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
 _SEEDED_TITLE = "SecretWindowTitle-9f2"
-_SEEDED_SECRET = "sk-live-zara-leak-check"
+_SEEDED_CANARY = "sk-live-zara-leak-check"
 _SEEDED_COMMAND = "curl -x evil.example.internal"
 _SEEDED_USER = "alice.dev"
 _SEEDED_PROMPT = "provider-prompt-marker-1f3"
 _LEAK_MARKERS = (
     _SEEDED_TITLE,
-    _SEEDED_SECRET,
+    _SEEDED_CANARY,
     _SEEDED_COMMAND,
     _SEEDED_USER,
     _SEEDED_PROMPT,
@@ -67,15 +68,16 @@ class LifecyclePort:
 
 @dataclass
 class PolicyPort:
-    async def authorize_query(self, query: object) -> object:
-        from local_recall.retrieval.service import RetrievalPolicyDecision
-
+    async def authorize_query(self, query: VisualContextSelector) -> RetrievalPolicyDecision:
+        del query
         return RetrievalPolicyDecision(True, False, "query-policy-v1", "ok")
 
 
 @dataclass
 class WorkingSetPort:
-    async def select(self, selector: object, start: object, end: object, limit: int) -> tuple:
+    async def select(
+        self, selector: object, start: object, end: object, limit: int
+    ) -> tuple[RedactedRecord, ...]:
         del selector, start, end, limit
         record = _record_with_seeded_content()
         return (record,)
@@ -135,7 +137,7 @@ def _record_with_seeded_content() -> RedactedRecord:
                 ContextField("user.name", _SEEDED_USER, provenance),
             ),
         ),
-        ocr_text=(f"{_SEEDED_TITLE} {_SEEDED_SECRET} {_SEEDED_COMMAND}",),
+        ocr_text=(f"{_SEEDED_TITLE} {_SEEDED_CANARY} {_SEEDED_COMMAND}",),
         findings=(),
         policy_revision="redaction-policy-v1",
     )

@@ -10,6 +10,7 @@ from local_recall.audit.models import AuditEvent
 from local_recall.domain.frames import PixelFormat, RedactedFrame, RedactedRecord
 from local_recall.domain.lifecycle import CaptureGeneration, CaptureState, CaptureStateSnapshot
 from local_recall.domain.metadata import ContextMetadata
+from local_recall.retrieval.service import RetrievalPolicyDecision
 from local_recall.routing import EgressGate
 from local_recall.vision.context import (
     PROTOCOL_VERSION,
@@ -63,9 +64,8 @@ class PolicyPort:
     remote_eligible: bool = False
     policy_revision: str = "query-policy-v1"
 
-    async def authorize_query(self, query: object) -> object:
-        from local_recall.retrieval.service import RetrievalPolicyDecision
-
+    async def authorize_query(self, query: VisualContextSelector) -> RetrievalPolicyDecision:
+        del query
         return RetrievalPolicyDecision(
             self.allowed, self.remote_eligible, self.policy_revision, "ok"
         )
@@ -75,7 +75,9 @@ class PolicyPort:
 class WorkingSetPort:
     records: tuple[RedactedRecord, ...] = ()
 
-    async def select(self, selector: object, start: object, end: object, limit: int) -> tuple:
+    async def select(
+        self, selector: object, start: object, end: object, limit: int
+    ) -> tuple[RedactedRecord, ...]:
         del selector, start, end
         return self.records[:limit]
 

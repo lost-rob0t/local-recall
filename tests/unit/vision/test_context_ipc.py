@@ -14,6 +14,7 @@ from local_recall.domain.lifecycle import CaptureGeneration, CaptureState, Captu
 from local_recall.domain.metadata import ContextMetadata
 from local_recall.ipc import SessionToken
 from local_recall.ipc_protocol import IpcProtocolError
+from local_recall.retrieval.service import RetrievalPolicyDecision
 from local_recall.vision.context import (
     PROTOCOL_VERSION,
     ExplainVisualContextRequest,
@@ -52,15 +53,16 @@ class LifecyclePort:
 
 @dataclass
 class PolicyPort:
-    async def authorize_query(self, query: object) -> object:
-        from local_recall.retrieval.service import RetrievalPolicyDecision
-
+    async def authorize_query(self, query: VisualContextSelector) -> RetrievalPolicyDecision:
+        del query
         return RetrievalPolicyDecision(True, False, "query-policy-v1", "ok")
 
 
 @dataclass
 class WorkingSetPort:
-    async def select(self, selector: object, start: object, end: object, limit: int) -> tuple:
+    async def select(
+        self, selector: object, start: object, end: object, limit: int
+    ) -> tuple[RedactedRecord, ...]:
         del selector, start, end, limit
         record = _record()
         return (record,)

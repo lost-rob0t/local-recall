@@ -87,9 +87,9 @@ def test_maximum_records_is_bounded() -> None:
     assert _request(protocol_version=PROTOCOL_VERSION, maximum_records=8).maximum_records == 8
 
 
-def test_deadline_must_be_in_the_future() -> None:
+def test_naive_deadline_is_rejected() -> None:
     with pytest.raises(ValueError):
-        _request(protocol_version=PROTOCOL_VERSION, deadline=_NOW - timedelta(seconds=1))
+        _request(protocol_version=PROTOCOL_VERSION, deadline=datetime(2026, 8, 30, 13, 0))
 
 
 def test_remote_authorization_modes() -> None:
