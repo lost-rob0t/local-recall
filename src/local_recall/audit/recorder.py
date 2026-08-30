@@ -403,6 +403,24 @@ class AuditRecorder:
         self._sink.emit(event)
         return event
 
+    def record_visual_context_acceptance(self) -> AuditEvent:
+        return self._emit(
+            category=AuditCategory.IPC,
+            action=AuditAction.VISUAL_CONTEXT_REQUEST,
+            outcome=AuditOutcome.SUCCEEDED,
+            reason=AuditReasonCode.IPC_AUTHORIZED,
+            attributes={},
+        )
+
+    def record_visual_context_request(self, *, rejected: bool) -> AuditEvent:
+        return self._emit(
+            category=AuditCategory.IPC,
+            action=AuditAction.VISUAL_CONTEXT_REQUEST,
+            outcome=AuditOutcome.REJECTED if rejected else AuditOutcome.SUCCEEDED,
+            reason=AuditReasonCode.IPC_REJECTED if rejected else AuditReasonCode.IPC_AUTHORIZED,
+            attributes={},
+        )
+
     def record_health_check(self, *, healthy: bool) -> AuditEvent:
         return self._emit(
             category=AuditCategory.SYSTEM,

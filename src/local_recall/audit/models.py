@@ -44,6 +44,7 @@ class AuditAction(StrEnum):
     IPC_REQUEST = "ipc_request"
     HEALTH_CHECK = "health_check"
     REPAIR_OPERATION = "repair_operation"
+    VISUAL_CONTEXT_REQUEST = "visual_context_request"
 
 
 class AuditOutcome(StrEnum):
@@ -121,6 +122,7 @@ _ACTION_CATEGORIES: dict[AuditAction, AuditCategory] = {
     AuditAction.IPC_REQUEST: AuditCategory.IPC,
     AuditAction.HEALTH_CHECK: AuditCategory.SYSTEM,
     AuditAction.REPAIR_OPERATION: AuditCategory.SYSTEM,
+    AuditAction.VISUAL_CONTEXT_REQUEST: AuditCategory.IPC,
 }
 
 _ALLOWED_ATTRIBUTE_KEYS = frozenset(
@@ -340,6 +342,9 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
             raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.HEALTH_CHECK and set(attributes) != set():
+        raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action is AuditAction.VISUAL_CONTEXT_REQUEST and set(attributes) != set():
         raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.REPAIR_OPERATION:
