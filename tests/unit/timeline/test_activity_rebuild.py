@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from local_recall.activity import reconcile as activity_reconcile
 from local_recall.activity.clustering import ActivityClusteringPolicy, ActivitySegmenter
@@ -93,10 +94,11 @@ class Generator:
             r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
             request.prompt,
         )[0]
+        text = json.dumps({"evidence": [{"source_id": source_id, "excerpt": request.context[0]}]})
         return GenerationResponse(
             provider_id="local-generation",
             model_id="summary-v1",
-            text='{"evidence":[{"source_id":"' + source_id + '","excerpt":"surviving"}]}',
+            text=text,
         )
 
 
@@ -107,6 +109,7 @@ class FakeStorage:
         self.records: dict[UUID, RedactedRecord] = {r.record_id: r for r in records}
         self._present: set[UUID] = set(self.records)
         self.deleted: list[UUID] = []
+        self.vanish_before_get: set[UUID] = set()
 
     async def list_candidates(self, request: DayRangeQuery) -> tuple[CatalogRecord, ...]:
         found: list[CatalogRecord] = []
@@ -128,7 +131,7 @@ class FakeStorage:
         return tuple(sorted(found, key=lambda item: (item.day_bucket, str(item.record.record_id))))
 
     async def get(self, record_id: UUID) -> EncryptedRecordEnvelope | None:
-        if record_id not in self._present:
+        if record_id in self.vanish_before_get or record_id not in self._present:
             return None
         return _envelope(self.records[record_id])
 
@@ -286,18 +289,21 @@ def test_rebuild_skips_records_deleted_concurrently(tmp_path: Path) -> None:
     second = _record(2, captured_at=base + timedelta(minutes=1), text="concurrent-survivor")
     harness = Harness(tmp_path, first, second)
     harness.seed(first, second)
+    harness.storage.vanish_before_get = {first.record_id}
 
-    asyncio.run(harness.adapter.reconcile_deleted((first.record_id, uuid4())))
+    asyncio.run(harness.adapter.reconcile_deleted((first.record_id,)))
 
-    assert harness.member_ids == {first.record_id, second.record_id}
+    assert harness.member_ids == {second.record_id}
+    assert harness.storage.deleted == []
 
 
 def test_rebuild_fails_closed_when_candidates_exceed_limit(tmp_path: Path) -> None:
     base = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
     first = _record(1, captured_at=base, text="limit-record-one")
     second = _record(2, captured_at=base + timedelta(minutes=1), text="limit-record-two")
-    harness = Harness(tmp_path, first, second, candidate_limit=1)
-    harness.seed(first, second)
+    third = _record(3, captured_at=base + timedelta(minutes=2), text="limit-record-three")
+    harness = Harness(tmp_path, first, second, third, candidate_limit=1)
+    harness.seed(first, second, third)
 
     try:
         asyncio.run(harness.adapter.reconcile_deleted((first.record_id,)))
@@ -307,7 +313,7 @@ def test_rebuild_fails_closed_when_candidates_exceed_limit(tmp_path: Path) -> No
         raise AssertionError("candidate overflow must fail closed")
 
     members = harness.member_ids
-    assert members == {first.record_id, second.record_id}
+    assert members == {first.record_id, second.record_id, third.record_id}
 
 
 def test_rebuild_writes_no_plaintext_artifacts(tmp_path: Path) -> None:
