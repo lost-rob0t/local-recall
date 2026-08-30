@@ -158,25 +158,28 @@ class DeletionScopeResolver:
         raise ScopeResolutionFailure("deletion scope kind is invalid")
 
     async def _resolve_cluster(self, scope: DeletionScope) -> tuple[UUID, ...]:
-        assert scope.cluster_id is not None
+        cluster_id = scope.cluster_id
+        if cluster_id is None:
+            raise ScopeResolutionFailure("deletion scope cluster is unknown")
         snapshot = await self._activity_store.load()
         if snapshot is None:
             raise ScopeResolutionFailure("deletion scope cluster is unknown")
         for entry in snapshot.entries:
-            if cluster_identifier(entry) == scope.cluster_id:
+            if cluster_identifier(entry) == cluster_id:
                 _validate_record_ids(entry.cluster.source_record_ids)
                 return entry.cluster.source_record_ids
         raise ScopeResolutionFailure("deletion scope cluster is unknown")
 
     async def _resolve_application(self, scope: DeletionScope) -> tuple[UUID, ...]:
-        assert scope.application is not None and scope.start_at is not None
-        assert scope.end_at is not None
-        expected = scope.application.casefold()
+        application, start_at, end_at = scope.application, scope.start_at, scope.end_at
+        if application is None or start_at is None or end_at is None:
+            raise ScopeResolutionFailure("deletion scope bounds are incomplete")
+        expected = application.casefold()
         selected: list[UUID] = []
         async for candidate in _candidates(
             self._storage,
-            scope.start_at,
-            scope.end_at,
+            start_at,
+            end_at,
             self._candidate_limit,
         ):
             record = await self._decrypt(candidate)
@@ -189,18 +192,20 @@ class DeletionScopeResolver:
         return _require_selected(selected)
 
     async def _resolve_time_range(self, scope: DeletionScope) -> tuple[UUID, ...]:
-        assert scope.start_at is not None and scope.end_at is not None
+        start_at, end_at = scope.start_at, scope.end_at
+        if start_at is None or end_at is None:
+            raise ScopeResolutionFailure("deletion scope bounds are incomplete")
         selected: list[UUID] = []
         async for candidate in _candidates(
             self._storage,
-            scope.start_at,
-            scope.end_at,
+            start_at,
+            end_at,
             self._candidate_limit,
         ):
             record = await self._decrypt(candidate)
             if record is None:
                 continue
-            if scope.start_at <= record.frame.captured_at < scope.end_at:
+            if start_at <= record.frame.captured_at < end_at:
                 selected.append(record.record_id)
                 if len(selected) > self._candidate_limit:
                     raise ScopeResolutionFailure("deletion scope candidate limit exceeded")
