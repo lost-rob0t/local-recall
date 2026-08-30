@@ -1,0 +1,42 @@
+#+title: RAGE Issue 32 — Encrypted Backup Export and Restore
+
+* Transaction
+- Issue: #32 — Implement encrypted backup export and restore
+- Branch: =agent/issue-32-backup-export=
+- Dependencies: #10, #11, #31 (satisfied)
+
+* Acceptance criteria
+- Archive inspection reveals no captured text, titles, thumbnails, prompts, or credentials.
+- Restore reproduces searchable records after the required key is made available.
+- Corrupted, truncated, or wrong-recipient archives fail safely.
+- Export and restore operations are audited without logging archive content.
+
+* Design decisions
+- Archives copy canonical encrypted envelopes verbatim; nothing is decrypted during backup. The manifest is content-free (versions, count, body digest).
+- No active key material is exported: envelopes carry only key-handle references and wrapped per-record data keys.
+- Restore requires an empty target unless explicitly overridden; identical duplicates are skipped, conflicting duplicates fail safely; schema-version mismatches fail safely; body digests are verified before any write.
+- GPG recipient encryption is optional and implemented with strict argument lists, no shell, bounded timeouts, and no passphrase or key material in archives/logs.
+- Export supports full and explicit time-range windows using content-free day buckets.
+- Audit events =export_decision= and =restore_decision= carry counts/outcomes only.
+
+* Execute / TDD
+*** Slice 1 — archive container, engine, audits
+- Valid RED: =tests/unit/backup/test_engine.py= failed at collection on the missing =local_recall.backup.engine= API.
+- First production run surfaced two real defects, each fixed with its own failing assertion:
+  1. the archive magic constant mismatched the struct width, breaking every read (caught by the round-trip test);
+  2. duplicate detection was confused by the storage layer's idempotent put — restore now explicitly compares existing bytes and fails safely on conflicting duplicates while skipping identical ones.
+- Sanitization is proven by scanning raw archive bytes for OCR text and application names and by asserting the manifest JSON is content-free.
+- GREEN: all backup unit tests, strict typing, ruff, bandit clean on the exact head.
+
+*** Slice 2 — optional GPG recipient encryption
+- Valid RED: =tests/unit/backup/test_gpg.py= failed while the crypter plumbing was absent from the engine.
+- Production: =GpgRecipientCrypter= with =asyncio.create_subprocess_exec= (no shell), strict args, timeout kill, sanitized failures; the engine awaits async crypter hooks around export/restore.
+- Tests generate an ephemeral key in a private =GNUPGHOME=, prove a full encrypt→decrypt round trip over the real archive, and prove a wrong-recipient archive fails safely with zero restored records. Tests are marked skipped only when no =gpg= binary exists in the environment (CI runners and developer images include gpg; the fake-crypter engine plumbing tests always execute).
+
+** Verification
+- Canonical =./scripts/check= green on the final head: full suite passed, 8 failure modes verified, Bandit clean, detect-secrets clean, strict Pyright clean.
+- Acceptance mapping:
+  - *No captured text/titles/thumbnails/prompts/credentials in archives*: byte-level scan tests plus content-free manifest assertion.
+  - *Restore reproduces searchable records*: round-trip restore into a fresh profile asserts canonical presence via =get=; retrieval treats canonical storage as authoritative (proven in #24/#30 tests).
+  - *Corrupted/truncated/wrong-recipient fail safely*: truncation and byte-flip tests, wrong-recipient GPG test, conflicting-duplicate test; target storage asserted empty after each failure.
+  - *Audited without logging archive content*: =export_decision= / =restore_decision= events asserted with counts only; audit reprs asserted free of content.
