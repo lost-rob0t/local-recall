@@ -22,6 +22,7 @@ from local_recall.health.ports import (
     RedactionHealth,
     StorageHealth,
 )
+from local_recall.ports.keys import KeyHealthReport
 from local_recall.ports.redaction import RedactionRequest
 
 from .harness import POLICY_REVISION, LocalRecallSystem
@@ -89,7 +90,7 @@ class SystemHealthPorts:
         return RedactionHealth(functional=False, reason_code="selftest-failed")
 
     async def storage_report(self) -> StorageHealth:
-        usage = await self.system.storage.usage()
+        usage = await self.system.storage.stats()
         return StorageHealth(
             available=True,
             reason_code="available",
@@ -130,7 +131,7 @@ class KeyHealthAdapter:
     def __init__(self, system: LocalRecallSystem) -> None:
         self._system = system
 
-    async def health(self, request: KeyRequest) -> object:
+    async def health(self, request: KeyRequest) -> KeyHealthReport:
         del request
         return await self._system.key_provider.health(KeyRequest(purpose=KeyPurpose.RECORD))
 

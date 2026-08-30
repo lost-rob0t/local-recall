@@ -5,31 +5,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from local_recall.session import (
-    DesktopEnvironment,
     DesktopSession,
-    DisplayProtocol,
     EnvironmentSnapshot,
     MetadataCapability,
     MetadataProbeResult,
     ProbeOutcome,
     ProbeReasonCode,
     ResolutionReasonCode,
-    SessionReasonCode,
     SessionResolver,
 )
 
 from .harness import AdvanceClock, DesktopWindow, LocalRecallSystem, SyntheticDesktop
 
 _NOW = datetime(2026, 8, 24, 10, 0, tzinfo=UTC)
-
-
-def _session(protocol: DisplayProtocol, desktop: DesktopEnvironment) -> DesktopSession:
-    return DesktopSession(
-        protocol=protocol,
-        desktop=desktop,
-        confidence=1.0,
-        reason_code=SessionReasonCode.DETECTED,
-    )
 
 
 class QtileProbe:

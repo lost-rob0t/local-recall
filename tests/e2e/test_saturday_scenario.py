@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
+from local_recall.domain.frames import RedactedRecord
 from local_recall.domain.privacy import PrivacyClass
 
 from .harness import AdvanceClock, DesktopWindow, LocalRecallSystem, SyntheticDesktop
@@ -29,7 +30,7 @@ def test_what_was_i_doing_saturday_answers_with_saturday_citations(tmp_path: Pat
         system.start()
         system.wait_recording()
 
-        saturday_records = []
+        saturday_records: list[RedactedRecord] = []
         for _ in range(2):
             saturday_records.append(asyncio.run(system.capture_once()))
             system.clock.advance()

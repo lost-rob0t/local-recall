@@ -17,7 +17,7 @@ import pykka
 
 from local_recall.answering.models import AnswerMode, CitedAnswer
 from local_recall.answering.service import AnsweringService
-from local_recall.audit import AuditRecorder
+from local_recall.audit import AuditEvent, AuditRecorder
 from local_recall.config import (
     CaptureSettings,
     ConfigurationSnapshot,
@@ -77,6 +77,7 @@ from local_recall.lifecycle import (
     StartCapture,
     StopCapture,
 )
+from local_recall.pipeline.cancellation import PipelineCancellationToken
 from local_recall.pipeline.models import RawStageItem
 from local_recall.ports.ocr import OCRRequest
 from local_recall.ports.redaction import RedactionRequest
@@ -187,7 +188,7 @@ class SyntheticCaptureBackend:
     """CaptureBackend port over the synthetic desktop."""
 
     desktop: SyntheticDesktop
-    ocr_texts: dict[UUID, tuple[str, ...]] = field(default_factory=dict)
+    ocr_texts: dict[UUID, tuple[str, ...]] = field(default_factory=dict[UUID, tuple[str, ...]])
     captures: int = 0
     backend_id = "synthetic-capture"
 
@@ -325,7 +326,7 @@ class E2EDecryptor:
             generation=envelope.generation,
             configuration_revision=envelope.configuration_revision,
             deadline_monotonic_ns=1,
-            frames=plain_frames,
+            frames=tuple(bytes(f) for f in plain_frames),
         )
         return decode_redacted_stage(rebuilt)
 
@@ -415,9 +416,9 @@ class E2ECoordinator:
 
 class E2EAuditSink:
     def __init__(self) -> None:
-        self.events: list[LifecycleAuditEvent] = []
+        self.events: list[LifecycleAuditEvent | AuditEvent] = []
 
-    def emit(self, event: LifecycleAuditEvent) -> None:
+    def emit(self, event: LifecycleAuditEvent | AuditEvent) -> None:
         self.events.append(event)
 
 
@@ -432,15 +433,6 @@ class HarnessClock:
 
     def monotonic_ns(self) -> int:
         return time.monotonic_ns()
-
-
-class LiveToken:
-    def __init__(self) -> None:
-        self._cancelled = False
-
-    @property
-    def cancelled(self) -> bool:
-        return self._cancelled
 
 
 @dataclass
@@ -537,7 +529,9 @@ class LocalRecallSystem:
         )
         redacted_item = encode_redacted_stage(analyzed, record)
         encrypted_item = await asyncio.to_thread(
-            self.encryption_stage.process, redacted_item, LiveToken()
+            self.encryption_stage.process,
+            redacted_item,
+            PipelineCancellationToken(generation=generation, _local_event=threading.Event()),
         )
         await self.storage.put(decode_encrypted_stage(encrypted_item))
         document = IndexDocument(
@@ -587,5 +581,5 @@ def raw_stage_item(
         generation=generation,
         configuration_revision=CONFIGURATION_REVISION,
         deadline_monotonic_ns=deadline_monotonic_ns,
-        frames=encode_raw_frame(frame),
+        frames=tuple(bytearray(part) for part in encode_raw_frame(frame)),
     )

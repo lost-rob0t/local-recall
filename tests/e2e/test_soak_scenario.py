@@ -7,6 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from local_recall.domain.crypto import EncryptedRecordEnvelope
+from local_recall.domain.frames import RedactedRecord
+from local_recall.ports.encryption import DecryptionRequest, EncryptionRequest
 from local_recall.retention.engine import RetentionEngine
 from local_recall.retention.planner import RetentionRules
 
@@ -73,8 +76,8 @@ def test_soak_bounded_queues_retention_and_latency_budgets(tmp_path: Path) -> No
 class _NeverEncryptGuard:
     provider_id = "soak-decryptor"
 
-    async def decrypt(self, request: object) -> object:
+    async def decrypt(self, request: DecryptionRequest) -> RedactedRecord:
         raise AssertionError("retention sweep must never decrypt record payloads")
 
-    async def encrypt(self, request: object) -> object:
+    async def encrypt(self, request: EncryptionRequest[RedactedRecord]) -> EncryptedRecordEnvelope:
         raise AssertionError("retention sweep must never encrypt")
