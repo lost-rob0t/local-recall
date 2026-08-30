@@ -111,8 +111,43 @@ A crash at any phase resumes forward. No rollback makes a deleted record visible
 - Production: before creating the replacement with =O_EXCL=, remove only the journal's fixed private temporary path when it exists (including a dangling symlink path), fsync the owner-only journal directory, then create/write/fsync/replace as before. Non-file objects that cannot be unlinked still fail closed rather than being silently bypassed.
 - GREEN: head =5b42296dde2ee27913757639376250501d46fd8d=, CI run 802. Both Ubuntu matrices, canonical repository gate, unit/contract/integration/security suites, security checks, strict typing, and failure-propagation all passed.
 
+*** Slice 4 — surviving-record activity rebuild adapter
+- Valid RED: head =8b10866920bf9e5e326db42a30258123834e2087=, CI run 33286242144. Formatting, Ruff, and ShellCheck passed; strict Pyright failed specifically because =SurvivingRecordActivityReconciler= and =TimelineRebuildFailure= were absent, and the behavioral suite failed at collection (ImportError).
+- Production: =timeline/activity_rebuild.py= rebuilds the encrypted activity snapshot exclusively from surviving canonical records — bounded day-chunked catalog enumeration inside the snapshot's own window, decrypt-on-demand with concurrent-deletion skips, candidate-overflow fail-closed, then the existing =ActivityReconciler= replaces the whole snapshot. Decrypted records stay memory-only.
+- GREEN: head =47edbb96e86429ba8075a2bfdc293cf8b6dabb4f=, CI run 33286491997. Both Ubuntu matrices, canonical gate, all populated test layers, security checks, strict typing, and failure-propagation passed.
+
+*** Slice 5 — bounded typed deletion-scope service
+- Valid RED: head =92c58e5902b0f6bded5ec559dbb1da34541fadd1=, CI run 33286671582. Static analysis failed exactly on the missing =DeletionScope= / =DeletionScopeResolver= / =ScopeResolutionFailure= API and the suite failed at collection.
+- First production run exposed a real security-scan failure: Bandit B101 rejected =assert=-based type narrowing in production scope resolution. The asserts were replaced with explicit fail-closed checks raising =ScopeResolutionFailure=; green head =58a68bc147e026800bea689fc3da70ae01e2d099= (CI run on 58a68bc). Scope classes are closed: record IDs, opaque activity-cluster ID, application within mandatory explicit bounds, and bounded time range; resolution decrypts candidates on demand for exact capture-time/application matching and keeps only opaque record IDs.
+- Application-wide unbounded purges were deliberately rejected: retention/eviction scopes belong to #31. Time-range precision requires decryption because the catalog stores only day buckets.
+
+*** Slice 6 — typed timeline/filter/preview service
+- Valid RED: head =38a6daa=, CI run failed exactly on the missing =TimelineInspector= / =PreviewUnavailable= API (collection ImportError; strict Pyright unknown-import-symbol errors only).
+- Production: =timeline/inspection.py= provides bounded newest-first listing by explicit window with optional application filter; entries expose only redacted metadata, opaque cluster identifiers, policy revisions, finding counts, and capture provenance. =preview_text= and =preview_screenshot= decrypt exactly one record on demand, return bounded payloads, and never cache or persist content (proved by storage-marker scans and by revoking canonical visibility between calls).
+- GREEN: head =f3f2f231c4e73518d40be47d6a7bb610f93f9812=, CI run success on exact head.
+
+*** Slice 7 — sanitized destructive audit events
+- Valid RED: =tests/unit/timeline/test_deletion_audit.py= failed on the missing =AuditRecorder.deletion_request= API and =AuditAction.DELETION_REQUEST=.
+- Production: =deletion_request= events (category RECORD) carry only correlation ID, closed scope class encoded as exactly one of the =records/cluster/application/time_range= booleans, =success= flag, non-negative =count=, and timing; the model rejects any content-bearing attribute key, zero or multiple scope classes, and wrong types. The IPC request audit gained a fourth closed capability flag =delete= with the same exactly-one-authorized-capability invariant.
+- Merged with the IPC slice; full unit/audit suites green before push.
+
+*** Slice 8 — authenticated IPC exposure, daemon handler, and CLI surface
+- Valid RED: =tests/unit/timeline/test_ipc_handler.py= and =tests/integration/ipc/test_timeline_deletion.py= failed at collection because =local_recall.timeline.ipc= did not exist.
+- Production: the CLI contract gained =preview-record= and =delete-records= commands, typed optional scope payload fields (record IDs, cluster ID, application, target) with exact-single-scope validation, and a content-free =CliDeletionPayload=. The protocol codec maps =delete-records= to the dedicated =IpcCapability.DELETE= (granted to both server and client codecs) and =preview-record= to the query capability, decodes the extended payload, and rejects conflicting scope frames before dispatch. =TimelineDeletionHandler= maps the three commands onto inspector/resolver/coordinator, serializes destructive work, emits the sanitized audit event, fails closed on audit failure after durable deletion, and maps every failure to fixed sanitized reason codes.
+- Two behavioral defects surfaced during production runs and were fixed with their own tests:
+  1. =EncryptedSemanticIndex.remove= raised on an uninitialized index, which would wedge any deletion transaction whose capture history never built the semantic index. RED =test_removal_on_uninitialized_index_is_a_vacuous_no_op= (IndexFailure) then production made removal vacuous when no snapshot exists.
+  2. The integration round trip caught the handler wiring calling =ActivityReconciler.reconcile= instead of the surviving-record adapter (=handler-failed=), fixed by binding =SurvivingRecordActivityReconciler.reconcile_deleted= into the coordinator.
+- CLI: =local-recall timeline [--application]=, =local-recall preview=, and =local-recall delete= send the closed scopes through =execute_command= over the authenticated =DaemonClient= only; the CLI architecture security test still proves no daemon-authority imports.
+- GREEN: heads =65fbbae6dcfb43e70d3ba01c1f1e047dcf61504e= (CI success), =5219fdb9d905ff3e1c40ba2ee106b6a60edbeba5= (CI success), =5c990f5= (docs).
+
+*** Slice 9 — journal permission and symlink abuse coverage
+- Adversarial coverage =tests/unit/timeline/test_deletion_journal_abuse.py= (12 cases): symlinked journal root, group-writable root, foreign-owner root (monkeypatched UID), symlinked journal file, non-regular journal file, group-readable journal file, foreign-owned journal file, oversized journal, tampered payload (version/shape), hostile symlink at the exact private temporary path (replaced without following; decoy target untouched), clear refusing a symlinked journal (decoy untouched), and clear of a regular file with directory fsync.
+- The hardening itself landed in slices 2–3 with a genuine RED there; these tests lock the invariants as regression coverage and all pass.
+
 ** Verify
 - Slice 1 exact-head CI is green.
 - Slice 2 coordinator/recovery implementation is green on later exact branch head =3b5b1d0cc74ae7f9763e3fe5265a443c396e74d6= (CI run 800).
 - Slice 3 stale-temp recovery is green on =5b42296dde2ee27913757639376250501d46fd8d= (CI run 802).
-- Full issue acceptance remains open: concrete activity rebuild, typed timeline/scope/preview service, deletion IPC/CLI capability, sanitized destructive audit, journal permission/symlink abuse cases, docs, and full final exact-head gates.
+- Slices 4–8 exact-head CI green (47edbb9, 58a68bc, f3f2f23, 65fbbae, 5219fdb).
+- Final local canonical gate on documentation head: =./scripts/check= → 887 passed (unit 771, security 61, integration 49, contract 6), 8 failure modes verified, repository policy checks passed, Bandit clean, detect-secrets clean, ruff format/check clean, strict Pyright clean.
+- Issue acceptance is now fully covered: identify (timeline listing) and delete (scoped coordinator) through CLI/API first; deleted records cannot reappear in search, summaries, clusters, or answers (canonical authority + derived rebuilds from survivors); failed partial deletions resume forward without orphaned plaintext; every destructive action requires an explicit closed scope and emits a sanitized audit event.
