@@ -296,6 +296,22 @@ class AuditRecorder:
             attributes=attributes,
         )
 
+    def restore_decision(
+        self,
+        *,
+        count: int,
+        succeeded: bool,
+        correlation_id: UUID | None = None,
+    ) -> AuditEvent:
+        return self._emit(
+            category=AuditCategory.EXPORT,
+            action=AuditAction.RESTORE_DECISION,
+            outcome=AuditOutcome.SUCCEEDED if succeeded else AuditOutcome.FAILED,
+            reason=AuditReasonCode.EXPORT_ALLOWED,
+            correlation_id=correlation_id,
+            attributes={"count": count, "success": succeeded},
+        )
+
     def export_decision(
         self,
         *,

@@ -33,6 +33,7 @@ class AuditAction(StrEnum):
     RECORD_DELETED = "record_deleted"
     DELETION_REQUEST = "deletion_request"
     EXPORT_DECISION = "export_decision"
+    RESTORE_DECISION = "restore_decision"
     KEY_OPERATION = "key_operation"
     SYSTEM_HARDENING = "system_hardening"
     RETENTION_SWEEP = "retention_sweep"
@@ -104,6 +105,7 @@ _ACTION_CATEGORIES: dict[AuditAction, AuditCategory] = {
     AuditAction.RECORD_DELETED: AuditCategory.RECORD,
     AuditAction.DELETION_REQUEST: AuditCategory.RECORD,
     AuditAction.EXPORT_DECISION: AuditCategory.EXPORT,
+    AuditAction.RESTORE_DECISION: AuditCategory.EXPORT,
     AuditAction.KEY_OPERATION: AuditCategory.KEY,
     AuditAction.SYSTEM_HARDENING: AuditCategory.SYSTEM,
     AuditAction.RETENTION_SWEEP: AuditCategory.SYSTEM,
@@ -256,6 +258,15 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
         for key in ("count", "bytes"):
             if type(attributes[key]) is not int or attributes[key] < 0:
                 raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action is AuditAction.RESTORE_DECISION:
+        required = {"count", "success"}
+        if set(attributes) != required:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if type(attributes["success"]) is not bool:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if type(attributes["count"]) is not int or attributes["count"] < 0:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.GARBAGE_COLLECTION:
         required = {"count", "success"}

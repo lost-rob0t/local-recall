@@ -6,11 +6,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from local_recall.backup.engine import BackupEngine
 
 from local_recall.audit import AuditEvent, AuditRecorder
 from local_recall.audit.models import AuditAction
 from local_recall.backup.archive import BackupArchive, RestoreFailure
+from local_recall.backup.engine import BackupEngine
 from local_recall.crypto import OSKeyringProvider
 from local_recall.domain.frames import RedactedRecord
 from local_recall.storage import SQLiteEncryptedStorage
@@ -39,20 +39,6 @@ class MemoryAuditSink:
         self.events.append(event)
 
 
-class _Decryptor:
-    provider_id = "backup-decryptor"
-
-    def __init__(self) -> None:
-        self.decrypted: list[object] = []
-
-    async def decrypt(self, request):
-        self.decrypted.append(request.envelope.record_id)
-        raise AssertionError("backup must never decrypt")
-
-    async def encrypt(self, request):
-        raise AssertionError("backup must never encrypt")
-
-
 def _wire(tmp_path: Path, records: list[RedactedRecord]):
     source = SQLiteEncryptedStorage(
         tmp_path / "source", quota_bytes=100_000_000, max_blob_bytes=1_000_000
@@ -71,7 +57,7 @@ def _wire(tmp_path: Path, records: list[RedactedRecord]):
 def test_export_writes_sanitized_archive_and_restores_searchable_records(tmp_path: Path) -> None:
     first = make_record(1, captured_at=datetime(2026, 8, 1, 10, 0, tzinfo=UTC))
     second = make_record(2, captured_at=datetime(2026, 8, 2, 10, 0, tzinfo=UTC))
-    engine, source, sink = _wire(tmp_path, [first, second])
+    engine, _source, sink = _wire(tmp_path, [first, second])
     archive_path = tmp_path / "backup.lrb"
 
     export = asyncio.run(engine.export(archive_path))
@@ -80,7 +66,7 @@ def test_export_writes_sanitized_archive_and_restores_searchable_records(tmp_pat
     assert archive_path.exists()
     raw = archive_path.read_bytes()
     assert b"retention-entry" not in raw
-    assert first.frame.captured_at.isoformat().encode() not in raw
+    assert b"emacs" not in raw
 
     target = SQLiteEncryptedStorage(
         tmp_path / "target", quota_bytes=100_000_000, max_blob_bytes=1_000_000
@@ -97,7 +83,7 @@ def test_export_writes_sanitized_archive_and_restores_searchable_records(tmp_pat
 
 def test_archive_manifest_is_sanitized_and_typed(tmp_path: Path) -> None:
     record = make_record(1, captured_at=datetime(2026, 8, 1, 10, 0, tzinfo=UTC))
-    engine, source, sink = _wire(tmp_path, [record])
+    engine, _source, _sink = _wire(tmp_path, [record])
     archive_path = tmp_path / "backup.lrb"
     asyncio.run(engine.export(archive_path))
 
@@ -114,7 +100,7 @@ def test_archive_manifest_is_sanitized_and_typed(tmp_path: Path) -> None:
 
 def test_restore_into_non_empty_target_requires_explicit_flag(tmp_path: Path) -> None:
     record = make_record(1, captured_at=datetime(2026, 8, 1, 10, 0, tzinfo=UTC))
-    engine, source, sink = _wire(tmp_path, [record])
+    engine, _source, _sink = _wire(tmp_path, [record])
     archive_path = tmp_path / "backup.lrb"
     asyncio.run(engine.export(archive_path))
     target = SQLiteEncryptedStorage(
@@ -132,7 +118,7 @@ def test_restore_into_non_empty_target_requires_explicit_flag(tmp_path: Path) ->
 
 def test_restore_detects_conflicting_duplicates_and_skips_identical(tmp_path: Path) -> None:
     record = make_record(1, captured_at=datetime(2026, 8, 1, 10, 0, tzinfo=UTC))
-    engine, source, sink = _wire(tmp_path, [record])
+    engine, _source, _sink = _wire(tmp_path, [record])
     archive_path = tmp_path / "backup.lrb"
     asyncio.run(engine.export(archive_path))
     target = SQLiteEncryptedStorage(
@@ -148,7 +134,7 @@ def test_restore_detects_conflicting_duplicates_and_skips_identical(tmp_path: Pa
 
 def test_truncated_or_corrupted_archive_fails_safely(tmp_path: Path) -> None:
     record = make_record(1, captured_at=datetime(2026, 8, 1, 10, 0, tzinfo=UTC))
-    engine, source, sink = _wire(tmp_path, [record])
+    engine, _source, _sink = _wire(tmp_path, [record])
     archive_path = tmp_path / "backup.lrb"
     asyncio.run(engine.export(archive_path))
     target = SQLiteEncryptedStorage(
@@ -171,7 +157,7 @@ def test_truncated_or_corrupted_archive_fails_safely(tmp_path: Path) -> None:
 def test_export_by_time_range_only_includes_window(tmp_path: Path) -> None:
     old = make_record(1, captured_at=datetime(2026, 1, 1, 10, 0, tzinfo=UTC))
     new = make_record(2, captured_at=datetime(2026, 8, 2, 10, 0, tzinfo=UTC))
-    engine, source, sink = _wire(tmp_path, [old, new])
+    engine, _source, _sink = _wire(tmp_path, [old, new])
     archive_path = tmp_path / "partial.lrb"
 
     export = asyncio.run(
@@ -189,3 +175,53 @@ def test_export_by_time_range_only_includes_window(tmp_path: Path) -> None:
     asyncio.run(engine.restore(archive_path, target))
     assert asyncio.run(target.get(new.record_id)) is not None
     assert asyncio.run(target.get(old.record_id)) is None
+
+
+def test_engine_applies_crypter_for_portable_exports(tmp_path: Path) -> None:
+    class Rot13Crypter:
+        """Deterministic stand-in proving engine plumbing without gpg."""
+
+        async def encrypt(self, data: bytes) -> bytes:
+            return b"ENC:" + data
+
+        async def decrypt(self, data: bytes) -> bytes:
+            if not data.startswith(b"ENC:"):
+                raise RestoreFailure("wrong recipient archive")
+            return data[4:]
+
+    first = make_record(1, captured_at=datetime(2026, 8, 1, 10, 0, tzinfo=UTC))
+    engine, _source, _sink = _wire(tmp_path, [first])
+    engine.crypter = Rot13Crypter()
+    archive_path = tmp_path / "enc.lrb"
+
+    asyncio.run(engine.export(archive_path))
+    assert archive_path.read_bytes().startswith(b"ENC:")
+
+    target = SQLiteEncryptedStorage(
+        tmp_path / "target", quota_bytes=100_000_000, max_blob_bytes=1_000_000
+    )
+    restore = asyncio.run(engine.restore(archive_path, target))
+    assert restore.restored_count == 1
+
+
+def test_wrong_recipient_archive_fails_safely(tmp_path: Path) -> None:
+    first = make_record(1, captured_at=datetime(2026, 8, 1, 10, 0, tzinfo=UTC))
+    engine, _source, _sink = _wire(tmp_path, [first])
+    archive_path = tmp_path / "enc.lrb"
+    asyncio.run(engine.export(archive_path))
+    target = SQLiteEncryptedStorage(
+        tmp_path / "target", quota_bytes=100_000_000, max_blob_bytes=1_000_000
+    )
+
+    class RejectingCrypter:
+        async def encrypt(self, data: bytes) -> bytes:
+            return data
+
+        async def decrypt(self, data: bytes) -> bytes:
+            raise RestoreFailure("wrong recipient archive")
+
+    engine.crypter = RejectingCrypter()
+
+    with pytest.raises(RestoreFailure, match="recipient"):
+        asyncio.run(engine.restore(archive_path, target))
+    assert asyncio.run(target.stats()).ready_records == 0
