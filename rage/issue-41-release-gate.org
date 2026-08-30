@@ -1,0 +1,82 @@
+#+title: RAGE Issue 41 — Documentation Completeness and the v0.1 Release Gate
+
+* Transaction
+- Issue: #41 — Complete documentation and the v0.1 release gate
+- Branch: =agent/issue-41-release-gate=
+- PR: #101
+- Dependencies: #4, #38, #39, #40 (satisfied; #35/#40 remain open with documented blockers)
+
+* Acceptance criteria
+- The release cannot be produced when any required test path is false-green, empty, skipped, or failing.
+- The published test report states discovered, executed, passed, failed, skipped, and expected-failure counts for every required suite.
+- All required skipped and expected-failure counts are zero.
+
+* Issue status
+- OPEN by design: one criterion — the *signed* v0.1 tag — requires the
+  owner's GPG passphrase. Two signing attempts were made with the owner's
+  only secret key (=46D8C06…=, nsaspy <nsaspy@airmail.cc>); git's configured
+  identity (N545PY <nsaspy@fedora.email>) has no secret key, and pinentry was
+  cancelled/unavailable in this autonomous session. The tag content is fully
+  prepared and the human step is one command:
+  =git tag -s -u 46D8C067665B0155C3F40A2470AF42299FD68CF6 -m "Local Recall v0.1" v0.1 && git push origin v0.1=
+  An unsigned tag was deliberately NOT pushed as a substitute.
+
+* What was completed
+- Documentation completeness:
+  - =docs/installation.md= (source + Nix install, first run, verification);
+  - =docs/troubleshooting.md= (common failures incl. key-locked/portal/disk/
+    index, emergency stop, safe diagnostic collection, redaction limitations);
+  - existing guides verified: architecture, threat model, configuration,
+    providers/egress, lifecycle/emergency-stop, redaction, encryption/backup/
+    retention/deletion, Qtile/ActivityWatch/Xorg/Wayland, testing policy and
+    failure semantics;
+  - README documentation index updated.
+- Release gate machinery:
+  - =scripts/test-report= — per-suite discovered/executed/passed/failed/
+    skipped/expected-failure counts with hard zero-skipped enforcement;
+  - failure-injection: =verify-failure-modes= (9 modes) +
+    =verify-e2e-failure-modes= (6 modes) inside the canonical gate and CI;
+  - =scripts/check-policy= prohibits skips/xfail/false-green constructs
+    repository-wide; CI has no =continue-on-error= / =allow_failure= /
+    retries.
+- =docs/release/v0.1.md=: reproducible build instructions, exact test
+  commands, test counts, dependency/license review, privacy-invariant status
+  (local/remote text and vision), known limitations, and the two explicitly
+  open issues with rationale.
+
+* Test report (release commit, from =./scripts/test-report=)
+| suite | collected | passed | failed | skipped | xfail |
+|---+---+---+---+---+---|
+| unit | 981 | 981 | 0 | 0 | 0 |
+| contract | 7 | 7 | 0 | 0 | 0 |
+| integration | 52 | 52 | 0 | 0 | 0 |
+| security | 103 | 103 | 0 | 0 | 0 |
+| e2e | 12 | 12 | 0 | 0 | 0 |
+| total | 1155 | 1155 | 0 | 0 | 0 |
+
+Canonical gate =./scripts/check= green at the release commit; CI 4/4 green
+(Canonical gate, Checks ubuntu-22.04/24.04, Failure propagation).
+
+* Dependency and license review
+- Runtime: pydantic (MIT), pykka (Apache-2.0), pynacl (Apache-2.0),
+  pyzmq (BSD-3-Clause; libzmq MPL-2.0/LGPL-3.0 dual), typer (MIT).
+- Development-only: pytest/pytest-timeout (MIT), hypothesis (Apache-2.0),
+  bandit (Apache-2.0), ruff (MIT), pyright, shellcheck (GPL-3.0, dev tool),
+  detect-secrets, pre-commit.
+- No runtime dependency fetches model weights, telemetry, or third-party
+  assets. System-level optional dependencies documented in =docs/nix.md=.
+
+* Verification mapping
+- False-green release prevention: policy scanning + failure-injection scripts
+  + zero-skipped enforcement in =scripts/test-report= (non-zero exit when
+  violated).
+- Published counts: =docs/release/v0.1.md= table (verified against
+  =./scripts/test-report= output on the release commit).
+- Zero skipped/xfail: 0 across all suites (asserted, not claimed).
+- Plaintext artifacts: repository/CI scans (bandit, detect-secrets,
+  check-policy fixture patterns) plus the #38 seeded-secret invariant suites.
+
+* Human blocker (why #41 stays open)
+- The signed tag needs the owner's GPG passphrase (pinentry cannot be
+  completed autonomously). One command completes the release:
+  =git tag -s -u 46D8C067665B0155C3F40A2470AF42299FD68CF6 -m "Local Recall v0.1" v0.1 && git push origin v0.1=
