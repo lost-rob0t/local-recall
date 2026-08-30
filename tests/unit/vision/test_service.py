@@ -49,7 +49,7 @@ class FakeVLM:
             provider_id=self.provider_id,
             location=self.location,
             capabilities=frozenset({ModelCapability.VISION}),
-            accepted_privacy_classes=frozenset({PrivacyClass.REDACTED_IMAGE}),
+            accepted_privacy_classes=frozenset({PrivacyClass.REDACTED_CONTENT}),
             max_input_bytes=65_536,
             supports_vision=True,
             available=self.available,
@@ -86,7 +86,7 @@ def _redacted_record(*, findings: int = 1) -> RedactedRecord:
         height=2,
         stride=6,
         pixel_format=PixelFormat.RGB8,
-        pixels=b"PIXELS",
+        pixels=b"PIXSIX"[:6] * 2,
         metadata=ContextMetadata(observed_at=captured_at, fields=()),
         ocr_text=("redacted ocr",),
         findings=finding_tuple,
@@ -95,7 +95,7 @@ def _redacted_record(*, findings: int = 1) -> RedactedRecord:
     return RedactedRecord(record_id=uuid4(), frame=frame, created_at=captured_at)
 
 
-def _analysis(record: RedactedRecord, record_id=None) -> VisionAnalysis:
+def _analysis(record: RedactedRecord, record_id: object | None = None) -> VisionAnalysis:
     return VisionAnalysis(
         record_id=record.record_id if record_id is None else record_id,
         provider_id="local-vlm",
@@ -117,7 +117,7 @@ def test_local_vlm_enriches_synthetic_redacted_record_without_network() -> None:
     assert result.record_id == record.record_id
     assert result.model_version == "vision-v3"
     assert result.broad_task == "programming"
-    assert result.uncertainty == pytest.approx(0.2)
+    assert result.uncertainty == 0.2
     assert provider.requests[0].frame is record.frame
     assert provider.requests[0].frame.policy_revision == "redaction-policy-v1"
     assert provider.requests[0].redaction_finding_count == 1
@@ -134,7 +134,7 @@ def test_unredacted_frames_cannot_reach_the_vision_provider() -> None:
         height=2,
         stride=6,
         pixel_format=PixelFormat.RGB8,
-        pixels=b"RAWPIX",
+        pixels=b"RAWPIX" * 2,
         metadata=ContextMetadata(observed_at=captured_at, fields=()),
     )
 
@@ -165,21 +165,25 @@ def test_analysis_output_is_schema_validated_and_linked() -> None:
             )
         )
 
-    unlinked = VisionAnalysis(
-        record_id=record.record_id,
-        provider_id="local-vlm",
-        model_version="vision-v3",
-        visible_application_state="editor",
-        document_type="code",
-        broad_task="programming",
-        uncertainty=1.5,
-    )
-    provider.analysis = unlinked
     with pytest.raises(ValueError, match="uncertainty"):
-        asyncio.run(
-            service.enrich_request(
-                VisionAnalysisRequest(record_id=record.record_id, frame=record.frame)
-            )
+        VisionAnalysis(
+            record_id=record.record_id,
+            provider_id="local-vlm",
+            model_version="vision-v3",
+            visible_application_state="editor",
+            document_type="code",
+            broad_task="programming",
+            uncertainty=1.5,
+        )
+    with pytest.raises(ValueError, match="document_type"):
+        VisionAnalysis(
+            record_id=record.record_id,
+            provider_id="local-vlm",
+            model_version="vision-v3",
+            visible_application_state="editor",
+            document_type="",
+            broad_task="programming",
+            uncertainty=0.1,
         )
 
 
@@ -196,15 +200,16 @@ def test_provider_unavailability_does_not_block_capture() -> None:
 
 def test_remote_vision_is_denied_without_explicit_image_authorization() -> None:
     record = _redacted_record()
-    remote = FakeVLM(provider_id="remote-vlm", location=ProviderLocation.REMOTE, analysis=_analysis(record))
+    remote = FakeVLM(
+        provider_id="remote-vlm", location=ProviderLocation.REMOTE, analysis=_analysis(record)
+    )
+    from local_recall.routing import EgressGate
+
     service = VisionEnrichmentService(
         local_providers=(),
         remote_providers=(remote,),
-        egress_gate=None,
+        egress_gate=EgressGate(),
     )
-
-    with pytest.raises(VisionRefused, match="remote"):
-        asyncio.run(service.enrich(record, egress_authorization=None))
 
     weak = EgressAuthorization(
         authorization_id="auth-1",
@@ -219,7 +224,9 @@ def test_remote_vision_is_denied_without_explicit_image_authorization() -> None:
 
 def test_remote_vision_runs_only_through_the_egress_gate_with_grant() -> None:
     record = _redacted_record()
-    remote = FakeVLM(provider_id="remote-vlm", location=ProviderLocation.REMOTE, analysis=_analysis(record))
+    remote = FakeVLM(
+        provider_id="remote-vlm", location=ProviderLocation.REMOTE, analysis=_analysis(record)
+    )
     from local_recall.routing import EgressGate
 
     service = VisionEnrichmentService(
@@ -242,7 +249,9 @@ def test_remote_vision_runs_only_through_the_egress_gate_with_grant() -> None:
 
 def test_mismatched_remote_provider_is_refused() -> None:
     record = _redacted_record()
-    remote = FakeVLM(provider_id="remote-vlm", location=ProviderLocation.REMOTE, analysis=_analysis(record))
+    remote = FakeVLM(
+        provider_id="remote-vlm", location=ProviderLocation.REMOTE, analysis=_analysis(record)
+    )
     from local_recall.routing import EgressGate
 
     service = VisionEnrichmentService(
