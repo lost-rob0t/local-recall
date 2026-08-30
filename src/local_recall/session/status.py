@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import json
 
-from .models import SessionResolution
+from .models import DisplayProtocol, SessionResolution
+
+_WAYLAND_LIMITATIONS = (
+    "window-metadata-unavailable",
+    "persistent-sessions-not-used",
+    "screencast-streams-not-supported",
+    "region-cropping-unavailable",
+)
 
 
 def session_resolution_status(resolution: SessionResolution) -> dict[str, object]:
-    return {
+    status: dict[str, object] = {
         "capture_backend": resolution.capture_backend_id,
         "desktop": resolution.session.desktop.value,
         "metadata_sources": list(resolution.selected_metadata_sources),
@@ -25,6 +32,13 @@ def session_resolution_status(resolution: SessionResolution) -> dict[str, object
         "session_confidence": resolution.session.confidence,
         "session_reason": resolution.session.reason_code.value,
     }
+    if resolution.session.protocol is DisplayProtocol.WAYLAND:
+        status["wayland"] = {
+            "authorization": "portal-per-capture",
+            "limitations": list(_WAYLAND_LIMITATIONS),
+            "persistent_sessions": False,
+        }
+    return status
 
 
 def render_session_resolution_status(resolution: SessionResolution) -> str:

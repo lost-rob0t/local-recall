@@ -66,6 +66,7 @@ class ResolutionReasonCode(StrEnum):
     UNKNOWN_SESSION = "unknown-session"
     UNSUPPORTED_SESSION = "unsupported-session"
     NO_HEALTHY_METADATA = "no-healthy-metadata"
+    PORTAL_UNAVAILABLE = "portal-unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,7 +122,7 @@ class SessionResolution:
         if self.recording_supported:
             if self.capture_backend_id is None:
                 raise ValueError("supported recording requires a capture backend")
-            if not self.selected_metadata_sources:
+            if not self.selected_metadata_sources and (self.capture_backend_id != "wayland-portal"):
                 raise ValueError("supported recording requires metadata sources")
             if self.reason_code is not ResolutionReasonCode.READY:
                 raise ValueError("supported recording requires ready resolution")

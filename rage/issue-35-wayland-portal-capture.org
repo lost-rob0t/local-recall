@@ -1,0 +1,114 @@
+#+title: RAGE Issue 35 — Implement Wayland Capture Through Desktop Portals
+
+* Transaction
+- Issue: #35 — Implement Wayland capture through desktop portals
+- Branch: =agent/issue-35-wayland-portal-capture=
+- PR: #94
+- Dependencies: #13, #17, #19, #29 (satisfied)
+
+* Acceptance criteria
+- Works on at least one representative wlroots compositor and one major desktop environment, subject to portal capability.
+- Revoked permission immediately stops capture and invalidates queued work.
+- Wayland-specific limitations are visible in status and documentation.
+- Existing Xorg behavior and tests remain unchanged.
+
+* Issue status
+- OPEN by design. Criteria 2–4 are implemented and fully covered by automated tests.
+- Criterion 1 requires a real compositor + real desktop-portal backend. This
+  environment has no Wayland session at all (X11/qtile; no sway/wlroots, no
+  GNOME/KDE portal backend — the local xdg-desktop-portal answers
+  =No such interface "org.freedesktop.portal.Screenshot"=). CI cannot run a
+  real portal dialog either. Real-compositor validation remains a HUMAN BLOCKER
+  (see below); per the fail-honest policy the issue is intentionally not closed.
+
+* Design decisions
+- Screenshot-flow only (screenshot / screen-stream was the requirement's
+  either/or): every frame is one =org.freedesktop.portal.Screenshot= request,
+  which is the most restrictive authorization model — no persistent portal
+  session can leak access, and each capture can be denied by the user. The
+  PipeWire screen-cast flow is explicitly out of scope in v0.1 and surfaced as
+  a limitation (=screencast-streams-not-supported=).
+- Transport: bounded fixed =busctl= invocations (repo precedent from the logind
+  adapter), not a hand-rolled D-Bus wire client or a new dependency. Fixed argv,
+  no shell, token is the only variable, bounded time and output.
+- =PortalGateway= protocol keeps the backend testable; =BusctlPortalGateway= is
+  the only real transport; contract/unit/integration/security suites use fakes
+  (the sanctioned approach for CI without a portal daemon).
+- Permission state machine lives in the backend (unauthorized → authorized →
+  revoked). =revoke()= fails every in-flight capture's revocation future, which
+  wins the race against the gateway result deterministically (revocation checked
+  first in the =FIRST_COMPLETED= wait), cancels the gateway task, and blocks all
+  future captures. Queued work = registered in-flight =asyncio= futures.
+- Portal screenshot files are read fail-closed: =O_NOFOLLOW=, must be a regular
+  file owned by the current uid, bounded size, =unlink= immediately after read;
+  unlink failure (beyond missing file) fails the capture
+  (=portal-cleanup-failed=) because leaving portal-written pixels on disk is a
+  privacy violation, even though pixels are already safely in memory.
+- Bounded PNG codec in =capture/png.py= (stdlib zlib): color types 0/2/6, depth
+  8, all five filters, CRC32-checked chunks, inflation bounded by the header
+  geometry, trailing-data rejection. No PIL/tempfile — the existing capture
+  architecture scan (extended to the new modules) enforces this.
+- Resolver: optional =wayland_portal_probe=; Wayland sessions resolve
+  =wayland-portal= with zero metadata sources (the model relaxation is scoped
+  to exactly =capture_backend_id == "wayland-portal"=). Xorg resolution paths
+  are untouched; with no portal probe configured, Wayland still resolves
+  =unsupported-session= (all pre-existing tests unchanged).
+
+* Execute / TDD
+- Valid RED (head =be55a4d=): 6 new test files fail at collection on the missing
+  =local_recall.capture.{png,portal,wayland,bus_portal}= APIs; 9 resolver/status
+  behavior tests fail on the missing =wayland_portal_probe= /
+  =PORTAL_UNAVAILABLE= / wayland status block; strict Pyright fails exactly on
+  the unknown import symbols. Baseline 930 tests unaffected. CI run
+  =33300262275= (Checks ×2 + Canonical gate fail on exactly those errors;
+  Failure propagation pass).
+- Two test-side defects were fixed during GREEN (hand-rolled sub/up/average
+  filter fixtures computed wrong deltas; a compression-bomb splice invalidated
+  its own CRC). The decoder itself rejected both as designed.
+- GREEN on head (this commit): full suite =1006 passed= (930 baseline + 76 new),
+  strict Pyright 0 errors, ruff format/check clean, shellcheck clean,
+  verify-failure-modes 8/8, bandit/detect-secrets/check-policy clean.
+- Live transport evidence on this machine (not part of the automated suite):
+  =BusctlPortalGateway= reached the real session-bus portal daemon through
+  =busctl= and mapped the real portal's "No such interface Screenshot" answer to
+  the sanitized =portal-screenshot-unavailable=; the real-bus =busctl monitor=
+  match subscription ran under the gateway deadline and terminated cleanly with
+  no leaked processes.
+
+* Verification mapping
+- Explicit authorization: every capture requires a fresh portal request; denial
+  (=Response= code 1) maps to =portal-permission-denied= and yields no frame.
+- Strategy interface: =WaylandPortalCaptureBackend= satisfies =ports.CaptureBackend=
+  (contract suite) and composes with =AdaptiveCaptureFlow= (integration).
+- Revocation: concurrent revocation tests (5 and 50 in-flight captures) prove
+  every pending capture raises =portal-permission-revoked=, late gateway success
+  is discarded, no further gateway requests start after revocation, and
+  subsequent captures fail without touching the gateway.
+- Persistent-session behavior: =status().persistent_sessions= is always false;
+  status renderer emits the =wayland= block with limitations; tests assert it.
+- Unsupported features: screenshot-flow-only is enforced in code and surfaced as
+  =screencast-streams-not-supported= / =region-cropping-unavailable= /
+  =window-metadata-unavailable= in status and =docs/wayland-capture.md=.
+- No unsafe fallback: security test proves a Wayland session with an unhealthy
+  portal probe never selects =xorg-generic= even when the Xorg probe is healthy.
+- Xorg unchanged: all pre-existing Xorg tests pass unmodified (930 baseline).
+- Privacy invariants: pixel/gateway marker leak tests across failure paths;
+  AST architecture scan extended to all four new capture modules (no tempfile,
+  no image libraries, no write-capable calls; =os.open= allowlisted as the sole
+  read-only fd acquisition in the portal file reader); symlink/foreign-file/
+  traversal URI rejection tests.
+
+* Human blocker (why #35 stays open)
+- Criterion 1 needs one wlroots compositor and one DE with a Screenshot-capable
+  portal backend and a human able to click the portal authorization dialog at
+  least once. Suggested procedure on a sway or GNOME Wayland session:
+  1. =uv run --no-sync python -c= snippet building
+     =FixedBusctlPortalRunner() + BusctlPortalGateway= (see
+     docs/wayland-capture.md § Testing) and calling =request_screenshot=
+     twice: accept once (expect png payload), deny once (expect
+     =portal-permission-denied=).
+  2. Run =local-recall= with =capture_backend=wayland-portal= configured and
+     confirm frames appear, =status= shows the =wayland= block, and killing the
+     portal session file / revoking stops capture on the next tick.
+- Everything except that live confirmation is implemented, reviewed by the
+  automated suites, and merged.

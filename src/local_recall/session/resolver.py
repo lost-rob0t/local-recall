@@ -30,6 +30,7 @@ class SessionResolver:
         probes: Iterable[MetadataStrategyProbe],
         *,
         generic_xorg_probe: MetadataStrategyProbe | None,
+        wayland_portal_probe: MetadataStrategyProbe | None = None,
         probe_timeout_seconds: float = 1.0,
     ) -> None:
         if probe_timeout_seconds <= 0.0:
@@ -45,8 +46,15 @@ class SessionResolver:
             if generic_xorg_probe.source_id in registry:
                 raise ValueError("metadata probe identifiers must be unique")
             registry[generic_xorg_probe.source_id] = generic_xorg_probe
+        if wayland_portal_probe is not None:
+            if wayland_portal_probe.source_id != "wayland-portal":
+                raise ValueError("wayland portal probe must use wayland-portal identifier")
+            if wayland_portal_probe.source_id in registry:
+                raise ValueError("metadata probe identifiers must be unique")
+            registry[wayland_portal_probe.source_id] = wayland_portal_probe
         self._registry = registry
         self._generic_xorg_probe = generic_xorg_probe
+        self._wayland_portal_probe = wayland_portal_probe
         self._probe_timeout_seconds = probe_timeout_seconds
 
     async def resolve(
@@ -65,14 +73,7 @@ class SessionResolver:
                 reason_code=ResolutionReasonCode.UNKNOWN_SESSION,
             )
         if session.protocol is DisplayProtocol.WAYLAND:
-            return SessionResolution(
-                session=session,
-                recording_supported=False,
-                capture_backend_id=None,
-                selected_metadata_sources=(),
-                probe_results=(),
-                reason_code=ResolutionReasonCode.UNSUPPORTED_SESSION,
-            )
+            return await self._resolve_wayland(session, enabled_sources)
 
         results: list[MetadataProbeResult] = []
         selected: list[str] = []
@@ -110,6 +111,47 @@ class SessionResolver:
             session=session,
             recording_supported=True,
             capture_backend_id="xorg-generic",
+            selected_metadata_sources=tuple(selected),
+            probe_results=tuple(results),
+            reason_code=ResolutionReasonCode.READY,
+        )
+
+    async def _resolve_wayland(
+        self,
+        session: DesktopSession,
+        enabled_sources: tuple[str, ...],
+    ) -> SessionResolution:
+        if self._wayland_portal_probe is None:
+            return SessionResolution(
+                session=session,
+                recording_supported=False,
+                capture_backend_id=None,
+                selected_metadata_sources=(),
+                probe_results=(),
+                reason_code=ResolutionReasonCode.UNSUPPORTED_SESSION,
+            )
+        results: list[MetadataProbeResult] = []
+        portal_result = await self._probe_source(self._wayland_portal_probe.source_id, session)
+        results.append(portal_result)
+        selected: list[str] = []
+        for source_id in enabled_sources:
+            item = await self._probe_source(source_id, session)
+            results.append(item)
+            if item.outcome is ProbeOutcome.HEALTHY:
+                selected.append(item.source_id)
+        if portal_result.outcome is not ProbeOutcome.HEALTHY:
+            return SessionResolution(
+                session=session,
+                recording_supported=False,
+                capture_backend_id=None,
+                selected_metadata_sources=(),
+                probe_results=tuple(results),
+                reason_code=ResolutionReasonCode.PORTAL_UNAVAILABLE,
+            )
+        return SessionResolution(
+            session=session,
+            recording_supported=True,
+            capture_backend_id="wayland-portal",
             selected_metadata_sources=tuple(selected),
             probe_results=tuple(results),
             reason_code=ResolutionReasonCode.READY,
