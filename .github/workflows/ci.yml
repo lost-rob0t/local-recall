@@ -35,7 +35,7 @@ jobs:
       - name: Check Python lint
         run: uv run --no-sync ruff check .
       - name: Check shell scripts
-        run: uv run --no-sync shellcheck scripts/bootstrap scripts/check scripts/test scripts/run-pytest scripts/security-scan
+        run: uv run --no-sync shellcheck scripts/bootstrap scripts/check scripts/e2e scripts/test scripts/run-pytest scripts/security-scan
       - name: Check static types
         run: uv run --no-sync pyright
       - name: Run unit tests
@@ -78,3 +78,5 @@ jobs:
         run: ./scripts/bootstrap
       - name: Verify known failures remain non-zero
         run: ./scripts/verify-failure-modes
+      - name: Verify E2E failure propagation
+        run: ./scripts/verify-e2e-failure-modes
