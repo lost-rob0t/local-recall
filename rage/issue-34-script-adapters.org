@@ -1,0 +1,31 @@
+#+title: RAGE Issue 34 — Allowlisted Script-Based Metadata Adapters
+
+* Transaction
+- Issue: #34 — Add allowlisted script-based metadata adapters
+- Branch: =agent/issue-34-script-adapters=
+- Dependencies: #13, #17 (satisfied)
+
+* Acceptance criteria
+- Unlisted, writable-by-others, changed, malformed, or timed-out scripts are rejected.
+- Captured window values cannot alter command arguments.
+- Output is redacted and policy checked before use.
+- Security tests cover command injection, path replacement, symlinks, oversized output, and hostile environment variables.
+
+* Design decisions
+- Closed typed config; absolute path; fixed argv via =create_subprocess_exec= (no shell, no interpolation); eager per-run script validation (regular file, no symlink, owner-only, current owner, optional SHA-256 pin).
+- Strict versioned JSON output schema with closed keys and bounded values; everything else fails sanitized.
+- Environment allowlist and fresh private working directory per run; stdin closed; stderr discarded; timeout/output-limit violations kill the child.
+- Provenance uses the adapter name and a digest-derived adapter revision so downstream redaction/policy handling treats script output identically to other metadata sources.
+- Degradation: adapter failures are sanitized exceptions; metadata absence never expands capture permissions, and capture policy remains deny-by-default for sensitive contexts.
+
+* Execute / TDD
+- Valid RED: =tests/unit/metadata/test_script_adapter.py= failed at collection on the missing =local_recall.metadata.script_adapter= API.
+- Two test-side defects were fixed during the run (the env-probe script initially emitted non-JSON; the cwd probe needed JSON schema output) — the adapter itself rejected both as designed, which is exactly the fail-closed behavior under test.
+- GREEN on exact head: full suite (930 tests), strict Pyright, ruff, bandit clean; canonical gate verified locally.
+
+* Verification mapping
+- Unlisted scripts: nothing is executed unless explicitly configured (no discovery).
+- Writable-by-others/changed: permission check and pin-mismatch tests.
+- Malformed/timed-out: JSON schema tests and timeout-kill test.
+- Injection/path replacement/symlinks: fixed-argv spy test, absolute-path requirement, symlink rejection test.
+- Oversized output and hostile environment: output-limit and env-allowlist tests.
