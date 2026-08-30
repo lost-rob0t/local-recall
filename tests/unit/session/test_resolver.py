@@ -266,3 +266,125 @@ def test_empty_configured_sources_do_not_enable_implicit_fallback() -> None:
     assert resolution.recording_supported is False
     assert resolution.selected_metadata_sources == ()
     assert resolution.reason_code is ResolutionReasonCode.NO_HEALTHY_METADATA
+
+
+def wayland_snapshot() -> EnvironmentSnapshot:
+    return EnvironmentSnapshot.from_mapping(
+        {
+            "XDG_SESSION_TYPE": "wayland",
+            "WAYLAND_DISPLAY": "wayland-1",
+            "XDG_CURRENT_DESKTOP": "sway",
+        }
+    )
+
+
+def portal_probe(
+    outcome: ProbeOutcome = ProbeOutcome.HEALTHY,
+    reason_code: ProbeReasonCode = ProbeReasonCode.AVAILABLE,
+) -> MetadataStrategyProbe:
+    return probe(
+        "wayland-portal",
+        outcome=outcome,
+        reason_code=reason_code,
+        capabilities=frozenset({MetadataCapability.SCREEN}),
+    )
+
+
+def test_wayland_portal_probe_enables_portal_capture_without_metadata_sources() -> None:
+    portal = portal_probe()
+    resolver = SessionResolver((), generic_xorg_probe=None, wayland_portal_probe=portal)
+
+    resolution = asyncio.run(resolver.resolve(wayland_snapshot(), ()))
+
+    assert resolution.recording_supported is True
+    assert resolution.capture_backend_id == "wayland-portal"
+    assert resolution.selected_metadata_sources == ()
+    assert resolution.reason_code is ResolutionReasonCode.READY
+    assert resolution.probe_results[-1].source_id == "wayland-portal"
+    assert resolution.probe_results[-1].outcome is ProbeOutcome.HEALTHY
+
+
+def test_wayland_portal_capture_includes_healthy_metadata_sources() -> None:
+    portal = portal_probe()
+    activitywatch = probe(
+        "activitywatch",
+        capabilities=frozenset({MetadataCapability.APPLICATION, MetadataCapability.ACTIVITY}),
+    )
+    resolver = SessionResolver(
+        (activitywatch,), generic_xorg_probe=None, wayland_portal_probe=portal
+    )
+
+    resolution = asyncio.run(resolver.resolve(wayland_snapshot(), ("activitywatch",)))
+
+    assert resolution.recording_supported is True
+    assert resolution.capture_backend_id == "wayland-portal"
+    assert resolution.selected_metadata_sources == ("activitywatch",)
+
+
+def test_unhealthy_wayland_portal_probe_reports_portal_unavailable() -> None:
+    portal = portal_probe(ProbeOutcome.UNAVAILABLE, ProbeReasonCode.UNAVAILABLE)
+    resolver = SessionResolver((), generic_xorg_probe=None, wayland_portal_probe=portal)
+
+    resolution = asyncio.run(resolver.resolve(wayland_snapshot(), ()))
+
+    assert resolution.recording_supported is False
+    assert resolution.capture_backend_id is None
+    assert resolution.reason_code is ResolutionReasonCode.PORTAL_UNAVAILABLE
+
+
+def test_wayland_portal_probe_failure_is_sanitized() -> None:
+    marker = "synthetic-sensitive-portal-marker"
+
+    async def fail(_: DesktopSession) -> MetadataProbeResult:
+        raise RuntimeError(marker)
+
+    portal = SyntheticProbe("wayland-portal", fail)
+    resolver = SessionResolver((), generic_xorg_probe=None, wayland_portal_probe=portal)
+
+    resolution = asyncio.run(resolver.resolve(wayland_snapshot(), ()))
+
+    assert resolution.recording_supported is False
+    assert resolution.probe_results[-1].outcome is ProbeOutcome.FAILED
+    assert resolution.reason_code is ResolutionReasonCode.PORTAL_UNAVAILABLE
+    assert marker not in repr(resolution)
+
+
+def test_wayland_portal_probe_timeout_is_bounded() -> None:
+    async def block(_: DesktopSession) -> MetadataProbeResult:
+        await asyncio.sleep(1.0)
+        raise AssertionError("unreachable")
+
+    portal = SyntheticProbe("wayland-portal", block)
+    resolver = SessionResolver(
+        (), generic_xorg_probe=None, wayland_portal_probe=portal, probe_timeout_seconds=0.01
+    )
+
+    resolution = asyncio.run(resolver.resolve(wayland_snapshot(), ()))
+
+    assert resolution.probe_results[-1].outcome is ProbeOutcome.TIMED_OUT
+    assert resolution.reason_code is ResolutionReasonCode.PORTAL_UNAVAILABLE
+
+
+def test_wayland_portal_probe_is_ignored_on_xorg_sessions() -> None:
+    portal = portal_probe()
+    generic = probe(
+        "xorg-generic",
+        capabilities=frozenset({MetadataCapability.APPLICATION, MetadataCapability.WINDOW_TITLE}),
+    )
+    resolver = SessionResolver((), generic_xorg_probe=generic, wayland_portal_probe=portal)
+
+    resolution = asyncio.run(resolver.resolve(qtile_xorg(), ("xorg-generic",)))
+
+    assert resolution.recording_supported is True
+    assert resolution.capture_backend_id == "xorg-generic"
+    assert all(item.source_id != "wayland-portal" for item in resolution.probe_results)
+
+
+def test_wayland_portal_probe_requires_dedicated_identifier() -> None:
+    portal = probe("qtile")
+    try:
+        SessionResolver((), generic_xorg_probe=None, wayland_portal_probe=portal)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("invalid portal probe identifier was accepted")

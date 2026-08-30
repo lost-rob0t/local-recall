@@ -4,8 +4,12 @@ import ast
 from pathlib import Path
 
 _CAPTURE_MODULES = (
+    Path("src/local_recall/capture/bus_portal.py"),
     Path("src/local_recall/capture/composition.py"),
     Path("src/local_recall/capture/native.py"),
+    Path("src/local_recall/capture/png.py"),
+    Path("src/local_recall/capture/portal.py"),
+    Path("src/local_recall/capture/wayland.py"),
     Path("src/local_recall/capture/xorg.py"),
 )
 _FORBIDDEN_IMPORTS = ("tempfile", "PIL", "imageio")
