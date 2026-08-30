@@ -314,8 +314,8 @@ class E2EDecryptor:
         self._key_provider = key_provider
 
     async def decrypt(self, request: object) -> RedactedRecord:
-        from local_recall.ports.encryption import DecryptionRequest
         from local_recall.pipeline.models import RedactedStageItem
+        from local_recall.ports.encryption import DecryptionRequest
 
         assert isinstance(request, DecryptionRequest)
         envelope = request.envelope
