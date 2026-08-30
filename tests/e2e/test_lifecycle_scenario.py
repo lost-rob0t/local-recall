@@ -4,10 +4,10 @@ import asyncio
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from local_recall.lifecycle import PauseCapture, ResumeCapture
 from local_recall.lifecycle.messages import LifecycleCommandResult
-from typing import cast
 
 from .harness import AdvanceClock, LocalRecallSystem, SyntheticDesktop
 
@@ -16,9 +16,7 @@ _START = datetime(2026, 8, 24, 10, 0, tzinfo=UTC)
 
 def _system(tmp_path: Path) -> LocalRecallSystem:
     clock = AdvanceClock(_START)
-    return LocalRecallSystem(
-        root=tmp_path, clock=clock, desktop=SyntheticDesktop(clock=clock.now)
-    )
+    return LocalRecallSystem(root=tmp_path, clock=clock, desktop=SyntheticDesktop(clock=clock.now))
 
 
 def test_lifecycle_scenario_start_record_pause_resume_stop_restart_query(tmp_path: Path) -> None:

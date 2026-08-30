@@ -34,8 +34,7 @@ def test_what_was_i_doing_saturday_answers_with_saturday_citations(tmp_path: Pat
             saturday_records.append(asyncio.run(system.capture_once()))
             system.clock.advance()
         assert all(
-            record.frame.captured_at.date() == SATURDAY.date()
-            for record in saturday_records
+            record.frame.captured_at.date() == SATURDAY.date() for record in saturday_records
         )
 
         system.clock.jump_to(SUNDAY)
@@ -53,9 +52,9 @@ def test_what_was_i_doing_saturday_answers_with_saturday_citations(tmp_path: Pat
         assert answer.claims
         citations = [item for claim in answer.claims for item in claim.citations]
         assert citations
-        assert all(
-            item.captured_at.date() == SATURDAY.date() for item in citations
-        ), [item.captured_at for item in citations]
+        assert all(item.captured_at.date() == SATURDAY.date() for item in citations), [
+            item.captured_at for item in citations
+        ]
         assert all(item.record_id is not None for item in citations)
         assert system.generation_provider.requests[0].privacy_class is PrivacyClass.REDACTED_CONTENT
     finally:

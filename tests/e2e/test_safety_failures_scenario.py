@@ -1,30 +1,30 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from local_recall.crypto.errors import EncryptionFailure
 from local_recall.crypto.keyring import KeyringBackendLocked
+from local_recall.domain.lifecycle import TransitionReason
 from local_recall.health.checks import build_health_checks
 from local_recall.health.guard import PrivacyDependencyFault, ensure_persistence_allowed
 from local_recall.health.models import HealthCheckId, HealthState
 from local_recall.health.service import HealthService
 from local_recall.index.semantic import IndexFailure
-from local_recall.domain.lifecycle import TransitionReason
 from local_recall.lifecycle import LifecycleCommandResult, PauseCapture
 from local_recall.ports.keys import KeyHealthStatus
-from typing import cast
 
-from .health_ports import KeyHealthAdapter, SystemHealthPorts
 from .harness import (
     AdvanceClock,
     LocalRecallSystem,
     MemoryKeyringBackend,
     SyntheticDesktop,
 )
+from .health_ports import KeyHealthAdapter, SystemHealthPorts
 
 _START = datetime(2026, 8, 24, 10, 0, tzinfo=UTC)
 
@@ -40,7 +40,9 @@ class ScenarioKeyringBackend(MemoryKeyringBackend):
         return super().get_password(service, username)
 
 
-def _system(tmp_path: Path, *, key_backend: MemoryKeyringBackend | None = None) -> LocalRecallSystem:
+def _system(
+    tmp_path: Path, *, key_backend: MemoryKeyringBackend | None = None
+) -> LocalRecallSystem:
     clock = AdvanceClock(_START)
     return LocalRecallSystem(
         root=tmp_path,
