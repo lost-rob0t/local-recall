@@ -19,11 +19,11 @@ from .filesystem import (
     safe_unlink,
 )
 from .models import CatalogState
-from .operations import _RECORD_INSERT, _SQLiteStorageOperations
+from .operations import _RECORD_INSERT, _SQLiteStorageRetention
 from .schema import CURRENT_STORAGE_SCHEMA_VERSION
 
 
-class SQLiteEncryptedStorage(_SQLiteStorageOperations):
+class SQLiteEncryptedStorage(_SQLiteStorageRetention):
     def _recover_sync(self) -> StorageIntegrityReport:
         counts = {
             "verified": 0,

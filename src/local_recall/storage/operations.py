@@ -8,7 +8,15 @@ from typing import cast
 from uuid import UUID
 
 from local_recall.domain.crypto import EncryptedRecordEnvelope, StoredRecordRef
-from local_recall.ports.storage import CatalogRecord, DayRangeQuery, DeleteRequest, DeleteResult
+from local_recall.ports.storage import (
+    CatalogEntry,
+    CatalogPage,
+    CatalogRecord,
+    DayRangeQuery,
+    DeleteRequest,
+    DeleteResult,
+    StorageUsageReport,
+)
 
 from .base import _SQLiteStorageBase
 from .codec import decode_envelope, encode_envelope
@@ -210,3 +218,54 @@ class _SQLiteStorageOperations(_SQLiteStorageBase):
             "UPDATE records SET state = 'quarantined' WHERE record_id = ?",
             (row["record_id"],),
         )
+
+
+_PAGE_LIMIT = 10_000
+
+
+class _SQLiteStorageRetention(_SQLiteStorageOperations):
+    def _stats_sync(self) -> StorageUsageReport:
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT COUNT(*) AS ready_records, COALESCE(SUM(blob_bytes), 0) AS ready_bytes
+                FROM records WHERE state = 'ready'
+                """
+            ).fetchone()
+        return StorageUsageReport(
+            ready_records=cast(int, row["ready_records"]),
+            ready_bytes=cast(int, row["ready_bytes"]),
+        )
+
+    def _page_ready_sync(
+        self,
+        *,
+        after_day: str | None,
+        after_id: str | None,
+        limit: int,
+    ) -> CatalogPage:
+        if limit <= 0 or limit > _PAGE_LIMIT:
+            raise StorageFailure(StorageFailureCode.IO_FAILURE)
+        query = """
+            SELECT record_id, day_bucket, blob_bytes
+            FROM records
+            WHERE state = 'ready'
+        """
+        parameters: list[object] = []
+        if after_day is not None and after_id is not None:
+            query += " AND (day_bucket > ? OR (day_bucket = ? AND record_id > ?))"
+            parameters.extend((after_day, after_day, str(after_id)))
+        query += " ORDER BY day_bucket, record_id LIMIT ?"
+        parameters.append(limit + 1)
+        with self._lock:
+            rows = self._connection.execute(query, parameters).fetchall()
+        complete = len(rows) <= limit
+        entries = tuple(
+            CatalogEntry(
+                record_id=UUID(cast(str, row["record_id"])),
+                day_bucket=date.fromisoformat(cast(str, row["day_bucket"])),
+                blob_bytes=cast(int, row["blob_bytes"]),
+            )
+            for row in rows[:limit]
+        )
+        return CatalogPage(entries=entries, complete=complete)

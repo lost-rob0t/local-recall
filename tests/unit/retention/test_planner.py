@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -36,7 +36,7 @@ def _record(index: int, *, captured_at: datetime, application: str | None = None
         )
         fields = (ContextField("application", application, (provenance,)),)
     frame = RedactedFrame(
-        frame_id=UUID(int=index),
+        frame_id=uuid4(),
         generation=CaptureGeneration(1),
         captured_at=captured_at,
         width=1,
@@ -49,7 +49,7 @@ def _record(index: int, *, captured_at: datetime, application: str | None = None
         findings=(),
         policy_revision="redaction-policy-v1",
     )
-    return RedactedRecord(record_id=UUID(int=index), frame=frame, created_at=captured_at)
+    return RedactedRecord(record_id=uuid4(), frame=frame, created_at=captured_at)
 
 
 def _envelope(record: RedactedRecord) -> EncryptedRecordEnvelope:
@@ -157,6 +157,8 @@ def test_planner_evicts_oldest_first_only_under_watermark(tmp_path: Path) -> Non
     usage = asyncio.run(storage.stats())
     decryptor = Decryptor({r.record_id: r for r in records})
     budget = usage.ready_bytes
+    page = asyncio.run(storage.page_ready(limit=10_000))
+    smallest = min(entry.blob_bytes for entry in page.entries)
 
     below = RetentionPlanner(
         storage=storage,
@@ -172,17 +174,18 @@ def test_planner_evicts_oldest_first_only_under_watermark(tmp_path: Path) -> Non
         encryption=decryptor,
         rules=RetentionRules(
             max_age_days=3650,
-            max_bytes=budget + 1,
-            low_watermark_bytes=budget - (records[0].frame.stride * records[0].frame.height) - 64,
+            max_bytes=budget - 1,
+            low_watermark_bytes=budget - smallest,
             max_records=250_000,
         ),
         today=_TODAY,
     )
     pressured = asyncio.run(above.plan(dry_run=True))
 
-    assert pressured.evicted[0] == records[0].record_id
-    assert records[0].record_id in pressured.evicted
-    assert records[-1].record_id not in pressured.evicted
+    ordered = sorted(records, key=lambda r: (r.created_at.astimezone(UTC).date(), str(r.record_id)))
+    assert pressured.evicted[0] == ordered[0].record_id
+    assert ordered[0].record_id in pressured.evicted
+    assert ordered[-1].record_id not in pressured.evicted
 
 
 def test_planner_enforces_record_count_cap_oldest_first(tmp_path: Path) -> None:
@@ -204,7 +207,8 @@ def test_planner_enforces_record_count_cap_oldest_first(tmp_path: Path) -> None:
 
     plan = asyncio.run(planner.plan(dry_run=True))
 
-    assert set(plan.evicted) == {records[0].record_id, records[1].record_id}
+    ordered = sorted(records, key=lambda r: (r.created_at.astimezone(UTC).date(), str(r.record_id)))
+    assert set(plan.evicted) == {ordered[0].record_id, ordered[1].record_id}
     assert len(plan.expired) == 0
 
 

@@ -5,16 +5,19 @@ import asyncio
 import sqlite3
 import threading
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 from uuid import UUID
 
 from local_recall.domain.crypto import EncryptedRecordEnvelope, StoredRecordRef
 from local_recall.ports.storage import (
+    CatalogPage,
     CatalogRecord,
     DayRangeQuery,
     DeleteRequest,
     DeleteResult,
     StorageIntegrityReport,
+    StorageUsageReport,
 )
 
 from .errors import StorageFailure, StorageFailureCode
@@ -82,6 +85,23 @@ class _SQLiteStorageBase:
 
     async def recover(self) -> StorageIntegrityReport:
         return await asyncio.to_thread(self._recover_sync)
+
+    async def stats(self) -> StorageUsageReport:
+        return await asyncio.to_thread(self._stats_sync)
+
+    async def page_ready(
+        self,
+        *,
+        after_day: date | None = None,
+        after_id: UUID | None = None,
+        limit: int,
+    ) -> CatalogPage:
+        return await asyncio.to_thread(
+            self._page_ready_sync,
+            after_day=after_day.isoformat() if after_day is not None else None,
+            after_id=after_id,
+            limit=limit,
+        )
 
     async def close(self) -> None:
         await asyncio.to_thread(self.close_sync)

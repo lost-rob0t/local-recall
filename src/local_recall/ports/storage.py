@@ -57,6 +57,33 @@ class CatalogRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogEntry:
+    record_id: UUID
+    day_bucket: date
+    blob_bytes: int
+
+    def __post_init__(self) -> None:
+        if self.blob_bytes <= 0:
+            raise ValueError("blob_bytes must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogPage:
+    entries: tuple[CatalogEntry, ...]
+    complete: bool
+
+
+@dataclass(frozen=True, slots=True)
+class StorageUsageReport:
+    ready_records: int
+    ready_bytes: int
+
+    def __post_init__(self) -> None:
+        if self.ready_records < 0 or self.ready_bytes < 0:
+            raise ValueError("usage counts must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
 class StorageIntegrityReport:
     verified_records: int = 0
     recovered_writes: int = 0
