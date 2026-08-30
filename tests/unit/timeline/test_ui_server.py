@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -31,18 +32,27 @@ class FakeDaemonClient:
 
     def request(self, request: CliRequest) -> CliResponse:
         self.requests.append(request)
-        return self.responses.get(request.command.value, _success(request.request_id))
+        response = self.responses.get(request.command.value)
+        if response is None:
+            state = (
+                CliLifecycleState.OFF
+                if request.command is CliCommand.STOP
+                else CliLifecycleState.RECORDING
+            )
+            return CliResponse.success(request_id=request.request_id, lifecycle_state=state)
+        return _rebind(response, request.request_id)
 
 
-def _success(request_id: str) -> CliResponse:
-    return CliResponse.success(request_id=request_id, lifecycle_state=CliLifecycleState.RECORDING)
+def _rebind(response: CliResponse, request_id: str) -> CliResponse:
+    from dataclasses import replace
+
+    return replace(response, request_id=request_id)
 
 
 def _query_response(request_id: str, text: str) -> CliResponse:
     citation = ("c0ffee00-0000-4000-8000-000000000001", NOW - timedelta(hours=1))
     return CliResponse.success(
         request_id=request_id,
-        lifecycle_state=CliLifecycleState.RECORDING,
         query_payload=CliQueryPayload(
             text=text,
             citations=tuple(
@@ -50,6 +60,9 @@ def _query_response(request_id: str, text: str) -> CliResponse:
             ),
         ),
     )
+
+
+_ServerFixture = tuple[TimelineUiServer, str, FakeDaemonClient]
 
 
 def _client() -> FakeDaemonClient:
@@ -66,7 +79,6 @@ def _client() -> FakeDaemonClient:
         "preview-record": _query_response("preview-record", "preview-text"),
         "delete-records": CliResponse.success(
             request_id="delete-records",
-            lifecycle_state=CliLifecycleState.RECORDING,
             deletion_payload=CliDeletionPayload(deleted_count=1, scope_kind="record-ids"),
         ),
     }
@@ -74,7 +86,7 @@ def _client() -> FakeDaemonClient:
 
 
 @pytest.fixture()
-def server(tmp_path: Path):
+def server(tmp_path: Path) -> Iterator[tuple[TimelineUiServer, str, FakeDaemonClient]]:
     client = _client()
     instance = TimelineUiServer(client=client, host="127.0.0.1", port=0, now=lambda: NOW)
     session = instance.start()
@@ -98,21 +110,21 @@ def _post(
     return connection.getresponse()
 
 
-def test_root_page_is_served_without_token(server) -> None:
+def test_root_page_is_served_without_token(server: _ServerFixture) -> None:
     instance, _token, _client = server
     response = _get(instance, "", "/")
     assert response.status == 200
     assert b"local recall" in response.read().lower()
 
 
-def test_api_requires_bearer_token(server) -> None:
+def test_api_requires_bearer_token(server: _ServerFixture) -> None:
     instance, token, _client = server
     assert _get(instance, "", "/api/status").status == 401
     assert _get(instance, "wrong-token", "/api/status").status == 401
     assert _get(instance, token, "/api/status").status == 200
 
 
-def test_status_maps_to_daemon_status_command(server) -> None:
+def test_status_maps_to_daemon_status_command(server: _ServerFixture) -> None:
     instance, token, client = server
     response = _get(instance, token, "/api/status")
     assert response.status == 200
@@ -121,7 +133,7 @@ def test_status_maps_to_daemon_status_command(server) -> None:
     assert client.requests[-1].command is CliCommand.STATUS
 
 
-def test_timeline_maps_to_daemon_timeline_command(server) -> None:
+def test_timeline_maps_to_daemon_timeline_command(server: _ServerFixture) -> None:
     instance, token, client = server
     response = _get(
         instance,
@@ -132,14 +144,14 @@ def test_timeline_maps_to_daemon_timeline_command(server) -> None:
     assert client.requests[-1].command is CliCommand.TIMELINE
 
 
-def test_search_maps_to_daemon_search_command(server) -> None:
+def test_search_maps_to_daemon_search_command(server: _ServerFixture) -> None:
     instance, token, client = server
     response = _get(instance, token, "/api/search?q=roadmap")
     assert response.status == 200
     assert client.requests[-1].command is CliCommand.SEARCH
 
 
-def test_answer_is_local_only_without_explicit_remote_confirmation(server) -> None:
+def test_answer_is_local_only_without_explicit_remote_confirmation(server: _ServerFixture) -> None:
     instance, token, client = server
     response = _post(instance, token, "/api/answer", {"question": "What was I doing today?"})
     assert response.status == 200
@@ -148,7 +160,7 @@ def test_answer_is_local_only_without_explicit_remote_confirmation(server) -> No
     assert request.query == "What was I doing today?"
 
 
-def test_answer_requires_explicit_remote_confirmation(server) -> None:
+def test_answer_requires_explicit_remote_confirmation(server: _ServerFixture) -> None:
     instance, token, client = server
     response = _post(
         instance,
@@ -160,13 +172,13 @@ def test_answer_requires_explicit_remote_confirmation(server) -> None:
     assert client.requests[-1].command is CliCommand.ASK
 
 
-def test_answer_rejects_missing_question(server) -> None:
+def test_answer_rejects_missing_question(server: _ServerFixture) -> None:
     instance, token, _client = server
     response = _post(instance, token, "/api/answer", {})
     assert response.status == 400
 
 
-def test_preview_is_decrypt_on_demand_and_not_cached(server) -> None:
+def test_preview_is_decrypt_on_demand_and_not_cached(server: _ServerFixture) -> None:
     instance, token, client = server
     record_id = "c0ffee00-0000-4000-8000-000000000001"
     response = _get(instance, token, f"/api/preview/{record_id}")
@@ -179,7 +191,7 @@ def test_preview_is_decrypt_on_demand_and_not_cached(server) -> None:
     assert response.getheader("Cache-Control") == "no-store"
 
 
-def test_delete_requires_confirmation_and_shows_exact_scope(server) -> None:
+def test_delete_requires_confirmation_and_shows_exact_scope(server: _ServerFixture) -> None:
     instance, token, client = server
     record_id = "c0ffee00-0000-4000-8000-000000000001"
 
@@ -201,14 +213,14 @@ def test_delete_requires_confirmation_and_shows_exact_scope(server) -> None:
     assert client.requests[-1].record_ids == (record_id,)
 
 
-def test_emergency_stop_maps_to_daemon_stop(server) -> None:
+def test_emergency_stop_maps_to_daemon_stop(server: _ServerFixture) -> None:
     instance, token, client = server
     response = _post(instance, token, "/api/stop", {})
     assert response.status == 200
     assert client.requests[-1].command is CliCommand.STOP
 
 
-def test_privacy_controls_map_to_daemon_commands(server) -> None:
+def test_privacy_controls_map_to_daemon_commands(server: _ServerFixture) -> None:
     instance, token, client = server
     assert _post(instance, token, "/api/privacy-on", {}).status == 200
     assert client.requests[-1].command is CliCommand.PRIVACY_ON
@@ -216,7 +228,7 @@ def test_privacy_controls_map_to_daemon_commands(server) -> None:
     assert client.requests[-1].command is CliCommand.PRIVACY_OFF
 
 
-def test_daemon_failure_maps_to_error_status(server) -> None:
+def test_daemon_failure_maps_to_error_status(server: _ServerFixture) -> None:
     client = FakeDaemonClient()
     client.responses = {
         "status": CliResponse.failure(
@@ -229,20 +241,22 @@ def test_daemon_failure_maps_to_error_status(server) -> None:
         response = _get(instance, session.token, "/api/status")
         assert response.status == 503
         document = json.loads(response.read())
-        assert document["reason_code"] == "daemon-unavailable"
+        assert document["error"] == "daemon-unavailable"
     finally:
-        instance.close()
+        if instance.is_running():
+            instance.close()
 
 
-def test_session_close_invalidates_token_and_shuts_down(server) -> None:
+def test_session_close_invalidates_token_and_shuts_down(server: _ServerFixture) -> None:
+
     instance, token, _client = server
     response = _post(instance, token, "/api/session/close", {})
     assert response.status == 200
     assert instance.is_running() is False
-    assert _get(instance, token, "/api/status").status in (401,)
+    assert instance.session_token_active(token) is False
 
 
-def test_inactive_session_expires(server) -> None:
+def test_inactive_session_expires(server: _ServerFixture) -> None:
     current = {"value": NOW}
     client = _client()
     instance = TimelineUiServer(
@@ -257,7 +271,7 @@ def test_inactive_session_expires(server) -> None:
         assert _get(instance, session.token, "/api/status").status == 200
         current["value"] = NOW + timedelta(seconds=61)
         assert _get(instance, session.token, "/api/status").status == 401
-        assert instance.is_running() is False
+        assert instance.session_token_active(session.token) is False
     finally:
         if instance.is_running():
             instance.close()

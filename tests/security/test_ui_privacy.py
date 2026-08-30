@@ -3,11 +3,13 @@ from __future__ import annotations
 import http.client
 import json
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+
 from local_recall.cli_contract import (
     CliCommand,
     CliLifecycleState,
@@ -23,37 +25,37 @@ _PREVIEW_MARKER = "preview-plaintext-secret-marker"
 
 @dataclass
 class FakeDaemonClient:
-    responses: dict[str, CliResponse] = field(default_factory=dict)
-    requests: list[CliRequest] = field(default_factory=list)
+    responses: dict[str, CliResponse] = field(default_factory=dict[str, CliResponse])
+    requests: list[CliRequest] = field(default_factory=list[CliRequest])
 
     def request(self, request: CliRequest) -> CliResponse:
         self.requests.append(request)
-        return self.responses.get(
-            request.command.value,
-            CliResponse.success(
-                request_id=request.request_id, lifecycle_state=CliLifecycleState.RECORDING
-            ),
-        )
+        response = self.responses.get(request.command.value)
+        if response is None:
+            return CliResponse.success(request_id=request.request_id)
+        from dataclasses import replace
+
+        return replace(response, request_id=request.request_id)
+
+
+_ServerFixture = tuple[TimelineUiServer, str, FakeDaemonClient]
 
 
 def _client() -> FakeDaemonClient:
     client = FakeDaemonClient()
     client.responses = {
-        "status": CliResponse.success(
-            request_id="status", lifecycle_state=CliLifecycleState.RECORDING
-        ),
+        "status": CliResponse.success(request_id="status"),
         "preview-record": CliResponse.success(
             request_id="preview-record",
-            lifecycle_state=CliLifecycleState.RECORDING,
             query_payload=CliQueryPayload(text=_PREVIEW_MARKER),
         ),
-        "stop": CliResponse.success(request_id="stop", lifecycle_state=CliLifecycleState.RECORDING),
+        "stop": CliResponse.success(request_id="stop", lifecycle_state=CliLifecycleState.OFF),
     }
     return client
 
 
 @pytest.fixture()
-def server(tmp_path: Path):
+def server(tmp_path: Path) -> Iterator[tuple[TimelineUiServer, str, FakeDaemonClient]]:
     client = _client()
     instance = TimelineUiServer(client=client, host="127.0.0.1", port=0, now=lambda: NOW)
     session = instance.start()
@@ -83,7 +85,7 @@ def _no_cache_headers(response: http.client.HTTPResponse) -> None:
     assert response.getheader("Pragma") == "no-cache"
 
 
-def test_every_response_forbids_browser_caching(server) -> None:
+def test_every_response_forbids_browser_caching(server: _ServerFixture) -> None:
     instance, token, _client = server
     responses = [
         _get(instance, "", "/"),
@@ -94,7 +96,9 @@ def test_every_response_forbids_browser_caching(server) -> None:
         _no_cache_headers(response)
 
 
-def test_preview_marker_is_never_persisted_or_retained(server, tmp_path: Path) -> None:
+def test_preview_marker_is_never_persisted_or_retained(
+    server: _ServerFixture, tmp_path: Path
+) -> None:
     instance, token, _client = server
     response = _get(instance, token, "/api/preview/c0ffee00-0000-4000-8000-000000000001")
     body = response.read()
@@ -105,7 +109,7 @@ def test_preview_marker_is_never_persisted_or_retained(server, tmp_path: Path) -
             assert _PREVIEW_MARKER.encode() not in path.read_bytes()
 
 
-def test_ui_asset_contains_no_external_urls(server) -> None:
+def test_ui_asset_contains_no_external_urls(server: _ServerFixture) -> None:
     instance, _token, _client = server
     shell = instance.page_source()
     assert not re.search(r"https?://", shell)
@@ -113,17 +117,17 @@ def test_ui_asset_contains_no_external_urls(server) -> None:
     assert "<link " not in shell
 
 
-def test_emergency_stop_is_keyboard_accessible(server) -> None:
-    instance, _token, client = server
+def test_emergency_stop_is_keyboard_accessible(server: _ServerFixture) -> None:
+    instance, token, client = server
     shell = instance.page_source()
     assert 'accesskey="s"' in shell
     assert "keydown" in shell
-    response = _post(instance, server[1], "/api/stop", {})
+    response = _post(instance, token, "/api/stop", {})
     assert response.status == 200
     assert client.requests[-1].command is CliCommand.STOP
 
 
-def test_session_close_clears_credentials_and_previews(server) -> None:
+def test_session_close_clears_credentials_and_previews(server: _ServerFixture) -> None:
     instance, token, _client = server
     _get(instance, token, "/api/preview/c0ffee00-0000-4000-8000-000000000001")
     close = _post(instance, token, "/api/session/close", {})
@@ -133,7 +137,7 @@ def test_session_close_clears_credentials_and_previews(server) -> None:
     assert instance.is_running() is False
 
 
-def test_expired_session_clears_credentials(server) -> None:
+def test_expired_session_clears_credentials(server: _ServerFixture) -> None:
     current = {"value": NOW}
     client = _client()
     instance = TimelineUiServer(
@@ -155,6 +159,6 @@ def test_expired_session_clears_credentials(server) -> None:
             instance.close()
 
 
-def test_server_binds_loopback_only(server) -> None:
+def test_server_binds_loopback_only(server: _ServerFixture) -> None:
     instance, _token, _client = server
     assert instance.host == "127.0.0.1"

@@ -1,0 +1,63 @@
+#+title: RAGE Issue 36 — Local Timeline and Privacy-Management UI
+
+* Transaction
+- Issue: #36 — Build a local timeline and privacy-management UI
+- Branch: =agent/issue-36-timeline-ui=
+- PR: #98
+- Dependencies: #28, #29, #30, #31 (satisfied)
+
+* Acceptance criteria
+- The UI is fully functional with networking disabled.
+- Browser cache/history inspection reveals no captured content beyond the active authenticated session.
+- Destructive operations show exact scope and require confirmation.
+- Closing or timing out the UI clears decrypted previews and session credentials.
+
+* Design decisions
+- Loopback-only HTTP server (stdlib =http.server=) that must be explicitly
+  started; binds =127.0.0.1= exclusively (constructor rejects anything else) on
+  an ephemeral port. No dependency, no build step, no third-party asset.
+- Per-session bearer token minted at =start()=; constant-time comparison; every
+  =/api= route requires it. The HTML shell is served without a token (it is
+  content-free) and every API route is authorized.
+- The server maps routes onto the closed =CliCommand= set through
+  =cli_service.execute_command= and the =DaemonClient= port — the same
+  authenticated IPC path, deadlines, and sanitized responses as the CLI. No new
+  daemon commands; the daemon remains the sole authority.
+- Every response carries =Cache-Control: no-store= and =Pragma: no-cache=.
+  Previews are decrypt-on-demand pass-through with zero retained payloads and
+  no disk writes anywhere in the server.
+- Destructive deletion without =confirm: true= performs no daemon call and
+  returns the exact scope; with confirmation the daemon's canonical scope
+  resolution and audit still run.
+- Emergency stop is keyboard-accessible in the shell (=accesskey="s"= and an
+  =Escape= keydown handler) and maps to the urgent =stop= command.
+- Session close (user-initiated) and inactivity expiry both clear the token and
+  stop the server; verified by tests asserting credential invalidation and
+  subsequent 401/socket closure.
+- Remote answering is gated per answer: local-only unless the user explicitly
+  confirms remote processing for that single question; the request payload
+  carries the confirmation rather than any persisted consent.
+
+* Execute / TDD
+- Valid RED (head =a337524-era RED commit on PR #98=): unit + security test
+  files fail at collection on the missing =TimelineUiServer=; strict Pyright
+  fails exactly on the unknown import symbol. CI run recorded on the PR.
+- GREEN (this commit): full suite =1122 passed= (1100 + 22 new), strict Pyright
+  0 errors, ruff/shellcheck clean, verify-failure-modes 9/9, verify-e2e 6/6,
+  bandit/detect-secrets/policy clean, canonical =./scripts/check= green.
+- Contract notes discovered during implementation: =CliResponse.success=
+  forbids mixing lifecycle state with content payloads; =PREVIEW_RECORD=
+  requires a closed =target=; =stop= success requires lifecycle =off= — the UI
+  server was shaped by these closed contracts rather than widening them.
+
+* Verification mapping
+- Functional with networking disabled: loopback binding + fail-closed daemon
+  client; no external fetches exist in the shell (no =http(s)://= anywhere —
+  asserted).
+- Cache/history inspection: no-store/no-cache on shell, status, and preview
+  responses (parametrized surface test).
+- Destructive scope + confirmation: refusal-without-confirm test asserting no
+  daemon deletion request was issued, plus the exact-scope echo; confirmed path
+  maps to =DELETE_RECORDS= with the same record ids.
+- Close/expiry clears credentials and previews: token invalidated, server
+  stopped, =cached_previews()==0=, preview plaintext never on disk.
