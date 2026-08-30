@@ -168,6 +168,19 @@ class EncryptedSemanticIndex:
             await self._save(self._active, replacement)
         return IndexManifest(replacement.model_id, replacement.dimensions, len(replacement.entries))
 
+    async def record_ids(self) -> tuple[UUID, ...]:
+        """Content-free identifiers currently present in the active snapshot."""
+        async with self._operation_lock:
+            snapshot = await self._load(self._active)
+        if snapshot is None:
+            return ()
+        return tuple(entry.record_id for entry in snapshot.entries)
+
+    async def clear(self) -> None:
+        """Invalidate the active snapshot; the index becomes uninitialized."""
+        async with self._operation_lock:
+            await asyncio.to_thread(self._active.unlink, missing_ok=True)
+
     async def search(
         self,
         query: SemanticQuery,

@@ -206,6 +206,66 @@ class AuditRecorder:
             correlation_id=correlation_id,
         )
 
+    def retention_sweep(
+        self,
+        *,
+        count: int,
+        bytes_reclaimed: int,
+        succeeded: bool,
+        dry_run: bool = False,
+        correlation_id: UUID | None = None,
+    ) -> AuditEvent:
+        return self._emit(
+            category=AuditCategory.SYSTEM,
+            action=AuditAction.RETENTION_SWEEP,
+            outcome=AuditOutcome.SUCCEEDED if succeeded else AuditOutcome.FAILED,
+            reason=AuditReasonCode.RETENTION_SWEEP,
+            correlation_id=correlation_id,
+            attributes={
+                "count": count,
+                "bytes": bytes_reclaimed,
+                "success": succeeded,
+                "dry_run": dry_run,
+            },
+        )
+
+    def garbage_collection(
+        self,
+        *,
+        count: int,
+        succeeded: bool,
+        correlation_id: UUID | None = None,
+    ) -> AuditEvent:
+        return self._emit(
+            category=AuditCategory.SYSTEM,
+            action=AuditAction.GARBAGE_COLLECTION,
+            outcome=AuditOutcome.SUCCEEDED if succeeded else AuditOutcome.FAILED,
+            reason=AuditReasonCode.RETENTION_SWEEP,
+            correlation_id=correlation_id,
+            attributes={"count": count, "success": succeeded},
+        )
+
+    def purge_all(
+        self,
+        *,
+        count: int,
+        key_destroyed: bool,
+        succeeded: bool,
+        correlation_id: UUID | None = None,
+    ) -> AuditEvent:
+        return self._emit(
+            category=AuditCategory.SYSTEM,
+            action=AuditAction.PURGE_ALL,
+            outcome=AuditOutcome.SUCCEEDED if succeeded else AuditOutcome.FAILED,
+            reason=AuditReasonCode.RETENTION_SWEEP,
+            correlation_id=correlation_id,
+            attributes={
+                "count": count,
+                "success": succeeded,
+                "key_destroyed": key_destroyed,
+            },
+        )
+
     def deletion_request(
         self,
         *,

@@ -35,6 +35,9 @@ class AuditAction(StrEnum):
     EXPORT_DECISION = "export_decision"
     KEY_OPERATION = "key_operation"
     SYSTEM_HARDENING = "system_hardening"
+    RETENTION_SWEEP = "retention_sweep"
+    PURGE_ALL = "purge_all"
+    GARBAGE_COLLECTION = "garbage_collection"
     STORAGE_PERMISSION_CHECK = "storage_permission_check"
     LOG_ROTATION = "log_rotation"
     IPC_REQUEST = "ipc_request"
@@ -83,6 +86,9 @@ class AuditReasonCode(StrEnum):
     PERMISSIONS_VALID = "permissions_valid"
     PERMISSIONS_INVALID = "permissions_invalid"
     CORE_DUMPS_DISABLED = "core_dumps_disabled"
+    RETENTION_SWEEP = "retention_sweep"
+    PURGE_ALL = "purge_all"
+    GARBAGE_COLLECTION = "garbage_collection"
     HARDENING_FAILED = "hardening_failed"
     CRITICAL_FAULT = "critical_fault"
     IPC_AUTHORIZED = "ipc_authorized"
@@ -100,6 +106,9 @@ _ACTION_CATEGORIES: dict[AuditAction, AuditCategory] = {
     AuditAction.EXPORT_DECISION: AuditCategory.EXPORT,
     AuditAction.KEY_OPERATION: AuditCategory.KEY,
     AuditAction.SYSTEM_HARDENING: AuditCategory.SYSTEM,
+    AuditAction.RETENTION_SWEEP: AuditCategory.SYSTEM,
+    AuditAction.PURGE_ALL: AuditCategory.SYSTEM,
+    AuditAction.GARBAGE_COLLECTION: AuditCategory.SYSTEM,
     AuditAction.STORAGE_PERMISSION_CHECK: AuditCategory.SYSTEM,
     AuditAction.LOG_ROTATION: AuditCategory.SYSTEM,
     AuditAction.IPC_REQUEST: AuditCategory.IPC,
@@ -127,6 +136,8 @@ _ALLOWED_ATTRIBUTE_KEYS = frozenset(
         "application",
         "time_range",
         "success",
+        "dry_run",
+        "key_destroyed",
     }
 )
 
@@ -234,6 +245,35 @@ def _validate_action_fields(event: AuditEvent, attributes: dict[str, int | bool]
         and event.record_id is None
     ):
         raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action is AuditAction.RETENTION_SWEEP:
+        required = {"count", "bytes", "success", "dry_run"}
+        if set(attributes) != required:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        for key in ("success", "dry_run"):
+            if type(attributes[key]) is not bool:
+                raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        for key in ("count", "bytes"):
+            if type(attributes[key]) is not int or attributes[key] < 0:
+                raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action is AuditAction.GARBAGE_COLLECTION:
+        required = {"count", "success"}
+        if set(attributes) != required:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if type(attributes["success"]) is not bool:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if type(attributes["count"]) is not int or attributes["count"] < 0:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+
+    if event.action is AuditAction.PURGE_ALL:
+        required = {"count", "success", "key_destroyed"}
+        if set(attributes) != required:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if type(attributes["success"]) is not bool or type(attributes["key_destroyed"]) is not bool:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
+        if type(attributes["count"]) is not int or attributes["count"] < 0:
+            raise AuditFailure(AuditFailureCode.INVALID_EVENT)
 
     if event.action is AuditAction.DELETION_REQUEST:
         required = {
