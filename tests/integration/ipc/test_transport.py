@@ -144,6 +144,7 @@ def test_malformed_multipart_is_audited_and_server_remains_available(tmp_path: P
         "control": False,
         "diagnostic": False,
         "query": False,
+        "delete": False,
         "urgent": False,
     }
     assert "synthetic-malformed-frame" not in repr(rejected)
@@ -182,6 +183,7 @@ def test_authorized_request_emits_content_free_ipc_audit_event(tmp_path: Path) -
         "control": False,
         "diagnostic": False,
         "query": True,
+        "delete": False,
         "urgent": False,
     }
     assert private_marker not in repr(event)
@@ -223,6 +225,7 @@ def test_failed_authentication_is_audited_without_dispatch(tmp_path: Path) -> No
         "control": False,
         "diagnostic": False,
         "query": False,
+        "delete": False,
         "urgent": False,
     }
 

@@ -150,6 +150,24 @@ class EncryptedSemanticIndex:
             await self._save(self._active, replacement)
         return IndexManifest(replacement.model_id, replacement.dimensions, len(replacement.entries))
 
+    async def remove(self, record_ids: tuple[UUID, ...]) -> IndexManifest:
+        if not record_ids:
+            raise ValueError("record removal requires at least one record ID")
+        if len(set(record_ids)) != len(record_ids):
+            raise ValueError("duplicate record IDs are not allowed")
+        remove_ids = frozenset(record_ids)
+        async with self._operation_lock:
+            current = await self._load(self._active)
+            if current is None:
+                return IndexManifest("uninitialized", 0, 0)
+            replacement = _Snapshot(
+                current.model_id,
+                current.dimensions,
+                tuple(entry for entry in current.entries if entry.record_id not in remove_ids),
+            )
+            await self._save(self._active, replacement)
+        return IndexManifest(replacement.model_id, replacement.dimensions, len(replacement.entries))
+
     async def search(
         self,
         query: SemanticQuery,

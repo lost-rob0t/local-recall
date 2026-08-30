@@ -20,12 +20,26 @@ Query and inspection commands:
 
 ```text
 local-recall ask "What was I doing Saturday?"
-local-recall timeline [--start ISO-8601 --end ISO-8601] [--json]
+local-recall timeline [--start ISO-8601 --end ISO-8601] [--application NAME] [--json]
 local-recall search QUERY [--start ISO-8601 --end ISO-8601] [--json]
+local-recall preview RECORD_ID [--image] [--json]
 local-recall providers [--json]
 local-recall health [--json]
 local-recall storage stats [--json]
 ```
+
+Destructive deletion commands (issue #30) always require one explicit closed scope:
+
+```text
+local-recall delete --record-id UUID [--record-id UUID ...] [--json]
+local-recall delete --cluster CLUSTER_ID [--json]
+local-recall delete --application NAME --start ISO-8601 --end ISO-8601 [--json]
+local-recall delete --start ISO-8601 --end ISO-8601 [--json]
+```
+
+Deletion goes through the authenticated IPC boundary, requires the daemon-side
+`delete` capability, emits a sanitized audit event, and cannot be undone. See
+`timeline.md` for scope semantics.
 
 Configuration validation is local and does not contact the daemon:
 

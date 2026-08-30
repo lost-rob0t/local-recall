@@ -196,3 +196,50 @@ def test_raw_document_is_rejected_before_embedding(tmp_path: Path) -> None:
         )
 
     assert provider.calls == []
+
+
+def test_selective_removal_rewrites_encrypted_index_without_provider_calls(tmp_path: Path) -> None:
+    root = tmp_path / "index"
+    index = make_index(root)
+    provider = FixedEmbeddingProvider()
+    first = document(1, "alpha")
+    second = document(2, "beta")
+    asyncio.run(index.rebuild((first, second), provider))
+    provider.calls.clear()
+
+    manifest = asyncio.run(index.remove((first.record_id,)))
+
+    assert manifest.record_count == 1
+    assert provider.calls == []
+    alpha_hits = asyncio.run(index.search(SemanticQuery("alpha"), provider))
+    assert first.record_id not in {hit.record_id for hit in alpha_hits}
+    hits = asyncio.run(index.search(SemanticQuery("beta"), provider))
+    assert tuple(hit.record_id for hit in hits) == (second.record_id,)
+    persisted = b"".join(path.read_bytes() for path in root.rglob("*") if path.is_file())
+    assert str(first.record_id).encode() not in persisted
+
+
+def test_selective_removal_is_idempotent_and_rejects_duplicate_scope(tmp_path: Path) -> None:
+    index = make_index(tmp_path / "index")
+    provider = FixedEmbeddingProvider()
+    first = document(1, "alpha")
+    second = document(2, "beta")
+    asyncio.run(index.rebuild((first, second), provider))
+
+    first_result = asyncio.run(index.remove((first.record_id,)))
+    second_result = asyncio.run(index.remove((first.record_id,)))
+
+    assert first_result.record_count == 1
+    assert second_result.record_count == 1
+    with pytest.raises(ValueError, match="duplicate"):
+        asyncio.run(index.remove((second.record_id, second.record_id)))
+
+
+def test_removal_on_uninitialized_index_is_a_vacuous_no_op(tmp_path: Path) -> None:
+    index = make_index(tmp_path / "index")
+    provider = FixedEmbeddingProvider()
+
+    manifest = asyncio.run(index.remove((UUID(int=1),)))
+
+    assert manifest.record_count == 0
+    assert provider.calls == []

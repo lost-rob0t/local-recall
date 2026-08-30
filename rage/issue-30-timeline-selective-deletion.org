@@ -1,0 +1,153 @@
+#+title: RAGE Issue 30 — Timeline Inspection and Selective Deletion
+
+* Transaction
+- Issue: #30 — Implement timeline inspection and selective deletion
+- Immutable starting main: =44917323d8649c56bb8d7948315eca78d0eadc81=
+- Branch: =agent/issue-30-timeline-deletion=
+- Dependencies: #24, #25, #29
+- Dependency state at consumption: satisfied on current =main=
+
+* Acceptance criteria
+- A user can identify and delete an unwanted capture through CLI/API first; richer UI may follow.
+- Deleted records no longer appear in search, summaries, or answers.
+- Failed partial deletion is recoverable and never leaves orphaned plaintext.
+- Every destructive action requires explicit scope and emits a sanitized audit event.
+
+* Required behavior
+- Timeline listing by date, time, application, workspace, and activity cluster.
+- Explicit decrypt-on-demand preview for redacted screenshots and text.
+- Show capture provenance, redaction findings, model versions, and policy decision.
+- Delete individual records, clusters, applications, or time ranges.
+- Deletion updates indexes, summaries, citations, and storage references atomically.
+- Preview caches remain memory-only or encrypted and expire promptly.
+
+* RAGE iteration 1
+** Research
+*** Current architecture evidence
+- Canonical storage already has a crash-recoverable single-record deletion state: mark the catalog row =deleting=, unlink the encrypted blob, fsync the shard, then remove the catalog row. =get= and day-range candidate enumeration expose only =ready= records.
+- The storage catalog deliberately contains only coarse/opaque metadata. Exact timestamps, application/workspace names, OCR, titles, summaries, embeddings, and deletion scope are not catalog columns. Scope selection therefore must happen only after bounded decrypt-on-demand, not by adding plaintext metadata columns.
+- Retrieval treats storage as authoritative: semantic hits are intersected with canonical storage candidate IDs and every returned passage requires a still-present encrypted envelope. A stale semantic entry therefore cannot by itself resurrect a deleted record into answers.
+- The semantic index is one encrypted authenticated snapshot replaced atomically under an operation lock. It originally supported add/search/rebuild but no record-removal operation.
+- Activity clusters/summaries are another encrypted replace-in-full snapshot. =ActivityReconciler= already knows how to regenerate clusters/summaries from a supplied tuple of remaining redacted records and replaces the complete snapshot.
+- The authenticated owner-only IPC boundary from #29 already separates capabilities and supplies the correct transport authority for destructive CLI/API calls.
+
+*** External primary-source findings
+- SQLite serializes writers and provides atomic database transactions, but WAL mode commits by appending commit records to the WAL; checkpointing later transfers pages into the main database. Therefore application-level logical deletion must not be confused with immediate physical erasure of every prior byte.
+- SQLite documents =secure_delete= and =VACUUM= as mechanisms affecting forensic remnants in database pages. Those are relevant to #31 cryptographic/retention deletion, not a justification for widening #30 into physical secure erase.
+- SQLite WAL and journal files are part of persistent database state during recovery. Crash safety must preserve the deletion transaction state rather than deleting recovery metadata ad hoc.
+
+*** Adversarial conclusions
+1. Rejected: one in-memory "transaction" that mutates catalog, semantic index, activity snapshot, and blobs and rolls back on exceptions. The resources are independent files; rollback after a blob unlink cannot recreate the original ciphertext safely without inventing a second plaintext/ciphertext cache.
+2. Rejected: delete blob first without durable intent, then repair derived state. A crash after unlink but before repair creates no durable coordinator evidence.
+3. Rejected: store application/workspace/time-range deletion predicates in the plaintext catalog. This violates the catalog leakage boundary from #11.
+4. Rejected: treat semantic index removal as the authoritative deletion. Retrieval correctly treats encrypted storage as canonical, so storage visibility/existence must remain authoritative.
+5. Accepted: resolve an explicit bounded deletion scope to opaque record IDs while decrypted records are memory-only; record a content-free durable intent; use the already-proven canonical storage deletion state machine for every selected record; then reconcile every derived encrypted snapshot from surviving canonical records; finally clear the durable intent. Crash recovery always resumes forward.
+
+** Design
+*** Authority and state ownership
+- Storage remains canonical record existence/visibility authority.
+- A new deletion coordinator owns orchestration only; it does not duplicate storage crypto, indexing, clustering, answering, or IPC authorization.
+- Destructive requests are closed typed scopes: record IDs, activity cluster ID/source IDs, application, or bounded time range. Empty/implicit "everything" scopes are invalid in #30.
+- Scope resolution uses bounded candidate enumeration + decrypt-on-demand and keeps selected plaintext only for the operation lifetime.
+- Once canonical deletion begins, no later cleanup failure is allowed to resurrect a selected record.
+
+*** Forward-only deletion state machine — refined after storage audit
+The initial five-phase hidden/blob split would duplicate the storage state machine. The repository already has a stronger per-record crash-safe sequence (=ready -> deleting -> blob unlink/fsync -> catalog removal=). Reuse it rather than introduce a second visibility authority.
+
+1. =planned=: an owner-only content-free deletion journal durably binds an opaque request ID to the exact selected record UUIDs.
+2. For every selected UUID invoke the existing idempotent canonical storage delete. A crash here leaves the journal =planned=; storage recovery completes any per-record =deleting= state, and coordinator retry safely repeats already-completed deletes.
+3. =records-deleted=: written only after every canonical delete succeeds. At this point retrieval cannot newly load those records even if derived snapshots are stale.
+4. Remove the IDs from the encrypted semantic snapshot and reconcile the encrypted activity snapshot from surviving canonical records.
+5. =derived-reconciled=: written only after both derived-state operations succeed.
+6. Clear the journal and fsync its owner-only directory.
+
+A crash at any phase resumes forward. No rollback makes a deleted record visible again merely because later derived-state repair fails. This avoids a catalog migration/version bump and preserves #11's proven storage recovery logic.
+
+*** Privacy invariants
+- Timeline list output may expose only user-requested redacted fields and provenance through the authenticated query capability; status/audit remain content-free.
+- Screenshot/text preview is explicit decrypt-on-demand, bounded, returned only through the owner-authenticated query path, and not cached in plaintext.
+- Destructive audit events contain operation/request ID, scope class, selected record count, outcome/reason, and timing only; never application names, workspace names, OCR, titles, record contents, prompts, screenshot bytes, or raw scope text.
+- The deletion coordinator never writes decrypted records, previews, or scope metadata to temporary files.
+- Existing #31 remains owner of cryptographic deletion/key destruction/retention secure erase. #30 guarantees logical inaccessibility plus encrypted blob removal and derived-state cleanup.
+
+*** Race/failure analysis
+- Concurrent retrieval started before canonical deletion may hold an already-decrypted working copy. A post-decrypt canonical-visibility recheck is required before returning a passage/preview.
+- Stale semantic hits are harmless only while retrieval intersects with canonical ready records; tests must lock this invariant.
+- Activity snapshot replacement is atomic but can fail; the deletion journal remains durable and deleted records remain unavailable until retry succeeds.
+- Cancellation before journal admission has no effect. Cancellation after canonical deletion begins cannot roll back visibility; the durable journal allows later recovery to continue cleanup.
+- Duplicate delete requests must be idempotent by selected record identity; one active journal transaction is allowed at a time.
+- A stale journal temporary file must not permanently wedge recovery; journal write/recovery tests must cover interrupted replacement.
+
+*** Migration/configuration
+- No plaintext content columns are permitted.
+- The refined design requires no catalog migration: durable transaction metadata lives in a bounded owner-only content-free journal containing only opaque request/record identifiers and a closed phase/version.
+- No new remote provider/network dependency.
+
+*** Verification gates
+- RED before each behavior implementation.
+- Focused unit/contract/integration/security tests for scope validation, timeline filtering, memory-only preview, derived-state removal, crash after each phase, cancellation, concurrent retrieval, idempotency, sanitized audit, and no plaintext artifacts.
+- Canonical =./scripts/check= must pass.
+- =nix flake check= when the branch changes Nix/package surfaces.
+- Exact-head GitHub Actions must be green before merge.
+
+** Execute / TDD
+*** Slice 1 — selective encrypted semantic-index removal
+- Valid RED: head =53b2da5322f7efe9981ab6c9d612cbe041628be4=, CI run 784. Formatting, Ruff, ShellCheck passed; strict Pyright failed specifically because =EncryptedSemanticIndex.remove= did not exist.
+- Production: add an operation-locked removal path that validates a non-empty unique UUID scope, decrypts the existing authenticated snapshot, filters selected IDs, and atomically rewrites the encrypted snapshot without invoking an embedding provider.
+- First production run exposed a test-oracle mistake: semantic search intentionally returns zero-score surviving hits, so an =alpha= query after deleting the alpha record may still return beta at score zero. The oracle was corrected to assert the deleted record ID is absent rather than demanding an empty result.
+- GREEN: head =fd1ee9472eacaa0fe62b3c9a10af1fbd80b8086f=, CI run 786. Both Ubuntu matrices, canonical gate, strict typing, unit/contract/integration/security tests, security scans, and failure-propagation passed.
+
+*** Slice 2 — durable deletion journal and forward recovery coordinator
+- Invalid RED attempts =330f8c9a6064e28c1632a06a8180b01a4c808871=, =47267823c3eeb256aed28d520ac903d7b60febe6=, and =c2bda7e1ca68f3ab04b8113be9caa46ad9fad2e6= were rejected because Ruff import sorting failed before behavior validation.
+- Added only package/module scaffolding to let static analysis reach the intended missing API.
+- Valid RED: head =9e11927ad677056fecb124b9a3735531170ec99e=, CI run 792. Formatting, Ruff, and ShellCheck passed; strict Pyright failed specifically because =DeletionCoordinator=, =DeletionJournal=, and =DeletionPhase= were absent.
+- Production implements an owner-only 0700 journal directory, 0600 bounded/closed JSON intent, atomic fsync+replace writes, monotonic phases, idempotent canonical storage deletion, derived semantic/activity cleanup, and =recover()= that resumes forward after an interruption.
+- Production run 793 exposed formatting only; the next exact-formatted run exposed two strict-Pyright unknown-element errors at the untrusted JSON list boundary. These are implementation typing defects, not accepted RED evidence; the boundary was tightened through explicit =object -> list[object] -> validated list[str]= narrowing.
+- Later branch head =3b5b1d0cc74ae7f9763e3fe5265a443c396e74d6= passed exact-head CI run 800 across both Ubuntu matrices, canonical gate, all populated test layers, security checks, and failure-propagation.
+
+*** Slice 3 — stale journal temporary-file crash recovery
+- The design already required interrupted journal replacement not to wedge recovery. A concrete audit found =_write_sync= used =O_EXCL= for =.deletion-intent.json.tmp= without handling an orphan left by a crash before =os.replace=.
+- Valid RED: head =5ac3f97b32fc10adaa9066d6157de7ad83860915=, CI run 801. Formatting, Ruff, ShellCheck, and strict Pyright passed. Unit tests then failed exactly at =test_deletion_journal_recovers_from_stale_temporary_file=: 703 passed / 1 failed, with =FileExistsError= from the stale =.tmp= path.
+- Production: before creating the replacement with =O_EXCL=, remove only the journal's fixed private temporary path when it exists (including a dangling symlink path), fsync the owner-only journal directory, then create/write/fsync/replace as before. Non-file objects that cannot be unlinked still fail closed rather than being silently bypassed.
+- GREEN: head =5b42296dde2ee27913757639376250501d46fd8d=, CI run 802. Both Ubuntu matrices, canonical repository gate, unit/contract/integration/security suites, security checks, strict typing, and failure-propagation all passed.
+
+*** Slice 4 — surviving-record activity rebuild adapter
+- Valid RED: head =8b10866920bf9e5e326db42a30258123834e2087=, CI run 33286242144. Formatting, Ruff, and ShellCheck passed; strict Pyright failed specifically because =SurvivingRecordActivityReconciler= and =TimelineRebuildFailure= were absent, and the behavioral suite failed at collection (ImportError).
+- Production: =timeline/activity_rebuild.py= rebuilds the encrypted activity snapshot exclusively from surviving canonical records — bounded day-chunked catalog enumeration inside the snapshot's own window, decrypt-on-demand with concurrent-deletion skips, candidate-overflow fail-closed, then the existing =ActivityReconciler= replaces the whole snapshot. Decrypted records stay memory-only.
+- GREEN: head =47edbb96e86429ba8075a2bfdc293cf8b6dabb4f=, CI run 33286491997. Both Ubuntu matrices, canonical gate, all populated test layers, security checks, strict typing, and failure-propagation passed.
+
+*** Slice 5 — bounded typed deletion-scope service
+- Valid RED: head =92c58e5902b0f6bded5ec559dbb1da34541fadd1=, CI run 33286671582. Static analysis failed exactly on the missing =DeletionScope= / =DeletionScopeResolver= / =ScopeResolutionFailure= API and the suite failed at collection.
+- First production run exposed a real security-scan failure: Bandit B101 rejected =assert=-based type narrowing in production scope resolution. The asserts were replaced with explicit fail-closed checks raising =ScopeResolutionFailure=; green head =58a68bc147e026800bea689fc3da70ae01e2d099= (CI run on 58a68bc). Scope classes are closed: record IDs, opaque activity-cluster ID, application within mandatory explicit bounds, and bounded time range; resolution decrypts candidates on demand for exact capture-time/application matching and keeps only opaque record IDs.
+- Application-wide unbounded purges were deliberately rejected: retention/eviction scopes belong to #31. Time-range precision requires decryption because the catalog stores only day buckets.
+
+*** Slice 6 — typed timeline/filter/preview service
+- Valid RED: head =38a6daa=, CI run failed exactly on the missing =TimelineInspector= / =PreviewUnavailable= API (collection ImportError; strict Pyright unknown-import-symbol errors only).
+- Production: =timeline/inspection.py= provides bounded newest-first listing by explicit window with optional application filter; entries expose only redacted metadata, opaque cluster identifiers, policy revisions, finding counts, and capture provenance. =preview_text= and =preview_screenshot= decrypt exactly one record on demand, return bounded payloads, and never cache or persist content (proved by storage-marker scans and by revoking canonical visibility between calls).
+- GREEN: head =f3f2f231c4e73518d40be47d6a7bb610f93f9812=, CI run success on exact head.
+
+*** Slice 7 — sanitized destructive audit events
+- Valid RED: =tests/unit/timeline/test_deletion_audit.py= failed on the missing =AuditRecorder.deletion_request= API and =AuditAction.DELETION_REQUEST=.
+- Production: =deletion_request= events (category RECORD) carry only correlation ID, closed scope class encoded as exactly one of the =records/cluster/application/time_range= booleans, =success= flag, non-negative =count=, and timing; the model rejects any content-bearing attribute key, zero or multiple scope classes, and wrong types. The IPC request audit gained a fourth closed capability flag =delete= with the same exactly-one-authorized-capability invariant.
+- Merged with the IPC slice; full unit/audit suites green before push.
+
+*** Slice 8 — authenticated IPC exposure, daemon handler, and CLI surface
+- Valid RED: =tests/unit/timeline/test_ipc_handler.py= and =tests/integration/ipc/test_timeline_deletion.py= failed at collection because =local_recall.timeline.ipc= did not exist.
+- Production: the CLI contract gained =preview-record= and =delete-records= commands, typed optional scope payload fields (record IDs, cluster ID, application, target) with exact-single-scope validation, and a content-free =CliDeletionPayload=. The protocol codec maps =delete-records= to the dedicated =IpcCapability.DELETE= (granted to both server and client codecs) and =preview-record= to the query capability, decodes the extended payload, and rejects conflicting scope frames before dispatch. =TimelineDeletionHandler= maps the three commands onto inspector/resolver/coordinator, serializes destructive work, emits the sanitized audit event, fails closed on audit failure after durable deletion, and maps every failure to fixed sanitized reason codes.
+- Two behavioral defects surfaced during production runs and were fixed with their own tests:
+  1. =EncryptedSemanticIndex.remove= raised on an uninitialized index, which would wedge any deletion transaction whose capture history never built the semantic index. RED =test_removal_on_uninitialized_index_is_a_vacuous_no_op= (IndexFailure) then production made removal vacuous when no snapshot exists.
+  2. The integration round trip caught the handler wiring calling =ActivityReconciler.reconcile= instead of the surviving-record adapter (=handler-failed=), fixed by binding =SurvivingRecordActivityReconciler.reconcile_deleted= into the coordinator.
+- CLI: =local-recall timeline [--application]=, =local-recall preview=, and =local-recall delete= send the closed scopes through =execute_command= over the authenticated =DaemonClient= only; the CLI architecture security test still proves no daemon-authority imports.
+- GREEN: heads =65fbbae6dcfb43e70d3ba01c1f1e047dcf61504e= (CI success), =5219fdb9d905ff3e1c40ba2ee106b6a60edbeba5= (CI success), =5c990f5= (docs).
+
+*** Slice 9 — journal permission and symlink abuse coverage
+- Adversarial coverage =tests/unit/timeline/test_deletion_journal_abuse.py= (12 cases): symlinked journal root, group-writable root, foreign-owner root (monkeypatched UID), symlinked journal file, non-regular journal file, group-readable journal file, foreign-owned journal file, oversized journal, tampered payload (version/shape), hostile symlink at the exact private temporary path (replaced without following; decoy target untouched), clear refusing a symlinked journal (decoy untouched), and clear of a regular file with directory fsync.
+- The hardening itself landed in slices 2–3 with a genuine RED there; these tests lock the invariants as regression coverage and all pass.
+
+** Verify
+- Slice 1 exact-head CI is green.
+- Slice 2 coordinator/recovery implementation is green on later exact branch head =3b5b1d0cc74ae7f9763e3fe5265a443c396e74d6= (CI run 800).
+- Slice 3 stale-temp recovery is green on =5b42296dde2ee27913757639376250501d46fd8d= (CI run 802).
+- Slices 4–8 exact-head CI green (47edbb9, 58a68bc, f3f2f23, 65fbbae, 5219fdb).
+- Final local canonical gate on documentation head: =./scripts/check= → 887 passed (unit 771, security 61, integration 49, contract 6), 8 failure modes verified, repository policy checks passed, Bandit clean, detect-secrets clean, ruff format/check clean, strict Pyright clean.
+- Issue acceptance is now fully covered: identify (timeline listing) and delete (scoped coordinator) through CLI/API first; deleted records cannot reappear in search, summaries, clusters, or answers (canonical authority + derived rebuilds from survivors); failed partial deletions resume forward without orphaned plaintext; every destructive action requires an explicit closed scope and emits a sanitized audit event.

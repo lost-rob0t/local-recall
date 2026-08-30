@@ -24,6 +24,7 @@ from local_recall.cli_contract import (
     PROTOCOL_VERSION,
     CliCitation,
     CliCommand,
+    CliDeletionPayload,
     CliDiagnosticCategory,
     CliDiagnosticEntry,
     CliDiagnosticPayload,
@@ -118,6 +119,7 @@ class ZmqIpcServer:
                     IpcCapability.CONTROL,
                     IpcCapability.QUERY,
                     IpcCapability.DIAGNOSTIC,
+                    IpcCapability.DELETE,
                 }
             ),
         )
@@ -425,6 +427,7 @@ class ZmqDaemonClient:
                     IpcCapability.CONTROL,
                     IpcCapability.QUERY,
                     IpcCapability.DIAGNOSTIC,
+                    IpcCapability.DELETE,
                 }
             ),
         )
@@ -500,10 +503,17 @@ def _audit_capability(command: CliCommand) -> str:
         CliCommand.PRIVACY_OFF,
     }:
         return "control"
-    if command in {CliCommand.ASK, CliCommand.TIMELINE, CliCommand.SEARCH}:
+    if command in {
+        CliCommand.ASK,
+        CliCommand.TIMELINE,
+        CliCommand.SEARCH,
+        CliCommand.PREVIEW_RECORD,
+    }:
         return "query"
     if command in {CliCommand.PROVIDERS, CliCommand.HEALTH, CliCommand.STORAGE_STATS}:
         return "diagnostic"
+    if command is CliCommand.DELETE_RECORDS:
+        return "delete"
     raise ValueError("unsupported IPC capability")
 
 
@@ -563,6 +573,7 @@ def _decode_response(frame: bytes) -> CliResponse:
         query_payload = _decode_query_payload(values.get("query_payload"))
         diagnostic_payload = _decode_diagnostic_payload(values.get("diagnostic_payload"))
         status_payload = _decode_status_payload(values.get("status_payload"))
+        deletion_payload = _decode_deletion_payload(values.get("deletion_payload"))
         if outcome is CliOutcome.SUCCESS:
             return CliResponse.success(
                 request_id=request_id,
@@ -570,6 +581,7 @@ def _decode_response(frame: bytes) -> CliResponse:
                 query_payload=query_payload,
                 diagnostic_payload=diagnostic_payload,
                 status_payload=status_payload,
+                deletion_payload=deletion_payload,
             )
         if reason_code is None:
             raise ValueError
@@ -617,6 +629,23 @@ def _decode_diagnostic_payload(value: object) -> CliDiagnosticPayload | None:
             )
         )
     return CliDiagnosticPayload(category=category, entries=tuple(entries))
+
+
+def _decode_deletion_payload(value: object) -> CliDeletionPayload | None:
+    if value is None:
+        return None
+    mapping = _mapping(value)
+    deleted_count = mapping.get("deleted_count")
+    if not isinstance(deleted_count, int) or isinstance(deleted_count, bool):
+        raise ValueError
+    recovered = mapping.get("recovered")
+    if not isinstance(recovered, bool):
+        raise ValueError
+    return CliDeletionPayload(
+        deleted_count=deleted_count,
+        scope_kind=_required_string(mapping, "scope_kind"),
+        recovered=recovered,
+    )
 
 
 def _decode_status_payload(value: object) -> CliStatusPayload | None:

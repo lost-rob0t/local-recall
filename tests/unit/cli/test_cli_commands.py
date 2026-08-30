@@ -1,6 +1,7 @@
 import datetime as dt
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from uuid import UUID as _UUID
 
 import pytest
 from typer.testing import CliRunner
@@ -9,6 +10,8 @@ from local_recall import ipc_transport
 from local_recall.cli import app, set_client_factory
 from local_recall.cli_contract import (
     CliCitation,
+    CliCommand,
+    CliDeletionPayload,
     CliDiagnosticCategory,
     CliDiagnosticEntry,
     CliDiagnosticPayload,
@@ -330,3 +333,151 @@ def test_runtime_ipc_client_uses_owner_runtime_directory(
 
     assert isinstance(client, ipc_transport.ZmqDaemonClient)
     assert str(runtime_dir) not in repr(client)
+
+
+def test_delete_command_sends_record_scope_through_ipc() -> None:
+    client = FakeClient(
+        CliResponse.success(
+            request_id="placeholder",
+            deletion_payload=CliDeletionPayload(
+                deleted_count=1,
+                scope_kind="record-ids",
+            ),
+        )
+    )
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(app, ["delete", "--record-id", str(_UUID(int=7))])
+    finally:
+        set_client_factory(previous)
+
+    assert result.exit_code == 0
+    assert "1" in result.stdout
+    assert client.requests[0].command is CliCommand.DELETE_RECORDS
+    assert client.requests[0].record_ids == (str(_UUID(int=7)),)
+
+
+def test_delete_command_requires_explicit_scope() -> None:
+    previous = set_client_factory(lambda: FakeClient(CliResponse.success(request_id="placeholder")))
+    try:
+        result = runner.invoke(app, ["delete"])
+    finally:
+        set_client_factory(previous)
+
+    assert result.exit_code != 0
+
+
+def test_delete_command_rejects_multiple_scopes() -> None:
+    previous = set_client_factory(lambda: FakeClient(CliResponse.success(request_id="placeholder")))
+    try:
+        result = runner.invoke(
+            app,
+            [
+                "delete",
+                "--record-id",
+                str(_UUID(int=7)),
+                "--cluster",
+                "a" * 32,
+            ],
+        )
+    finally:
+        set_client_factory(previous)
+
+    assert result.exit_code != 0
+
+
+def test_delete_command_sends_application_scope_with_bounds() -> None:
+    client = FakeClient(
+        CliResponse.success(
+            request_id="placeholder",
+            deletion_payload=CliDeletionPayload(
+                deleted_count=2,
+                scope_kind="application",
+            ),
+        )
+    )
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(
+            app,
+            [
+                "delete",
+                "--application",
+                "emacs",
+                "--start",
+                "2026-08-22T10:00:00+00:00",
+                "--end",
+                "2026-08-22T11:00:00+00:00",
+            ],
+        )
+    finally:
+        set_client_factory(previous)
+
+    assert result.exit_code == 0
+    assert client.requests[0].application == "emacs"
+    assert client.requests[0].start is not None and client.requests[0].end is not None
+
+
+def test_preview_command_sends_text_target_through_ipc() -> None:
+    client = FakeClient(
+        CliResponse.success(
+            request_id="placeholder",
+            query_payload=CliQueryPayload(text='{"text":"redacted-ocr"}'),
+        )
+    )
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(app, ["preview", str(_UUID(int=9))])
+    finally:
+        set_client_factory(previous)
+
+    assert result.exit_code == 0
+    assert client.requests[0].command is CliCommand.PREVIEW_RECORD
+    assert client.requests[0].target == "text"
+    assert client.requests[0].record_ids == (str(_UUID(int=9)),)
+
+
+def test_preview_command_sends_image_target_through_ipc() -> None:
+    client = FakeClient(
+        CliResponse.success(
+            request_id="placeholder",
+            query_payload=CliQueryPayload(text='{"pixels":"PIXELIBA"}'),
+        )
+    )
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(app, ["preview", str(_UUID(int=9)), "--image"])
+    finally:
+        set_client_factory(previous)
+
+    assert result.exit_code == 0
+    assert client.requests[0].target == "image"
+
+
+def test_timeline_command_sends_application_filter() -> None:
+    client = FakeClient(
+        CliResponse.success(
+            request_id="placeholder",
+            query_payload=CliQueryPayload(text="[]"),
+        )
+    )
+    previous = set_client_factory(lambda: client)
+    try:
+        result = runner.invoke(
+            app,
+            [
+                "timeline",
+                "--start",
+                "2026-08-22T10:00:00+00:00",
+                "--end",
+                "2026-08-22T11:00:00+00:00",
+                "--application",
+                "emacs",
+            ],
+        )
+    finally:
+        set_client_factory(previous)
+
+    assert result.exit_code == 0
+    assert client.requests[0].command is CliCommand.TIMELINE
+    assert client.requests[0].application == "emacs"
