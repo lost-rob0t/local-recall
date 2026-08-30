@@ -29,11 +29,13 @@ def _resolution(
         session=session,
         recording_supported=supported,
         capture_backend_id=backend,
-        selected_metadata_sources=(),
+        selected_metadata_sources=("xorg-generic",)
+        if protocol is DisplayProtocol.XORG and supported
+        else (),
         probe_results=(),
         reason_code=ResolutionReasonCode.READY
         if supported
-        else (ResolutionReasonCode.PORTAL_UNAVAILABLE),
+        else ResolutionReasonCode.PORTAL_UNAVAILABLE,
     )
 
 

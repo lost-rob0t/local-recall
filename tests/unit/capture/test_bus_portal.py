@@ -35,13 +35,19 @@ _CALL_ARGS = (
 )
 
 
-def _response_line(code: int, results: dict[str, object]) -> bytes:
-    message = {
+def _response_line(code: int, results: dict[str, str]) -> bytes:
+    message: dict[str, object] = {
         "type": "signal",
         "path": _REQUEST_PATH,
         "interface": "org.freedesktop.portal.Request",
         "member": "Response",
-        "payload": {"type": "(ua{sv})", "data": [code, results]},
+        "payload": {
+            "type": "(ua{sv})",
+            "data": [
+                code,
+                {name: {"type": "s", "data": value} for name, value in results.items()},
+            ],
+        },
     }
     return (json.dumps(message) + "\n").encode()
 
@@ -55,7 +61,7 @@ def _call_result() -> PortalCommandResult:
 
 
 def _other_member_line() -> bytes:
-    message = {
+    message: dict[str, object] = {
         "type": "signal",
         "path": _REQUEST_PATH,
         "interface": "org.freedesktop.portal.Request",
@@ -72,8 +78,8 @@ class FakePortalRunner:
     monitor_lines: tuple[bytes, ...] = ()
     monitor_never_completes: bool = False
     available: bool = True
-    call_args: list[tuple[str, ...]] = field(default_factory=list)
-    monitor_args: list[tuple[str, ...]] = field(default_factory=list)
+    call_args: list[tuple[str, ...]] = field(default_factory=list[tuple[str, ...]])
+    monitor_args: list[tuple[str, ...]] = field(default_factory=list[tuple[str, ...]])
 
     async def run(
         self,

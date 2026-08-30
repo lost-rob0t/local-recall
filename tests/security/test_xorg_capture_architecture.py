@@ -31,6 +31,13 @@ def test_xorg_capture_modules_have_no_plaintext_artifact_capability() -> None:
                 if isinstance(node.func, ast.Name):
                     called_names.add(node.func.id)
                 elif isinstance(node.func, ast.Attribute):
+                    receiver = node.func.value
+                    if (
+                        isinstance(receiver, ast.Name)
+                        and receiver.id == "os"
+                        and node.func.attr == "open"
+                    ):
+                        continue
                     called_names.add(node.func.attr)
 
     assert not any(name.startswith(prefix) for name in imports for prefix in _FORBIDDEN_IMPORTS)

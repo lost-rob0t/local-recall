@@ -31,7 +31,7 @@ NOW = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
 class FakePortalGateway:
     """Scripted portal gateway with optional blocking for revocation races."""
 
-    screenshots: list[PortalScreenshot] = field(default_factory=list)
+    screenshots: list[PortalScreenshot] = field(default_factory=list[PortalScreenshot])
     error: PortalError | None = None
     unexpected_error: Exception | None = None
     gate: asyncio.Event | None = None
@@ -234,7 +234,7 @@ def test_revoke_invalidates_in_flight_capture() -> None:
 
     async def scenario() -> None:
         task = asyncio.ensure_future(backend.capture(_request()))
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.01)
         assert gateway.requests == 1
         backend.revoke()
         with pytest.raises(PortalError) as raised:
@@ -281,7 +281,7 @@ def test_concurrent_captures_are_all_invalidated_by_revoke() -> None:
 
     async def scenario() -> None:
         tasks = [asyncio.ensure_future(backend.capture(_request())) for _ in range(5)]
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.01)
         assert gateway.requests == 5
         backend.revoke()
         for task in tasks:

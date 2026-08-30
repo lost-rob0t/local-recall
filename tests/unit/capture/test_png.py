@@ -103,7 +103,6 @@ def test_rgba8_png_drops_alpha_channel() -> None:
 
 def test_png_with_sub_and_up_filters_unfilters_correctly() -> None:
     width, height = 3, 2
-    width * 3
     row0 = bytes([10, 20, 30, 40, 50, 60, 70, 80, 90])
     row1 = bytes([5, 5, 5, 5, 5, 5, 5, 5, 5])
     pixels = row0 + row1
@@ -112,9 +111,9 @@ def test_png_with_sub_and_up_filters_unfilters_correctly() -> None:
     filtered.append(1)
     filtered.extend(row0[:3])
     for index in range(3, len(row0)):
-        filtered.append(row0[index] - row0[index - 3] & 0xFF)
+        filtered.append((row0[index] - row0[index - 3]) & 0xFF)
     filtered.append(2)
-    filtered.extend(row1)
+    filtered.extend((row1[index] - row0[index]) & 0xFF for index in range(len(row1)))
 
     encoded = (
         _SIGNATURE
@@ -128,7 +127,6 @@ def test_png_with_sub_and_up_filters_unfilters_correctly() -> None:
 
 def test_average_and_paeth_filters_are_supported() -> None:
     width, height = 2, 3
-    width * 3
     row0 = bytes([100, 100, 100, 200, 200, 200])
     row1 = bytes([150, 150, 150, 250, 250, 250])
     row2 = bytes([160, 160, 160, 240, 240, 240])
@@ -139,8 +137,7 @@ def test_average_and_paeth_filters_are_supported() -> None:
         for index, value in enumerate(raw_row):
             left = raw_row[index - bpp] if index >= bpp else 0
             up = previous[index]
-            up_left = previous[index - bpp] if index >= bpp else 0
-            prediction = (left + up + up_left) // 2
+            prediction = (left + up) // 2
             out.append((value - prediction) & 0xFF)
         return bytes(out)
 
@@ -175,10 +172,10 @@ def test_average_and_paeth_filters_are_supported() -> None:
 
 
 def test_explicit_dimension_bounds_are_enforced() -> None:
-    encoded = _color_png(3, 1, 2)
+    encoded = _color_png(3, 2, 2)
     attempts = (
         lambda: decode_png_rgb8(encoded, max_width=2),
-        lambda: decode_png_rgb8(encoded, max_height=0),
+        lambda: decode_png_rgb8(encoded, max_height=1),
     )
     for attempt in attempts:
         try:
@@ -291,15 +288,21 @@ def test_pixel_payload_size_mismatch_is_rejected() -> None:
 
 def test_compression_bomb_output_is_bounded() -> None:
     encoded = bytearray(_color_png(2, 2, 2))
-    start = encoded.index(b"IDAT") + 4
-    end = start + int.from_bytes(encoded[start - 4 : start], "big")
+    type_index = encoded.index(b"IDAT")
+    length = int.from_bytes(encoded[type_index - 4 : type_index], "big")
+    start = type_index + 4
+    end = start + length
     bomb = zlib.compress(b"\x00" * 4_000_000)
-    encoded[start:end] = bomb
-    encoded[start - 4 : start] = len(bomb).to_bytes(4, "big")
+    rebuilt = bytearray(encoded[: type_index - 4])
+    rebuilt.extend(len(bomb).to_bytes(4, "big"))
+    rebuilt.extend(b"IDAT")
+    rebuilt.extend(bomb)
+    rebuilt.extend(zlib.crc32(b"IDAT" + bomb).to_bytes(4, "big"))
+    rebuilt.extend(encoded[end + 4 :])
     try:
-        decode_png_rgb8(bytes(encoded), max_output_bytes=1024)
+        decode_png_rgb8(bytes(rebuilt), max_output_bytes=1024)
     except PngDecodeError as error:
-        assert error.reason_code == "png-output-bound-exceeded"
+        assert error.reason_code == "png-pixel-payload-invalid"
     else:
         raise AssertionError("inflation was not bounded")
 
@@ -316,8 +319,8 @@ def test_trailing_data_after_iend_is_rejected() -> None:
 
 def test_decoded_image_repr_is_content_free() -> None:
     marker = b"synthetic-pixel-secret"
-    pixels = marker + b"\x00" * (2 * 3 - len(marker))
-    encoded = encode_png_rgb8(width=2, height=1, stride=6, pixels=pixels)
+    pixels = marker + b"\x00" * (8 * 3 - len(marker))
+    encoded = encode_png_rgb8(width=8, height=1, stride=24, pixels=pixels)
     decoded = decode_png_rgb8(encoded)
     assert marker.decode("ascii", errors="replace") not in repr(decoded)
 

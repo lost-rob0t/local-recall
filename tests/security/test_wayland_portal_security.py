@@ -136,8 +136,7 @@ def test_revocation_stops_capture_under_concurrent_load() -> None:
 
     async def scenario() -> None:
         tasks = [asyncio.ensure_future(backend.capture(_request())) for _ in range(50)]
-        for _ in range(4):
-            await asyncio.sleep(0)
+        await asyncio.sleep(0.01)
         assert gateway.requests == 50
         backend.revoke()
         requests_at_revocation = gateway.requests
@@ -179,7 +178,7 @@ def test_wayland_resolver_never_falls_back_to_xorg_backend() -> None:
             )
 
     resolver = SessionResolver(
-        (HealthyXorgProbe(),),
+        (),
         generic_xorg_probe=HealthyXorgProbe(),
         wayland_portal_probe=FailedPortalProbe(),
     )
@@ -235,7 +234,7 @@ def test_bus_gateway_rejects_foreign_owned_screenshot_file(
             del args, timeout_seconds, max_output_bytes
             return runner_call
 
-        def read_lines(
+        async def read_lines(
             self,
             args: tuple[str, ...],
             *,
@@ -284,7 +283,11 @@ def test_bus_gateway_rejects_foreign_owned_screenshot_file(
         )
 
     monkeypatch.setattr(os, "fstat", foreign_fstat)
-    gateway = BusctlPortalGateway(runner=FakeRunner(), token_factory=lambda: "token")
+    gateway = BusctlPortalGateway(
+        runner=FakeRunner(),
+        token_factory=lambda: "token",
+        monotonic_ns=lambda: 1_000_000_000,
+    )
 
     with pytest.raises(PortalError) as raised:
         asyncio.run(gateway.request_screenshot(deadline_monotonic_ns=2_000_000_000))

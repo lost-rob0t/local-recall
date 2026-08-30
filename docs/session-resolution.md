@@ -243,6 +243,8 @@ Unit tests cover:
 - ordered Qtile and ActivityWatch composition;
 - generic Xorg fallback;
 - unsupported Wayland capture;
+- Wayland portal capture when a `wayland-portal` probe is healthy, including the
+  `portal-unavailable` resolution reason when it is not (see `wayland-capture.md`);
 - unknown sources without dynamic import;
 - bounded probe timeout and sanitized exceptions;
 - capability-specific probe behavior;

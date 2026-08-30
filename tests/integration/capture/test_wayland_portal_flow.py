@@ -52,7 +52,7 @@ def _request() -> ApprovedCaptureRequest:
 
 @dataclass
 class ScriptedPortalGateway:
-    screenshots: list[PortalScreenshot] = field(default_factory=list)
+    screenshots: list[PortalScreenshot] = field(default_factory=list[PortalScreenshot])
     requests: int = 0
 
     async def request_screenshot(self, *, deadline_monotonic_ns: int) -> PortalScreenshot:
@@ -63,7 +63,7 @@ class ScriptedPortalGateway:
 
 def _screenshot(width: int = 9, height: int = 9, value: int = 20) -> PortalScreenshot:
     stride = width * 3
-    pixels = bytes((value, value, value)) * (stride * height)
+    pixels = bytes((value, value, value)) * (width * height)
     return PortalScreenshot(
         captured_at=_NOW,
         image_format="png",
