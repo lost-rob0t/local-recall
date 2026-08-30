@@ -1,0 +1,70 @@
+#+title: RAGE Issue 39 — E2E Acceptance, Reliability, and Performance Tests
+
+* Transaction
+- Issue: #39 — Add end-to-end acceptance, reliability, and performance tests
+- Branch: =agent/issue-39-e2e-reliability-performance=
+- PR: #97
+- Dependencies: #4, #26, #28, #31, #37, #38 (satisfied)
+
+* Acceptance criteria
+- E2E tests use isolated synthetic desktops and never inspect the developer's real screen.
+- Resource usage remains bounded during soak and failure tests.
+- Stop/privacy mode halts new persistence within a defined measurable bound.
+- A seeded assertion failure, process crash, timeout, teardown failure, and empty scenario selection each fail the canonical E2E command.
+- Required scenarios contain no skipped or expected-failure state at release time.
+- A release report records passed scenarios, exact failures, and known limitations without relabeling failures as passes.
+
+* Design decisions
+- No daemon binary exists yet, so the E2E layer drives the REAL component stack
+  in-process over a deterministic synthetic desktop: synthetic capture backend +
+  OCR provider (deterministic text per frame), the actual redaction policy,
+  envelope cipher with an injectable keyring backend, SQLite encrypted storage,
+  the encrypted semantic index, retrieval, cited answering, the lifecycle
+  gate/actor (pykka), the audit recorder, and the #37 health subsystem with
+  live ports. Scenario steps drive ticks synchronously; no unbounded background
+  queues exist by construction.
+- A deterministic scenario clock feeds capture timestamps, envelope
+  =created_at= (via a Clock adapter into the encryption stage), retention age,
+  and time-scoped question planning — no wall-clock dependence.
+- The synthetic embedding model is intentionally topical-permissive (shared
+  baseline component keeps cosine above the retrieval floor). Documented in
+  =docs/e2e.md=; citation/time-window filtering and the real index cosine math
+  remain genuine.
+- Self-tests: =scripts/verify-e2e-failure-modes= injects one failing scenario at
+  a time (assertion, crash, timeout, teardown, zero =-k= selection, piped
+  output) and succeeds only when each fails non-zero. Wired into
+  =./scripts/check= and the CI failure-propagation job.
+- Performance budgets are scenario assertions (fail the command, not warnings):
+  capture tick < 0.5 s, stop halt < 2 s, query < 2 s, < 16 KiB/record storage
+  growth over the soak, index/storage agreement each 40 captures, retention
+  sweep reclaims. CI-calibrated; reference-hardware (8B-class) budgets are
+  release-gate items in =docs/e2e.md=.
+
+* Execute / TDD
+- Valid RED (head =83449f0=, CI run =33305515003=): scenario files committed
+  against docstring-only harness stubs; new scenarios fail at collection import
+  and Pyright fails on the missing =tests.e2e.harness= API. (The run's first
+  failures were formatting; a follow-up commit fixed formatting while the
+  harness was still stubbed, then the GREEN commit landed the implementation.)
+- Harness development used an interactive smoke loop; four real integration
+  defects were found and fixed at the harness level: lifecycle start requires
+  =capture.enabled= + storage security config; the encryption stage needs the
+  scenario clock (day-bucket alignment for time-scoped queries); the stage
+  processor's internal =asyncio.run= requires thread offloading; the
+  coordinator's =wait_for_quiescence= takes the timeout positionally.
+- GREEN (final head): full suite =1100 passed= (1088 + 12 scenarios), strict
+  Pyright 0 errors, ruff/shellcheck clean, verify-failure-modes 9/9,
+  verify-e2e-failure-modes 6/6, bandit/detect-secrets/policy clean, canonical
+  gate green, CI 4/4 on the exact head.
+
+* Verification mapping
+- Synthetic desktops only: harness uses no real display, session, or
+  credentials; policy/config tests forbid real values.
+- Bounded soak: latency/byte budgets + record/index agreement + retention
+  reclaim assertions in =test_soak_scenario.py=.
+- Stop bound: gate reaches =off= within 2 s and persistence refuses afterwards
+  (=CaptureGateClosed=).
+- Failure injection: six E2E modes plus the pre-existing nine general modes all
+  verified non-zero by dedicated scripts inside the canonical gate and CI.
+- No skips/xfail: check-policy meta-tests from #38 scan every =tests/*.py=.
+- Release report: #41 will record scenario counts and any known limitations.
