@@ -544,9 +544,7 @@ class LocalRecallSystem:
             record_id=record.record_id,
             captured_at=record.frame.captured_at,
             text=" ".join(record.frame.ocr_text),
-            approved_metadata=(
-                str(record.frame.metadata.get("application") or "unknown"),
-            ),
+            approved_metadata=(str(record.frame.metadata.get("application") or "unknown"),),
             privacy_class=PrivacyClass.REDACTED_CONTENT,
         )
         if self.index_documents:
